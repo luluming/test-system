@@ -76,13 +76,43 @@
 
 **`forward_ports` 扩展**：`target` 可从「单个地址」「或引用 upstream 组 id」二选一（`upstream_id` 可空）。
 
+### 新增：`locations`（监听点下的 location 子实体）
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| id | int PK | |
+| nginx_config_id | FK → nginx_configs.id | 所属监听点 |
+| path | str | location 匹配路径，如 `/api/` |
+| sort_order | int default 0 | location 顺序 |
+| upstream_id | FK 可空 → upstreams.id | 可选转发目标 upstream |
+| target_addr/target_port | str/int 可空 | 或单个转发地址 |
+| created_at | datetime | |
+
+### 新增：`config_options`（自由 KV 指令行）
+
+**存储 server 级与每个 location 级的任意 nginx 指令**，承载"无法用表单建模的冷门/扩展参数"。
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| id | int PK | |
+| nginx_config_id | FK → nginx_configs.id | 所属监听点（server 级指令，location_id 为空）|
+| location_id | FK 可空 → locations.id | 归属的 location（location 内指令）|
+| directive | str | 指令名，如 `proxy_set_header` / `add_header` |
+| value | str | 指令值，如 `X-Real-IP  $remote_addr` |
+| sort_order | int default 0 | 生成顺序（命令顺序即输出顺序，nginx 顺序语义重要）|
+| created_at | datetime | |
+
+> 生成配置时：`server{}` 层 = nginx_config 其下 location_id 为空的 options + 固定常用字段；`location{}` 层 = 该 location 下的 options 按 sort_order 输出。支持指令补全（内置常用指令字典：指令名 + 说明 + 所属上下文）。
+
 ## 4. 后端 API
 
 沿用 `_make_router()` 工厂 + Pydantic v2（`Create/Update/Out`, `ConfigDict(from_attributes=True)`）、`Depends(get_db)`、`Depends(get_current_user)`、update 用 `exclude_unset=True`。
 
-### 新增 upstream 两组 CRUD
+### 新增 upstream / location / KV 指令组 CRUD
 - `POST/GET/PATCH/DELETE /api/upstreams`
 - `POST/GET/PATCH/DELETE /api/upstreams/{id}/servers`
+- `POST/GET/PATCH/DELETE /api/locations`（且 `GET /api/nginx-configs/{id}` 返回嵌套 locations）
+- `POST/GET/PATCH/DELETE /api/config-options`（按 `nginx_config_id` 或 `location_id` 过滤；用 `sort_order` 批量重排）
 
 ### 新动作端点
 - `GET /api/topology`：返回全局拓扑结构（域名/监听点/upstream/后端分层的聚合数据，供拓扑图渲染）
@@ -91,6 +121,8 @@
 - `POST /api/nginx-configs/{id}/reload`：热加载并刷新 status
 - `GET /api/upstreams/{id}/preview`：生成该组的 `upstream {}` 配置片段
 - `POST /api/upstreams/{id}/validate`：`nginx -t` 校验预览结果
+- `GET /api/nginx-configs/{id}/render`：按「固定字段 + server级 options + locations（含各自 options）」渲染整份 nginx 配置文本（供 dry-run预览）
+- `GET /api/directives`：内置常用指令字典（指令名 + 说明 + 所属上下文，供补全）
 
 ## 5. 前端组件拆分
 
@@ -101,7 +133,8 @@ OpsConfigPage          ← 配置文件主从（默认页，改造既有 OpsCons
  ├─ ListPanel          ← 左列表：搜索/筛选/行选中/告警红条
  ├─ DetailPanel        ← 右详情：Tab 化（概览/域名映射/转发规则/业务端口）
  │   ├─ OverviewGrid   ← 概览信息网格
- │   ├─ ForwardTable   ← 转发规则表 + 条级测试/编辑/停用
+ │   ├─ LocationEditor ← location 列表 + 增删（每个 location：path + 其 KV 集）
+ │   ├─ KvListEditor   ← 自由 KV 指令编辑器（指令补全/顺序拖拽/增删，server 级与 location 级复用）
  │   ├─ BizPortChips   ← 业务端口
  │   └─ PathChain      ← 访问路径链路（域名→端口→路径→upstream/地址→公网/内网）
  └─ TopologyView       ← 四层节点图（点击节点联动详情）
@@ -110,7 +143,7 @@ OpsConfigPage          ← 配置文件主从（默认页，改造既有 OpsCons
 ## 6. 错误处理与测试
 
 - **错误处理**：连通性失败 → 节点/规则红标「失败」；`nginx -t` 校验失败 → 展示错误行号并禁止「应用到服务器」；Topology 后端不可达 → 骨架屏 + 重试；删除映射/转发/监听点/upstream 均二次确认；删除有 `upstream_id` 引用时驳回
-- **测试**：后端单测覆盖 upstream/servers CRUD + topology/test/reload/validate 端点；前端 mock 数据验证拓扑渲染、主从联动、Tab 编辑保存回填
+- **测试**：后端单测覆盖 upstream/servers/locations/config-options CRUD + topology/test/reload/validate/render 端点；前端 mock 数据验证拓扑渲染、主从联动、Tab 编辑保存回填、KV 指令补全
 
 ## 7. 部署入口
 
