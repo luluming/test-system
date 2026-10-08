@@ -76,43 +76,54 @@
 
 **`forward_ports` 扩展**：`target` 可从「单个地址」「或引用 upstream 组 id」二选一（`upstream_id` 可空）。
 
-### 新增：`locations`（监听点下的 location 子实体）
+### 新增：`config_blocks`（泛化块 · 自关联嵌套）
+
+**泛化 nginx 块**。`server / location / upstream / map / geo / if / log_format / split_clients / geo / include / 注释 / raw` 统一为一种块，靠 `scope` + `parent_id` 表达类型与任意嵌套层级，替换原「只能表达三种块」的局限。
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | id | int PK | |
-| nginx_config_id | FK → nginx_configs.id | 所属监听点 |
-| path | str | location 匹配路径，如 `/api/` |
-| sort_order | int default 0 | location 顺序 |
-| upstream_id | FK 可空 → upstreams.id | 可选转发目标 upstream |
-| target_addr/target_port | str/int 可空 | 或单个转发地址 |
+| nginx_config_id | FK → nginx_configs.id | 所属配置文件 |
+| parent_id | FK 自关联 → config_blocks.id，可空 | 表达嵌套：`server ⊃ location ⊃ if` |
+| scope | str | 块类型：`server` / `location` / `upstream` / `map` / `geo` / `if` / `log_format` / `include` / `comment` / `raw` |
+| header | str | 块头部原文，如 `map $http_cookie $cookie_to_delete`、`location /api/` |
+| belongs_to_file | str 可空 | 支持"一个逻辑 server 拆成多文件"的文件归属标记 |
+| sort_order | int default 0 | 同级块顺序 |
 | created_at | datetime | |
 
-### 新增：`config_options`（自由 KV 指令行）
+**嵌套即任意树**：层级完全由 `parent_id` 递归描述，`if` 可嵌在 `location` 内，`map`/`geo` 可挂在 `server` 级，无需为每类建独立表。
 
-**存储 server 级与每个 location 级的任意 nginx 指令**，承载"无法用表单建模的冷门/扩展参数"。
+### 新增：`config_options`（通用 KV 行 + raw 原样行）
+
+**承载块内所有指令/条件/映射行**，统一"键 = 值"，是块内容的最小单元，也是冷门/扩展参数的自由入口。
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | id | int PK | |
-| nginx_config_id | FK → nginx_configs.id | 所属监听点（server 级指令，location_id 为空）|
-| location_id | FK 可空 → locations.id | 归属的 location（location 内指令）|
-| directive | str | 指令名，如 `proxy_set_header` / `add_header` |
-| value | str | 指令值，如 `X-Real-IP  $remote_addr` |
-| sort_order | int default 0 | 生成顺序（命令顺序即输出顺序，nginx 顺序语义重要）|
+| block_id | FK → config_blocks.id | 归属的块（server/location/map/... 的任意内部行）|
+| directive | str | 键：指令名 / map 条件 / geo 网段 / split 占比等 |
+| value | str | 值：指令值 / map 结果 / geo 变量等 |
+| row_type | str default `kv` | `kv` 常规 / `regex` 正则 / `string` 字符串 / `default` 默认值 / `raw` 原文整行 |
+| is_free_text | bool default False | `raw` 模式：directive 填整行原文、value 空，照录渲染 |
+| sort_order | int default 0 | 行顺序（nginx 指令顺序敏感，顺序即输出顺序）|
 | created_at | datetime | |
 
-> 生成配置时：`server{}` 层 = nginx_config 其下 location_id 为空的 options + 固定常用字段；`location{}` 层 = 该 location 下的 options 按 sort_order 输出。支持指令补全（内置常用指令字典：指令名 + 说明 + 所属上下文）。
+**语义约束（用户确认保留）**
+- **map default 恒置末尾**：`row_type=default` 的行在排序/渲染时强制置于该块末尾（不受 sort_order 影响），匹配 nginx `default` 语义。
+- **if 弱提示**：`scope=if` 的块渲染前置 `# 建议少用 if` 注释弱提示（nginx 社区惯例），但不阻止使用。
+- **raw 兜底**：完全冷门指令按"原文整行"直接内联照录渲染，保证不漏。
+
+> 渲染：按块树深度优先 + 同级 `sort_order` 递归拼装；`map/geo/if` 输出成对应 `… { … }` 块；`comment` 输出 `# ` 前缀；`include` 输出 `include <path>;`；`raw` 行照录原文。支持指令补全（内置常用指令字典：指令名 + 说明 + 所属上下文）。
 
 ## 4. 后端 API
 
 沿用 `_make_router()` 工厂 + Pydantic v2（`Create/Update/Out`, `ConfigDict(from_attributes=True)`）、`Depends(get_db)`、`Depends(get_current_user)`、update 用 `exclude_unset=True`。
 
-### 新增 upstream / location / KV 指令组 CRUD
+### 新增 upstream / block / KV 指令组 CRUD
 - `POST/GET/PATCH/DELETE /api/upstreams`
 - `POST/GET/PATCH/DELETE /api/upstreams/{id}/servers`
-- `POST/GET/PATCH/DELETE /api/locations`（且 `GET /api/nginx-configs/{id}` 返回嵌套 locations）
-- `POST/GET/PATCH/DELETE /api/config-options`（按 `nginx_config_id` 或 `location_id` 过滤；用 `sort_order` 批量重排）
+- `POST/GET/PATCH/DELETE /api/config-blocks`（`parent_id` 表达嵌套；`GET /api/nginx-configs/{id}` 返回其块树；`blocks/{id}/children` 取子块）
+- `POST/GET/PATCH/DELETE /api/config-options`（按 `block_id` 过滤；`sort_order` 批量重排；`row_type` 标记 regex/default/raw）
 
 ### 新动作端点
 - `GET /api/topology`：返回全局拓扑结构（域名/监听点/upstream/后端分层的聚合数据，供拓扑图渲染）
@@ -121,7 +132,7 @@
 - `POST /api/nginx-configs/{id}/reload`：热加载并刷新 status
 - `GET /api/upstreams/{id}/preview`：生成该组的 `upstream {}` 配置片段
 - `POST /api/upstreams/{id}/validate`：`nginx -t` 校验预览结果
-- `GET /api/nginx-configs/{id}/render`：按「固定字段 + server级 options + locations（含各自 options）」渲染整份 nginx 配置文本（供 dry-run预览）
+- `GET /api/nginx-configs/{id}/render`：按泛化块树（深度优先 + sort_order + map default 置底）渲染整份 nginx 配置文本（供 dry-run预览）
 - `GET /api/directives`：内置常用指令字典（指令名 + 说明 + 所属上下文，供补全）
 
 ## 5. 前端组件拆分
@@ -131,10 +142,10 @@ OpsTopologyPage        ← 全局拓扑预览（顶级菜单「全局拓扑」�
 OpsUpstreamPage        ← Upstream 组管理（顶级菜单「Upstream 池」）
 OpsConfigPage          ← 配置文件主从（默认页，改造既有 OpsConsole）
  ├─ ListPanel          ← 左列表：搜索/筛选/行选中/告警红条
- ├─ DetailPanel        ← 右详情：Tab 化（概览/域名映射/转发规则/业务端口）
+ ├─ DetailPanel        ← 右详情：Tab 化（概览/域名映射/转发规则/业务端口/块树）
  │   ├─ OverviewGrid   ← 概览信息网格
- │   ├─ LocationEditor ← location 列表 + 增删（每个 location：path + 其 KV 集）
- │   ├─ KvListEditor   ← 自由 KV 指令编辑器（指令补全/顺序拖拽/增删，server 级与 location 级复用）
+ │   ├─ BlockTree      ← 嵌套块树（server ⊃ location/map/if...，缩进线表达 parent_id 层级，map/geo/if/log_format/include/注释/raw 均为节点，各节点可 +子块/+KV/+注释/删除）
+ │   ├─ KvListEditor   ← 自由 KV 行编辑器（指令补全/顺序拖拽/row_type 标签/raw 兜底，default 行强制置底；块内复用）
  │   ├─ BizPortChips   ← 业务端口
  │   └─ PathChain      ← 访问路径链路（域名→端口→路径→upstream/地址→公网/内网）
  └─ TopologyView       ← 四层节点图（点击节点联动详情）
@@ -143,7 +154,7 @@ OpsConfigPage          ← 配置文件主从（默认页，改造既有 OpsCons
 ## 6. 错误处理与测试
 
 - **错误处理**：连通性失败 → 节点/规则红标「失败」；`nginx -t` 校验失败 → 展示错误行号并禁止「应用到服务器」；Topology 后端不可达 → 骨架屏 + 重试；删除映射/转发/监听点/upstream 均二次确认；删除有 `upstream_id` 引用时驳回
-- **测试**：后端单测覆盖 upstream/servers/locations/config-options CRUD + topology/test/reload/validate/render 端点；前端 mock 数据验证拓扑渲染、主从联动、Tab 编辑保存回填、KV 指令补全
+- **测试**：后端单测覆盖 upstream/servers/config-blocks（含嵌套 parent_id、map default 置底渲染）/config-options CRUD + topology/test/reload/validate/render 端点；前端 mock 数据验证拓扑渲染、主从联动、Tab 编辑保存回填、KV 指令补全
 
 ## 7. 部署入口
 
