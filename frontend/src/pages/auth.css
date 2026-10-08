@@ -1,0 +1,133 @@
+/* ============================================================
+   登录 / 重置密码 页共享样式
+   设计语言：左侧深色品牌区 + 右侧浅色表单区，克制留白
+   ============================================================ */
+
+/* 分栏容器：占满视口高度 */
+.auth-page {
+  display: flex;
+  min-height: 100vh;
+  background: #f4f6f9;
+}
+
+/* 左侧深色品牌区：产品名 + 标语，带微弱品牌色光晕 */
+.auth-brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 55%;
+  padding: 48px;
+  /* 微弱品牌色径向光晕（克制，仅提亮左上角）+ 深蓝黑底色 */
+  background:
+    radial-gradient(900px 600px at 18% 22%, rgba(96, 133, 172, 0.16), transparent 62%),
+    #161f2b;
+}
+
+.auth-brand-inner {
+  max-width: 380px;
+}
+
+.auth-brand h1 {
+  margin: 0 0 14px;
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -0.5px;
+  color: #f3f6f9;
+}
+
+.auth-brand p {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.8;
+  color: #9fb2c4;
+}
+
+/* 右侧表单区：居中承载表单卡片 */
+.auth-panel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  padding: 32px;
+}
+
+/* 表单卡片入场动效：淡入 + 轻微上移（180ms，克制） */
+.auth-card {
+  animation: authFadeUp 180ms ease-out;
+}
+
+@keyframes authFadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 表单标题与副标题 */
+.auth-title {
+  margin: 0 0 6px;
+  font-size: 22px;
+  font-weight: 600;
+  color: #1e2933;
+  letter-spacing: -0.3px;
+}
+
+.auth-subtitle {
+  margin: 0 0 24px;
+  font-size: 13px;
+  color: #7a8794;
+}
+
+/* 表单底部操作区（忘记密码 / 注册 / 返回登录） */
+.auth-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 4px;
+  font-size: 13px;
+}
+
+/* 验证码图片：点击刷新；key 变化时播放轻微闪烁动画 */
+.captcha-img {
+  width: 84px;
+  height: 30px;
+  border-radius: 4px;
+  cursor: pointer;
+  object-fit: cover;
+  background: #eef1f5;
+  animation: captchaRefresh 150ms ease;
+}
+
+@keyframes captchaRefresh {
+  from {
+    opacity: 0.5;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* 验证码未加载时的占位提示 */
+.captcha-loading {
+  font-size: 11px;
+  color: #7a8794;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+/* 窄屏（<768px）：隐藏左侧品牌区，表单占满 */
+@media (max-width: 767px) {
+  .auth-brand {
+    display: none;
+  }
+
+  .auth-panel {
+    padding: 24px 16px;
+  }
+}

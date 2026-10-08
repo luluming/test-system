@@ -1,0 +1,35 @@
+# ---- 环境与密钥 ----
+# 敏感配置：本地 .env 严禁提交
+.env
+*.env
+!.env.example
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ---- 数据库 ----
+*.db
+*.sqlite3
+
+# ---- Node / 前端 ----
+node_modules/
+dist/
+frontend/dist/
+
+# ---- 构建产物 ----
+build/
+*.log
+
+# ---- IDE / 系统 ----
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
