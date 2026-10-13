@@ -48,13 +48,102 @@ class NginxConfig(Base):
     __table_args__ = (UniqueConstraint("industry_id", "name", name="uq_nginx_config_industry_name"),)
 
 
+class ConfigBlock(Base):
+    """泛化 nginx 块：靠 scope + parent_id 表达任意嵌套层级。
+
+    server/location/upstream/map/geo/if/log_format/split_clients/include/comment/raw
+    统一为一种块；层级完全由 parent_id 递归描述。
+    """
+
+    __tablename__ = "config_blocks"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    nginx_config_id: Mapped[int] = mapped_column(
+        ForeignKey("nginx_configs.id"), index=True, nullable=False
+    )
+    parent_id: Mapped[int | None] = mapped_column(
+        ForeignKey("config_blocks.id"), index=True, nullable=True
+    )
+    scope: Mapped[str] = mapped_column(String(32), nullable=False)
+    header: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    belongs_to_file: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), nullable=False
+    )
+
+
+class ConfigOption(Base):
+    """块内通用 KV 行 + raw 原样行（指令顺序即输出顺序）。"""
+
+    __tablename__ = "config_options"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    block_id: Mapped[int] = mapped_column(
+        ForeignKey("config_blocks.id"), index=True, nullable=False
+    )
+    directive: Mapped[str] = mapped_column(String(100), nullable=False)
+    value: Mapped[str] = mapped_column(String(1000), default="", nullable=False)
+    row_type: Mapped[str] = mapped_column(String(16), default="kv", nullable=False)
+    is_free_text: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), nullable=False
+    )
+
+
+class Upstream(Base):
+    """nginx upstream 组（按行业作用域）。"""
+
+    __tablename__ = "upstreams"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    industry_id: Mapped[int] = mapped_column(
+        ForeignKey("industries.id"), index=True, nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(100), index=True, nullable=False)
+    strategy: Mapped[str] = mapped_column(
+        String(32), default="round_robin", nullable=False
+    )
+    keepalive: Mapped[int] = mapped_column(Integer, default=32, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (UniqueConstraint("industry_id", "name"),)
+
+
+class UpstreamServer(Base):
+    """upstream 组内节点。"""
+
+    __tablename__ = "upstream_servers"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    upstream_id: Mapped[int] = mapped_column(
+        ForeignKey("upstreams.id"), index=True, nullable=False
+    )
+    addr: Mapped[str] = mapped_column(String(255), nullable=False)
+    port: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    weight: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    health_status: Mapped[str] = mapped_column(
+        String(16), default="checking", nullable=False
+    )
+    enable: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), nullable=False
+    )
+
+
 class DomainMapping(Base):
     """域名到转发目标的映射关系。"""
 
     __tablename__ = "domain_mappings"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
-    domain: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+    industry_id: Mapped[int] = mapped_column(
+        ForeignKey("industries.id"), index=True, nullable=False
+    )
+    domain: Mapped[str] = mapped_column(String(255), index=True, nullable=False)
     forward_tos: Mapped[str] = mapped_column(String(255), nullable=False)
     protocol: Mapped[str] = mapped_column(String(16), default="http", nullable=False)
     description: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -63,6 +152,8 @@ class DomainMapping(Base):
         DateTime, server_default=func.now(), nullable=False
     )
 
+    __table_args__ = (UniqueConstraint("industry_id", "domain"),)
+
 
 class ForwardPort(Base):
     """nginx 转发端口：监听端口 → 上游目标。"""
@@ -70,6 +161,12 @@ class ForwardPort(Base):
     __tablename__ = "forward_ports"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    industry_id: Mapped[int] = mapped_column(
+        ForeignKey("industries.id"), index=True, nullable=False
+    )
+    upstream_id: Mapped[int | None] = mapped_column(
+        ForeignKey("upstreams.id"), index=True, nullable=True
+    )
     listen_port: Mapped[int] = mapped_column(Integer, index=True, nullable=False)
     upstream_target: Mapped[str] = mapped_column(String(255), nullable=False)
     service_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
@@ -86,6 +183,9 @@ class BizPort(Base):
     __tablename__ = "biz_ports"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    industry_id: Mapped[int] = mapped_column(
+        ForeignKey("industries.id"), index=True, nullable=False
+    )
     service_name: Mapped[str] = mapped_column(String(100), index=True, nullable=False)
     port: Mapped[int] = mapped_column(Integer, index=True, nullable=False)
     protocol: Mapped[str] = mapped_column(String(16), default="tcp", nullable=False)
