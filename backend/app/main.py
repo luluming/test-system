@@ -15,7 +15,12 @@ from app.api.nginx import (
     mapping_router,
     nginx_router,
 )
-from app.api.nginx_inner import upstream_router
+from app.api.nginx_inner import (
+    config_tree_router,
+    blocks_router,
+    options_router,
+    upstream_router,
+)
 from app.config import settings
 from app.core.logging import setup_logging
 from app.middleware.security_headers import SecurityHeadersMiddleware
@@ -58,3 +63,6 @@ app.include_router(mapping_router)
 app.include_router(forward_router)
 app.include_router(biz_router)
 app.include_router(upstream_router)
+app.include_router(blocks_router)
+app.include_router(options_router)
+app.include_router(config_tree_router)

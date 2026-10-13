@@ -61,3 +61,72 @@ class UpstreamServerOut(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# ---- config_blocks ----
+
+class ConfigBlockCreate(BaseModel):
+    nginx_config_id: int
+    parent_id: int | None = None
+    scope: str = Field(min_length=1, max_length=32)
+    header: str = ""
+    belongs_to_file: str | None = None
+    sort_order: int = 0
+
+
+class ConfigBlockUpdate(BaseModel):
+    scope: str | None = None
+    header: str | None = None
+    parent_id: int | None = None
+    belongs_to_file: str | None = None
+    sort_order: int | None = None
+
+
+class ConfigBlockOut(BaseModel):
+    id: int
+    nginx_config_id: int
+    parent_id: int | None
+    scope: str
+    header: str
+    belongs_to_file: str | None
+    sort_order: int
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ---- config_options ----
+
+class ConfigOptionCreate(BaseModel):
+    block_id: int
+    directive: str
+    value: str = ""
+    row_type: str = "kv"
+    is_free_text: bool = False
+    sort_order: int = 0
+
+
+class ConfigOptionUpdate(BaseModel):
+    directive: str | None = None
+    value: str | None = None
+    row_type: str | None = None
+    is_free_text: bool | None = None
+    sort_order: int | None = None
+
+
+class ConfigOptionOut(BaseModel):
+    id: int
+    block_id: int
+    directive: str
+    value: str
+    row_type: str
+    is_free_text: bool
+    sort_order: int
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class OptionReorderRequest(BaseModel):
+    block_id: int
+    ids: list[int]
