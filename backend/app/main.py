@@ -8,6 +8,13 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.auth import router as auth_router
 from app.api.items import router as items_router
+from app.api.industries import router as industries_router
+from app.api.nginx import (
+    biz_router,
+    forward_router,
+    mapping_router,
+    nginx_router,
+)
 from app.config import settings
 from app.core.logging import setup_logging
 from app.seed import init_db
@@ -40,3 +47,8 @@ app.add_middleware(
 # 注册业务路由
 app.include_router(auth_router)
 app.include_router(items_router)
+app.include_router(industries_router)
+app.include_router(nginx_router)
+app.include_router(mapping_router)
+app.include_router(forward_router)
+app.include_router(biz_router)
