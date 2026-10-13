@@ -44,8 +44,8 @@ def test_render_text_replicates_render_preview():
         "        }",
         "    }",
         "    map $http_upgrade $connection_upgrade {",
-        "        default upgrade;",
         "        '' close;",
+        "        default upgrade;",
         "    }",
         "}",
     ]
@@ -55,4 +55,4 @@ def test_render_comment_and_if():
     root = parse("# 这是注释\nif ($x) { return 404; }\nserver { listen 80; }", "http")
     lines = render_text(root)
     assert "# 这是注释" in lines
-    assert "        # 建议少用 if" in lines
+    assert "    # 建议少用 if" in lines

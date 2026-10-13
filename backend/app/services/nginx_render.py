@@ -133,9 +133,9 @@ def render_text(node: dict) -> list[str]:
             lines.append("# " + n.get("header", ""))
             return
         if n.get("scope") == "if":
-            lines.append(ind + INDENT + "# 建议少用 if")
+            lines.append(ind + "# 建议少用 if")
         lines.append(ind + (n.get("header") or "") + " {")
-        for o in n.get("options", []):
+        for o in ordered_options(n.get("options", [])):
             lines.append(ind + INDENT + _option_raw(o).rstrip(";").rstrip() + ";")
         for c in n.get("children", []):
             rb(c, depth + 1)
