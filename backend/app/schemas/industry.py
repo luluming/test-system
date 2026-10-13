@@ -25,6 +25,14 @@ class IndustryCreate(BaseModel):
         return v
 
 
+class CloneIndustryRequest(BaseModel):
+    """从模板行业克隆请求。"""
+
+    source_industry_id: int
+    name: str = Field(min_length=1, max_length=50)
+    owner: str | None = Field(default=None, max_length=50)
+
+
 class IndustryUpdate(BaseModel):
     """更新行业请求（字段可选）。"""
 

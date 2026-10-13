@@ -1,6 +1,4 @@
 """行业基础信息 CRUD + 模板克隆端点（均需登录）。"""
-from typing import Any
-
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -10,7 +8,12 @@ from app.api.deps import get_db
 from app.core.security import get_current_user
 from app.models.industry import Industry
 from app.models.user import User
-from app.schemas.industry import IndustryCreate, IndustryOut, IndustryUpdate
+from app.schemas.industry import (
+    CloneIndustryRequest,
+    IndustryCreate,
+    IndustryOut,
+    IndustryUpdate,
+)
 from app.services.industry_clone import clone_industry
 
 router = APIRouter(prefix="/api/industries", tags=["行业"])
@@ -84,11 +87,16 @@ def delete_industry(
     db.commit()
 
 
-# 模板克隆端点由 Task 6 实现并挂载于此模块，此处暂先占位以保持路由注册到位：
 @router.post("/clone", response_model=IndustryOut, status_code=status.HTTP_201_CREATED)
-def _clone_endpoint_stub(  # pragma: no cover - Task 6 替换为真实实现
-    payload: Any,
+def create_clone(
+    payload: CloneIndustryRequest,
     db: Session = Depends(get_db),
     _current_user: User = Depends(get_current_user),
-) -> Industry:  # 实现在 Task 6 完成
-    raise NotImplementedError
+) -> Industry:
+    try:
+        return clone_industry(db, payload=payload)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="源行业不存在")
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="该名称已存在")
