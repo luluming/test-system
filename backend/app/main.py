@@ -17,6 +17,7 @@ from app.api.nginx import (
 )
 from app.config import settings
 from app.core.logging import setup_logging
+from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.seed import init_db
 
 
@@ -43,6 +44,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# 安全响应头（早于 CORS 注入，保证所有响应都带上）
+app.add_middleware(SecurityHeadersMiddleware)
 
 # 注册业务路由
 app.include_router(auth_router)
