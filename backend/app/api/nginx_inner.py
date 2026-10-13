@@ -487,3 +487,19 @@ def delete_option(
 ) -> None:
     db.delete(get_option(option_id, db=db))
     db.commit()
+
+
+from app.services.nginx_render import build_config_dict, render_config_text
+
+config_actions_router = APIRouter(prefix="/api/nginx-configs", tags=["nginx 配置动作"])
+
+
+@config_actions_router.get("/{config_id}/render")
+def render_config(
+    config_id: int,
+    context: str = "conf",
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(get_current_user),
+) -> dict:
+    root = build_config_dict(db, config_id, context=context)
+    return {"content": render_config_text(root)}
