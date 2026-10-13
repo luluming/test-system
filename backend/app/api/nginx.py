@@ -31,6 +31,7 @@ from app.schemas.nginx import (
     NginxConfigUpdate,
 )
 from app.models.base import Base
+from app.services.leases import is_lease_expired, now_utc
 
 
 def _make_router(
@@ -193,6 +194,50 @@ def delete_config(
 ) -> None:
     db.delete(_get_config(db, config_id))
     db.commit()
+
+
+class LeaseBody(BaseModel):
+    holder: str
+
+
+@config_router.post("/{config_id}/edit-heartbeat", response_model=NginxConfigOut)
+def edit_heartbeat(
+    config_id: int,
+    payload: LeaseBody,
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(get_current_user),
+) -> NginxConfig:
+    row = _get_config(db, config_id)
+    if (
+        row.edit_holder is not None
+        and row.edit_holder != payload.holder
+        and not is_lease_expired(row.edit_heartbeat_at)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_423_LOCKED,
+            detail={"code": "LEASE_HELD", "holder": row.edit_holder, "message": "该配置正被他人编辑中，可稍后重试或强制接管"},
+        )
+    # 授予本人 / 接接过期或空租约
+    row.edit_holder = payload.holder
+    row.edit_heartbeat_at = now_utc()
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@config_router.post("/{config_id}/edit-release")
+def edit_release(
+    config_id: int,
+    payload: LeaseBody,
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(get_current_user),
+) -> dict:
+    row = _get_config(db, config_id)
+    if row.edit_holder == payload.holder:
+        row.edit_holder = None
+        row.edit_heartbeat_at = None
+        db.commit()
+    return {"message": "释放成功"}
 
 
 nginx_router = config_router
