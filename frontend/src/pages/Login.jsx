@@ -56,7 +56,7 @@ export default function Login() {
       const token = res.data?.access_token || res.data?.token;
       setToken(token);
       message.success("登录成功");
-      navigate("/");
+      navigate("/industries");
     } catch (err) {
       const detail = err.response?.data?.detail;
       // 验证码错误或过期：提示并自动刷新验证码、清空验证码输入

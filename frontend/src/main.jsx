@@ -4,6 +4,8 @@ import { BrowserRouter } from "react-router-dom";
 import { ConfigProvider } from "antd";
 import zhCN from "antd/locale/zh_CN";
 import App from "./App";
+import ThemeProvider from "./theme/ThemeProvider";
+import "./theme/theme.css";
 
 // 应用入口：配置 AntD 中文语言包 + 克制风格主题（品牌色/弱边框/适中圆角） + 浏览器路由
 ReactDOM.createRoot(document.getElementById("root")).render(
@@ -22,9 +24,11 @@ ReactDOM.createRoot(document.getElementById("root")).render(
         },
       }}
     >
-      <BrowserRouter>
-        <App />
-      </BrowserRouter>
+      <ThemeProvider>
+        <BrowserRouter>
+          <App />
+        </BrowserRouter>
+      </ThemeProvider>
     </ConfigProvider>
   </React.StrictMode>
 );

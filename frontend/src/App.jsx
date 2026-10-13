@@ -1,10 +1,17 @@
 import { Layout, Menu } from "antd";
-import { DashboardOutlined, LogoutOutlined } from "@ant-design/icons";
+import {
+  DashboardOutlined,
+  DeploymentUnitOutlined,
+  LogoutOutlined,
+} from "@ant-design/icons";
 import { Navigate, Outlet, Route, Routes, useNavigate } from "react-router-dom";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import ResetPassword from "./pages/ResetPassword";
 import Dashboard from "./pages/Dashboard";
+import OpsConsole from "./pages/OpsConsole";
+import IndustryDashboard from "./pages/IndustryDashboard";
+import IndustryDetail from "./pages/IndustryDetail";
 import { clearToken, getToken } from "./store/auth";
 
 // 需要登录才能访问的布局：左侧菜单 + 内容区
@@ -38,6 +45,12 @@ function ProtectedLayout() {
               onClick: () => navigate("/"),
             },
             {
+              key: "ops",
+              icon: <DeploymentUnitOutlined />,
+              label: "运维配置",
+              onClick: () => navigate("/ops"),
+            },
+            {
               key: "logout",
               icon: <LogoutOutlined />,
               label: "退出登录",
@@ -63,9 +76,12 @@ export default function App() {
       <Route path="/reset-password" element={<ResetPassword />} />
       <Route element={<ProtectedLayout />}>
         <Route path="/" element={<Dashboard />} />
+        <Route path="/ops" element={<OpsConsole />} />
+        <Route path="/industries" element={<IndustryDashboard />} />
+        <Route path="/ops/:industryId" element={<IndustryDetail />} />
       </Route>
-      {/* 兜底：未匹配路径重定向到首页 */}
-      <Route path="*" element={<Navigate to="/" replace />} />
+      {/* 兜底：未匹配路径重定向到行业落地页 */}
+      <Route path="*" element={<Navigate to="/industries" replace />} />
     </Routes>
   );
 }
