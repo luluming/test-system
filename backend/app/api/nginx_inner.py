@@ -503,3 +503,28 @@ def render_config(
 ) -> dict:
     root = build_config_dict(db, config_id, context=context)
     return {"content": render_config_text(root)}
+
+
+from app.schemas.nginx_inner import ExportRequest
+from app.services.nginx_export import export_config_text
+from app.services.nginx_render import build_config_dict
+
+
+@config_actions_router.post("/{config_id}/export")
+def export_config(
+    config_id: int,
+    payload: ExportRequest,
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(get_current_user),
+) -> dict:
+    root = build_config_dict(db, config_id, context=payload.context)
+    exceptions = [e.model_dump() for e in payload.upstream_exceptions]
+    content = export_config_text(
+        root,
+        ctx=payload.context,
+        ssl_on=payload.ssl_enabled,
+        dom_new=payload.server_name_domain,
+        default_ips=payload.upstream_default_ips or "",
+        exceptions=exceptions,
+    )
+    return {"content": content}

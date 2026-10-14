@@ -130,3 +130,20 @@ class ConfigOptionOut(BaseModel):
 class OptionReorderRequest(BaseModel):
     block_id: int
     ids: list[int]
+
+
+# ---- 导出中心 ----
+
+class UpstreamException(BaseModel):
+    """例外覆盖：grp=<CTX>:<组名>，每条例外只针对单个 upstream 组。"""
+
+    grp: str
+    ips: str
+
+
+class ExportRequest(BaseModel):
+    ssl_enabled: bool = True
+    server_name_domain: str | None = None
+    upstream_default_ips: str | None = None
+    upstream_exceptions: list[UpstreamException] = []
+    context: str = "conf"
