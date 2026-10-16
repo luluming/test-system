@@ -147,3 +147,7 @@ class ExportRequest(BaseModel):
     upstream_default_ips: str | None = None
     upstream_exceptions: list[UpstreamException] = []
     context: str = "conf"
+
+
+class ValidateRequest(BaseModel):
+    content: str

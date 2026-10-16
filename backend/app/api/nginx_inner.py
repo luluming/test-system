@@ -528,3 +528,115 @@ def export_config(
         exceptions=exceptions,
     )
     return {"content": content}
+
+
+import re
+
+from app.api.nginx import forward_router
+from app.models.nginx import ForwardPort
+from app.schemas.nginx_inner import ValidateRequest
+from app.services.nginx_ops import (
+    build_validation_wrapper,
+    nginx_reload,
+    nginx_validate,
+    tcp_probe,
+)
+from app.services.nginx_render import build_config_dict, render_config_text
+
+
+@config_actions_router.post("/{config_id}/validate")
+def validate_config(
+    config_id: int,
+    payload: ValidateRequest,
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(get_current_user),
+) -> dict:
+    return nginx_validate(build_validation_wrapper(payload.content))
+
+
+@config_actions_router.post("/{config_id}/reload")
+def reload_config(
+    config_id: int,
+    _current_user: User = Depends(get_current_user),
+) -> dict:
+    return nginx_reload()
+
+
+@config_actions_router.post("/{config_id}/test")
+def test_config(
+    config_id: int,
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(get_current_user),
+) -> dict:
+    """对配置内所有 server 块的 proxy_pass 直连目标做连通性探测。"""
+    from app.services.nginx_render import build_config_dict
+
+    root = build_config_dict(db, config_id, context="conf")
+    results = []
+    seen = set()
+
+    def walk(n: dict) -> None:
+        for o in n.get("options", []):
+            if o.get("directive") == "proxy_pass":
+                raw = o.get("raw") or ""
+                m = re.match(r"^\s*([^/:\s]+):(\d+)", raw)
+                if not m:
+                    continue
+                host, port = m.group(1), int(m.group(2))
+                key = f"{host}:{port}"
+                if key in seen:
+                    continue
+                seen.add(key)
+                results.append({"host": host, "port": port, **tcp_probe(host, port)})
+        for c in n.get("children", []):
+            walk(c)
+
+    walk(root)
+    return {"results": results}
+
+
+@forward_router.post("/{forward_id}/test")
+def test_forward_port(
+    forward_id: int,
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(get_current_user),
+) -> dict:
+    fp = db.execute(
+        select(ForwardPort).where(ForwardPort.id == forward_id)
+    ).scalar_one_or_none()
+    if fp is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="转发端口不存在")
+    host, port = None, None
+    if fp.upstream_id is not None:
+        srv = db.execute(
+            select(UpstreamServer)
+            .where(UpstreamServer.upstream_id == fp.upstream_id, UpstreamServer.enable.is_(True))
+            .order_by(UpstreamServer.id)
+        ).scalars().first()
+        if srv is not None:
+            host, port = srv.addr, srv.port or 80
+    else:
+        m = re.match(r"^\s*([^:/\s]+):(\d+)\s*$", fp.upstream_target or "")
+        if m:
+            host, port = m.group(1), int(m.group(2))
+    if not host or not port:
+        return {"ok": False, "error": "无法解析探测目标"}
+    return tcp_probe(host, port)
+
+
+@upstream_router.post("/{upstream_id}/validate")
+def validate_upstream(
+    upstream_id: int,
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(get_current_user),
+) -> dict:
+    up = _get_upstream(db, upstream_id)
+    servers = list(
+        db.execute(
+            select(UpstreamServer)
+            .where(UpstreamServer.upstream_id == upstream_id)
+            .order_by(UpstreamServer.id)
+        ).scalars().all()
+    )
+    fragment = _upstream_preview_text(up, servers)
+    return nginx_validate(build_validation_wrapper(fragment))

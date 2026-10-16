@@ -81,6 +81,8 @@ class DomainMappingOut(BaseModel):
 class ForwardPortCreate(BaseModel):
     """创建转发端口请求。"""
 
+    industry_id: int
+    upstream_id: int | None = None
     listen_port: int
     upstream_target: str
     service_name: str | None = None
