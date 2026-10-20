@@ -285,6 +285,7 @@ function buildVisualNode(n, depth, root, upSet) {
 /* buildTree(tree, sel)：返回以 sel（缺省为虚拟根）为树根的「可视树」数组（通用虚拟根使 http/stream/events 并列） */
 export function buildTree(tree, sel) {
   const T = Array.isArray(tree) ? tree[0] : tree;
+  if (!T) return [];
   const root = sel || T;
   const upSet = new Set(allUpstreamNames(T));
   return [buildVisualNode(root, 0, T, upSet)];

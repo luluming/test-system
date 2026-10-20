@@ -48,7 +48,7 @@ export default function IndustryDetail() {
   const [industry, setIndustry] = useState(null);
   const [configs, setConfigs] = useState([]);
   const [configId, setConfigId] = useState(null);
-  const [view, setView] = useState("config");
+  const [view, setView] = useState("block");
   const [ctx, setCtxState] = useState("conf");
   const [tree, setTreeState] = useState([]);
   const [stats, setStats] = useState(null);

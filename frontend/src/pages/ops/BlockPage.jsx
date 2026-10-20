@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useOps } from "./OpsContext";
 import * as lib from "../../lib/nginx-inner";
+const { treeNodeCount } = lib;
 import * as inner from "../../api/nginxInner";
 import { BlockTree } from "./ConfigPage";
 import ExportModal from "./ExportModal";
@@ -98,33 +99,75 @@ export function AddBlockModal({ open, onClose, onAdded }) {
   );
 }
 
-/* ---------- 块管理页（全屏 BlockTree + 预览 + 导出） ---------- */
+/* ---------- 块管理页（方案C 主从：左list监听点 + 右detail 块树/预览 tab） ---------- */
 export default function BlockPage() {
   const ops = useOps();
-  const { tree, toast } = ops;
+  const { tree, toast, selected, setSelected } = ops;
+  const [tab, setTab] = useState("tree");
   const [showAdd, setShowAdd] = useState(false);
   const [showExport, setShowExport] = useState(false);
 
+  const root = tree[0];
+  const servers = (root?.children || []).filter((n) => n.scope === "server");
+
   const previewHtml = useMemo(() => {
-    const root = tree[0];
     if (!root) return "";
     return lib.renderPreviewHtml(root);
   }, [tree]);
 
+  const pickServer = (s) => {
+    setSelected(s);
+    setTab("tree");
+  };
+
   return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
-      <div className="toolbar">
-        <span className="chain-label">块树编辑</span>
-        <button className="btn primary" onClick={() => setShowAdd(true)}>＋ 顶级块</button>
-        <button className="btn" onClick={() => { ops.loadTree(ops.configId, ops.ctx); toast("已同步最新配置", "ok"); }}>同步</button>
-        <span className="spacer" />
-        <button className="btn" onClick={() => setShowExport(true)}>导出配置</button>
+    <div className="split" style={{ flex: 1, minHeight: 0 }}>
+      {/* 左：监听点列表（方案C 对齐 mock listenList） */}
+      <div className="list-panel">
+        <div className="lp-head">监听点 · server ({servers.length})</div>
+        <div style={{ flex: 1, overflowY: "auto" }}>
+          {servers.map((b) => {
+            const port = lib.listenPlain(b);
+            const sn = lib.snameOf(b);
+            const locs = b.children.filter((c) => c.scope === "location").length;
+            return (
+              <div key={b._id} className={`lp-row${selected && selected._id === b._id ? " on" : ""}`} onClick={() => pickServer(b)}>
+                <span className="mono" style={{ color: "var(--brand)", fontWeight: 600 }}>{port}</span>
+                <span className="mono" style={{ color: "var(--text-pri)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sn}</span>
+                <span style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center" }}>
+                  <span className="cnt" style={{ fontSize: 10, color: "var(--text-ter)", fontFamily: "var(--mono)" }}>{locs}</span>
+                  <span className="tag2 pub">公网</span>
+                </span>
+              </div>
+            );
+          })}
+          {servers.length === 0 && <div className="empty-hint">该上下文无 server 块</div>}
+        </div>
       </div>
-      <div className="blockwrap">
-        <BlockTree fullEdit />
-        <div className="preview-col">
-          <div className="pv-head">预览 · renderPreview</div>
-          <pre className="pv" dangerouslySetInnerHTML={{ __html: previewHtml }} />
+
+      {/* 右：detail（操作按钮 + 块树/预览 tab） */}
+      <div className="detail-panel">
+        <div className="toolbar">
+          <span className="file mono" style={{ fontSize: 12 }}>{lib.getFileName()}</span>
+          <span className="spacer" />
+          <button className="btn" onClick={() => toast("行级操作：测连/启停/reload", "ok")}>行级操作</button>
+          <button className="btn" onClick={() => setShowAdd(true)}>＋ 块</button>
+          <button className="btn" onClick={() => setShowExport(true)}>导出配置</button>
+          <button className="btn" onClick={() => { ops.loadTree(ops.configId, ops.ctx); toast("已同步最新配置", "ok"); }}>同步</button>
+          <button className="btn primary" onClick={() => toast("已保存，配置已热载", "ok")}>保存</button>
+        </div>
+        <div className="dtabs">
+          <div className={`dtab${tab === "tree" ? " on" : ""}`} onClick={() => setTab("tree")}>块树（嵌套）<span className="n" style={{ fontSize: 9, color: "var(--text-ter)", marginLeft: 6, fontFamily: "var(--mono)" }}>{tree.length ? treeNodeCount(tree) : ""}</span></div>
+          <div className={`dtab${tab === "preview" ? " on" : ""}`} onClick={() => setTab("preview")}>配置预览</div>
+        </div>
+        <div className="ops-scroll" style={{ padding: "12px 16px" }}>
+          {tab === "tree" ? (
+            <BlockTree fullEdit />
+          ) : (
+            <div className="preview-wrap">
+              <pre className="pv" style={{ flex: 1, overflow: "auto", margin: 0, padding: "14px 16px", fontFamily: "var(--mono)", fontSize: 12, lineHeight: 1.55, color: "var(--text-pri)" }} dangerouslySetInnerHTML={{ __html: previewHtml }} />
+            </div>
+          )}
         </div>
       </div>
       <AddBlockModal open={showAdd} onClose={() => setShowAdd(false)} onAdded={() => ops.loadTree(ops.configId, ops.ctx)} />

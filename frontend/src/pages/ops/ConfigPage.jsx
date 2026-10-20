@@ -131,6 +131,10 @@ export function BlockTree({ onNodeClick, fullEdit }) {
   const root = tree[0];
   const vis = useMemo(() => lib.buildTree(tree, null), [tree]);
 
+  if (!vis[0]) {
+    return <div className="empty-hint" style={{ padding: "48px 20px", color: "var(--text-ter)", fontSize: 12.5 }}>暂无块树</div>;
+  }
+
   return (
     <div className="tree-col" style={{ maxHeight: "100%", overflowY: "auto" }}>
       <TreeNode
