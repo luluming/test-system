@@ -739,3 +739,45 @@ def get_topology(
             up_name = _re.sub(r"^upstream\s+", "", top.get("header", "")).strip().rstrip("{").strip()
             upstreams.append({"id": top.get("id"), "name": up_name, "backends": backends})
     return {"domains": domains, "listeners": listeners, "upstreams": upstreams, "links": links}
+
+
+directives_router = APIRouter(prefix="/api/directives", tags=["指令字典"])
+
+_DIRECTIVES = [
+    {"name": "listen", "description": "监听地址:端口，可带 ssl/http2 修饰词", "context": "server"},
+    {"name": "server_name", "description": "虚拟主机域名（可多个，空格分隔）", "context": "server"},
+    {"name": "proxy_pass", "description": "反向代理目标：upstream 组名 / IP:端口 / URL", "context": "location"},
+    {"name": "server", "description": "upstream 组内后端节点（IP:端口 参数）", "context": "upstream"},
+    {"name": "upstream", "description": "负载均衡组声明", "context": "http"},
+    {"name": "location", "description": "URI 匹配块", "context": "server"},
+    {"name": "map", "description": "变量映射块", "context": "http"},
+    {"name": "geo", "description": "IP 网段映射变量", "context": "http"},
+    {"name": "if", "description": "条件判断块（建议少用）", "context": "location"},
+    {"name": "log_format", "description": "自定义访问日志格式", "context": "http"},
+    {"name": "split_clients", "description": "按比例分发变量（A/B 测试）", "context": "http"},
+    {"name": "limit_except", "description": "限制允许的 HTTP 方法", "context": "location"},
+    {"name": "include", "description": "引入其它配置文件", "context": "http"},
+    {"name": "keepalive", "description": "upstream 空闲连接数", "context": "upstream"},
+    {"name": "least_conn", "description": "最少连接负载均衡策略", "context": "upstream"},
+    {"name": "ip_hash", "description": "按客户端 IP 哈希均衡策略", "context": "upstream"},
+    {"name": "ssl_certificate", "description": "SSL 证书路径", "context": "server"},
+    {"name": "ssl_certificate_key", "description": "SSL 私钥路径", "context": "server"},
+    {"name": "ssl_protocols", "description": "允许的 TLS 版本", "context": "server"},
+    {"name": "client_max_body_size", "description": "客户端请求体上限", "context": "server"},
+    {"name": "root", "description": "静态文件根目录", "context": "server"},
+    {"name": "index", "description": "默认索引文件", "context": "server"},
+    {"name": "return", "description": "直接返回状态码/URL", "context": "server"},
+    {"name": "rewrite", "description": "URL 重写规则", "context": "server"},
+    {"name": "try_files", "description": "按序尝试文件并回退", "context": "location"},
+    {"name": "add_header", "description": "追加响应头", "context": "server"},
+    {"name": "access_log", "description": "访问日志路径", "context": "server"},
+    {"name": "error_log", "description": "错误日志路径", "context": "main"},
+    {"name": "worker_connections", "description": "单 worker 最大连接数", "context": "events"},
+]
+
+
+@directives_router.get("")
+def list_directives(
+    _current_user: User = Depends(get_current_user),
+) -> list[dict]:
+    return _DIRECTIVES

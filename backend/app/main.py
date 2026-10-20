@@ -19,6 +19,7 @@ from app.api.nginx_inner import (
     blocks_router,
     config_actions_router,
     config_tree_router,
+    directives_router,
     options_router,
     topology_router,
     upstream_router,
@@ -70,3 +71,4 @@ app.include_router(options_router)
 app.include_router(config_tree_router)
 app.include_router(config_actions_router)
 app.include_router(topology_router)
+app.include_router(directives_router)
