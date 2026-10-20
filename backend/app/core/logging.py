@@ -12,7 +12,7 @@ from app.config import settings
 # 敏感参数模式：password=xxx / password: xxx / password:"xxx"
 _SENSITIVE_PATTERNS = [
     re.compile(r"(password\s*[=:]\s*)[\w!@#$%^&*.-]+", re.IGNORECASE),
-    re.compile(r'password[\'"]?\s*[:=]\s*[\'"][^\'"]*[\'"]', re.IGNORECASE),
+    re.compile(r"(password['\"]?\s*[:=]\s*['\"])[^'\"]*['\"]", re.IGNORECASE),
 ]
 
 

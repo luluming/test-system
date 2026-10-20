@@ -57,6 +57,14 @@ export function testForwardPort(forwardId) {
   return client.post(`/forward-ports/${forwardId}/test`);
 }
 
+// ---- 编辑租约心跳 / 释放 ----
+export function editHeartbeat(configId, holder) {
+  return client.post(`/nginx-configs/${configId}/edit-heartbeat`, { holder });
+}
+export function editRelease(configId, holder) {
+  return client.post(`/nginx-configs/${configId}/edit-release`, { holder });
+}
+
 // ---- Upstream 池 ----
 export function listUpstreams(industryId) {
   return client.get("/upstreams", { params: { industry_id: industryId } });
