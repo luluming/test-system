@@ -15,8 +15,8 @@ export function deleteNginxConfig(id) {
 }
 
 // ---- 域名映射 ----
-export function listDomainMappings() {
-  return client.get("/domain-mappings");
+export function listDomainMappings(industryId) {
+  return client.get("/domain-mappings", { params: { industry_id: industryId } });
 }
 export function createDomainMapping(data) {
   return client.post("/domain-mappings", data);
@@ -29,8 +29,8 @@ export function deleteDomainMapping(id) {
 }
 
 // ---- 转发端口 ----
-export function listForwardPorts() {
-  return client.get("/forward-ports");
+export function listForwardPorts(industryId) {
+  return client.get("/forward-ports", { params: { industry_id: industryId } });
 }
 export function createForwardPort(data) {
   return client.post("/forward-ports", data);
@@ -43,8 +43,8 @@ export function deleteForwardPort(id) {
 }
 
 // ---- 业务端口（含公网开放开关）----
-export function listBizPorts() {
-  return client.get("/biz-ports");
+export function listBizPorts(industryId) {
+  return client.get("/biz-ports", { params: { industry_id: industryId } });
 }
 
 // ---- 行业作用域 ----（追加，其余原方法保留）
