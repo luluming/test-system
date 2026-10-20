@@ -242,29 +242,191 @@ def edit_release(
 
 nginx_router = config_router
 
-mapping_router = _make_router(
-    model=DomainMapping,
-    create_schema=DomainMappingCreate,
-    update_schema=DomainMappingUpdate,
-    out_schema=DomainMappingOut,
-    prefix="/api/domain-mappings",
-    tag="域名映射",
-)
 
-forward_router = _make_router(
-    model=ForwardPort,
-    create_schema=ForwardPortCreate,
-    update_schema=ForwardPortUpdate,
-    out_schema=ForwardPortOut,
-    prefix="/api/forward-ports",
-    tag="转发端口",
-)
+def _list_scoped(db: Session, model: type[Base], industry_id: int) -> list[Any]:
+    return list(
+        db.execute(
+            select(model)
+            .where(model.industry_id == industry_id)
+            .order_by(model.id)
+        ).scalars().all()
+    )
 
-biz_router = _make_router(
-    model=BizPort,
-    create_schema=BizPortCreate,
-    update_schema=BizPortUpdate,
-    out_schema=BizPortOut,
-    prefix="/api/biz-ports",
-    tag="业务端口",
-)
+
+def _create_scoped(
+    db: Session, model: type[Base], payload: BaseModel, detail: str
+) -> Any:
+    row = model(**payload.model_dump())
+    db.add(row)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
+    db.refresh(row)
+    return row
+
+
+mapping_router = APIRouter(prefix="/api/domain-mappings", tags=["域名映射"])
+
+
+@mapping_router.get("", response_model=list[DomainMappingOut])
+def list_mappings(
+    industry_id: int,
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(get_current_user),
+) -> list[Any]:
+    return _list_scoped(db, DomainMapping, industry_id)
+
+
+@mapping_router.post("", response_model=DomainMappingOut, status_code=status.HTTP_201_CREATED)
+def create_mapping(
+    payload: DomainMappingCreate,
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(get_current_user),
+) -> Any:
+    return _create_scoped(db, DomainMapping, payload, "该行业下域名已存在")
+
+
+@mapping_router.get("/{item_id}", response_model=DomainMappingOut)
+def get_mapping(
+    item_id: int,
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(get_current_user),
+) -> Any:
+    return _get_by_id(db, DomainMapping, item_id)
+
+
+@mapping_router.put("/{item_id}", response_model=DomainMappingOut)
+def update_mapping(
+    item_id: int,
+    payload: DomainMappingUpdate,
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(get_current_user),
+) -> Any:
+    row = _get_by_id(db, DomainMapping, item_id)
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(row, field, value)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@mapping_router.delete("/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_mapping(
+    item_id: int,
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(get_current_user),
+) -> None:
+    db.delete(_get_by_id(db, DomainMapping, item_id))
+    db.commit()
+
+
+forward_router = APIRouter(prefix="/api/forward-ports", tags=["转发端口"])
+
+
+@forward_router.get("", response_model=list[ForwardPortOut])
+def list_forward_ports(
+    industry_id: int,
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(get_current_user),
+) -> list[Any]:
+    return _list_scoped(db, ForwardPort, industry_id)
+
+
+@forward_router.post("", response_model=ForwardPortOut, status_code=status.HTTP_201_CREATED)
+def create_forward_port(
+    payload: ForwardPortCreate,
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(get_current_user),
+) -> Any:
+    return _create_scoped(db, ForwardPort, payload, "转发端口创建失败")
+
+
+@forward_router.get("/{item_id}", response_model=ForwardPortOut)
+def get_forward_port(
+    item_id: int,
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(get_current_user),
+) -> Any:
+    return _get_by_id(db, ForwardPort, item_id)
+
+
+@forward_router.put("/{item_id}", response_model=ForwardPortOut)
+def update_forward_port(
+    item_id: int,
+    payload: ForwardPortUpdate,
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(get_current_user),
+) -> Any:
+    row = _get_by_id(db, ForwardPort, item_id)
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(row, field, value)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@forward_router.delete("/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_forward_port(
+    item_id: int,
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(get_current_user),
+) -> None:
+    db.delete(_get_by_id(db, ForwardPort, item_id))
+    db.commit()
+
+
+biz_router = APIRouter(prefix="/api/biz-ports", tags=["业务端口"])
+
+
+@biz_router.get("", response_model=list[BizPortOut])
+def list_biz_ports(
+    industry_id: int,
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(get_current_user),
+) -> list[Any]:
+    return _list_scoped(db, BizPort, industry_id)
+
+
+@biz_router.post("", response_model=BizPortOut, status_code=status.HTTP_201_CREATED)
+def create_biz_port(
+    payload: BizPortCreate,
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(get_current_user),
+) -> Any:
+    return _create_scoped(db, BizPort, payload, "业务端口创建失败")
+
+
+@biz_router.get("/{item_id}", response_model=BizPortOut)
+def get_biz_port(
+    item_id: int,
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(get_current_user),
+) -> Any:
+    return _get_by_id(db, BizPort, item_id)
+
+
+@biz_router.put("/{item_id}", response_model=BizPortOut)
+def update_biz_port(
+    item_id: int,
+    payload: BizPortUpdate,
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(get_current_user),
+) -> Any:
+    row = _get_by_id(db, BizPort, item_id)
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(row, field, value)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@biz_router.delete("/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_biz_port(
+    item_id: int,
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(get_current_user),
+) -> None:
+    db.delete(_get_by_id(db, BizPort, item_id))
+    db.commit()

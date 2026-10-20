@@ -47,6 +47,7 @@ class NginxConfigUpdate(BaseModel):
 class DomainMappingCreate(BaseModel):
     """创建域名映射请求。"""
 
+    industry_id: int
     domain: str
     forward_tos: str
     protocol: str = "http"
@@ -104,6 +105,8 @@ class ForwardPortOut(BaseModel):
     """转发端口响应。"""
 
     id: int
+    industry_id: int
+    upstream_id: int | None
     listen_port: int
     upstream_target: str
     service_name: str | None
@@ -117,6 +120,7 @@ class ForwardPortOut(BaseModel):
 class BizPortCreate(BaseModel):
     """创建业务端口请求。"""
 
+    industry_id: int
     service_name: str
     port: int
     protocol: str = "tcp"

@@ -1,9 +1,19 @@
-"""行业克隆事务 service：把源行业整套 NginxConfig 深拷贝到新行业。"""
+"""行业克隆事务 service：把源行业整套配置（配置 + 块树 + upstream + 映射/转发/业务端口）深拷贝到新行业。"""
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.industry import Industry
-from app.models.nginx import NginxConfig
+from app.models.nginx import (
+    BizPort,
+    ConfigBlock,
+    ConfigOption,
+    DomainMapping,
+    ForwardPort,
+    NginxConfig,
+    Upstream,
+    UpstreamServer,
+)
 from app.schemas.industry import CloneIndustryRequest
 
 
@@ -17,7 +27,7 @@ def derive_code(name: str) -> str:
 def clone_industry(
     db: Session, *, payload: CloneIndustryRequest
 ) -> Industry:
-    """事务内新建行业并深拷源行业全部 NginxConfig；任一步失败整体回滚。"""
+    """事务内新建行业并深拷源行业全部数据；任一步失败整体回滚。"""
     source = db.execute(
         select(Industry).where(Industry.id == payload.source_industry_id)
     ).scalar_one_or_none()
@@ -32,24 +42,147 @@ def clone_industry(
         cloned_from_id=source.id,
     )
     db.add(new_industry)
-    db.flush()  # 生成 new_industry.id，供配置外键引用
+    db.flush()  # 生成 new_industry.id，供外键引用
 
+    # 1. nginx_configs + config_blocks(整棵 parent_id 树) + config_options
     source_configs = list(
         db.execute(
             select(NginxConfig).where(NginxConfig.industry_id == source.id)
         ).scalars().all()
     )
     for cfg in source_configs:
+        new_cfg = NginxConfig(
+            industry_id=new_industry.id,
+            name=cfg.name,
+            domain=cfg.domain,
+            config_text=cfg.config_text,
+            enabled=cfg.enabled,
+            version=1,
+        )
+        db.add(new_cfg)
+        db.flush()
+        _copy_block_tree(db, new_cfg.id, cfg.id)
+
+    # 2. upstreams + upstream_servers（行业级），构建旧→新 id 映射供 forward_ports 重映射
+    up_map: dict[int, int] = {}
+    for up in db.execute(
+        select(Upstream).where(Upstream.industry_id == source.id)
+    ).scalars().all():
+        new_up = Upstream(
+            industry_id=new_industry.id,
+            name=up.name,
+            strategy=up.strategy,
+            keepalive=up.keepalive,
+        )
+        db.add(new_up)
+        db.flush()
+        up_map[up.id] = new_up.id
+        for s in db.execute(
+            select(UpstreamServer).where(UpstreamServer.upstream_id == up.id)
+        ).scalars().all():
+            db.add(
+                UpstreamServer(
+                    upstream_id=new_up.id,
+                    addr=s.addr,
+                    port=s.port,
+                    weight=s.weight,
+                    health_status=s.health_status,
+                    enable=s.enable,
+                )
+            )
+
+    # 3. domain_mappings / forward_ports / biz_ports（行业级）
+    for dm in db.execute(
+        select(DomainMapping).where(DomainMapping.industry_id == source.id)
+    ).scalars().all():
         db.add(
-            NginxConfig(
+            DomainMapping(
                 industry_id=new_industry.id,
-                name=cfg.name,
-                domain=cfg.domain,
-                config_text=cfg.config_text,
-                enabled=cfg.enabled,
-                version=1,
+                domain=dm.domain,
+                forward_tos=dm.forward_tos,
+                protocol=dm.protocol,
+                description=dm.description,
+                enabled=dm.enabled,
             )
         )
+    for fp in db.execute(
+        select(ForwardPort).where(ForwardPort.industry_id == source.id)
+    ).scalars().all():
+        db.add(
+            ForwardPort(
+                industry_id=new_industry.id,
+                listen_port=fp.listen_port,
+                upstream_target=fp.upstream_target,
+                service_name=fp.service_name,
+                protocol=fp.protocol,
+                enabled=fp.enabled,
+                upstream_id=up_map.get(fp.upstream_id),
+            )
+        )
+    for bp in db.execute(
+        select(BizPort).where(BizPort.industry_id == source.id)
+    ).scalars().all():
+        db.add(
+            BizPort(
+                industry_id=new_industry.id,
+                service_name=bp.service_name,
+                port=bp.port,
+                protocol=bp.protocol,
+                public_exposed=bp.public_exposed,
+                note=bp.note,
+            )
+        )
+
     db.commit()
     db.refresh(new_industry)
     return new_industry
+
+
+def _copy_block_tree(db: Session, new_config_id: int, source_config_id: int) -> None:
+    """按 parent_id 递归拷贝块树（保持嵌套），并拷贝每块的 options。"""
+    rows = list(
+        db.execute(
+            select(ConfigBlock)
+            .where(ConfigBlock.nginx_config_id == source_config_id)
+            .order_by(ConfigBlock.sort_order, ConfigBlock.id)
+        ).scalars().all()
+    )
+    child_map: dict[int | None, list[ConfigBlock]] = {}
+    for b in rows:
+        child_map.setdefault(b.parent_id, []).append(b)
+    opt_map: dict[int, list[ConfigOption]] = {}
+    if rows:
+        ids = [b.id for b in rows]
+        for o in db.execute(
+            select(ConfigOption).where(ConfigOption.block_id.in_(ids))
+        ).scalars().all():
+            opt_map.setdefault(o.block_id, []).append(o)
+    old_to_new: dict[int, int] = {}
+
+    def add_children(old_parent_id: int | None, new_parent_id: int | None) -> None:
+        for b in child_map.get(old_parent_id, []):
+            nb = ConfigBlock(
+                nginx_config_id=new_config_id,
+                parent_id=new_parent_id,
+                scope=b.scope,
+                header=b.header,
+                belongs_to_file=b.belongs_to_file,
+                sort_order=b.sort_order,
+            )
+            db.add(nb)
+            db.flush()
+            old_to_new[b.id] = nb.id
+            for o in opt_map.get(b.id, []):
+                db.add(
+                    ConfigOption(
+                        block_id=nb.id,
+                        directive=o.directive,
+                        value=o.value,
+                        row_type=o.row_type,
+                        is_free_text=o.is_free_text,
+                        sort_order=o.sort_order,
+                    )
+                )
+            add_children(b.id, nb.id)
+
+    add_children(None, None)
