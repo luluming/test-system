@@ -640,3 +640,102 @@ def validate_upstream(
     )
     fragment = _upstream_preview_text(up, servers)
     return nginx_validate(build_validation_wrapper(fragment))
+
+
+import re as _re
+
+from app.services.nginx_render import build_config_dict
+
+topology_router = APIRouter(prefix="/api/topology", tags=["拓扑"])
+
+_LISTEN_PLAIN_RE = _re.compile(r"^unix:")
+_SERVER_ROW_RE = _re.compile(r"^server\s+(\S+)(.*)$")
+
+
+def _listen_plain(value: str) -> str:
+    """剥离 ssl/http2 等修饰词（复刻 mock listenPlain L1098-1103）。"""
+    t = (value or "").strip().rstrip(";").strip()
+    if _LISTEN_PLAIN_RE.match(t):
+        return t
+    if " " in t:
+        return t.split()[0]
+    return t
+
+
+def _proxy_targets(node: dict) -> list[str]:
+    """聚合 location 内 proxy_pass 引用的 upstream 组名（复刻 mock proxyTargets L1073-1077 + proxyHostOf L1079-1086）。"""
+    out, seen = [], set()
+    for c in node.get("children", []):
+        if c.get("scope") != "location":
+            continue
+        for o in c.get("options", []):
+            if o.get("directive") != "proxy_pass":
+                continue
+            m = _re.search(r"//([^/:$]+)", o.get("value") or "")
+            if not m:
+                continue
+            host = m.group(1)
+            # IP 直连 / 域名直连（含 . 或 /）不构成 upstream 组名引用
+            if _re.match(r"^\d{1,3}(\.\d{1,3}){3}$", host) or _re.search(r"[./]", host):
+                continue
+            if host not in seen:
+                seen.add(host)
+                out.append(host)
+    return out
+
+
+@topology_router.get("")
+def get_topology(
+    config_id: int,
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(get_current_user),
+) -> dict:
+    root = build_config_dict(db, config_id, context="conf")
+    listeners = []
+    upstreams = []
+    links = []
+    domains = []
+    for top in root.get("children", []):
+        if top.get("scope") == "server":
+            listen_value = next(
+                (o.get("value", "") for o in top.get("options", []) if o.get("directive") == "listen"),
+                "",
+            )
+            sname = next(
+                (o.get("value", "").rstrip(";") for o in top.get("options", []) if o.get("directive") == "server_name"),
+                "-",
+            )
+            listen_plain = _listen_plain(listen_value)
+            targets = _proxy_targets(top)
+            listeners.append(
+                {
+                    "id": top.get("id"),
+                    "listen": listen_value,
+                    "listen_plain": listen_plain,
+                    "server_name": sname,
+                    "location_count": len([c for c in top.get("children", []) if c.get("scope") == "location"]),
+                    "proxy_targets": targets,
+                }
+            )
+            if sname not in ("-",) and sname not in domains:
+                domains.append(sname)
+            for t in targets:
+                links.append({"listen": listen_plain, "upstream": t})
+        elif top.get("scope") == "upstream":
+            backends = []
+            for o in top.get("options", []):
+                if o.get("directive") != "server":
+                    continue
+                raw = o.get("raw") or ""
+                m = _SERVER_ROW_RE.match(raw)
+                addr = port = None
+                if m:
+                    node_addr = m.group(1)
+                    if ":" in node_addr:
+                        addr, _, port = node_addr.rpartition(":")
+                    else:
+                        addr = node_addr
+                backends.append({"addr": addr, "port": port, "raw": raw})
+            up_name = _re.sub(r"^upstream\s+", "", top.get("header", "")).strip().rstrip("{").strip()
+            upstreams.append({"id": top.get("id"), "name": up_name, "backends": backends})
+    return {"domains": domains, "listeners": listeners, "upstreams": upstreams, "links": links}
