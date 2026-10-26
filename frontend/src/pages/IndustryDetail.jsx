@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { getIndustry } from "../api/industry";
-import { listConfigsByIndustry } from "../api/nginx";
+import { listConfigsByIndustry, createNginxConfig } from "../api/nginx";
 import { getConfigTree, deleteBlock, mirrorBlock, listMirrorPairs, createMirrorPair, deleteMirrorPair, reorderBlocks } from "../api/nginxInner";
 import { OpsContext } from "./ops/OpsContext";
 import "./ops/ops.css";
@@ -72,6 +72,8 @@ export default function IndustryDetail() {
   const [toasts, setToasts] = useState([]);
   const [mirrorPairs, setMirrorPairs] = useState([]);
   const [showAdd, setShowAdd] = useState(false);
+  const [showCreateCfg, setShowCreateCfg] = useState(false);
+  const [cfgName, setCfgName] = useState("");
   const toastSeq = useRef(0);
 
   const toast = useCallback((msg, type) => {
@@ -217,6 +219,28 @@ export default function IndustryDetail() {
       .catch((e) => toast("镜像落库失败：" + (e.response?.data?.detail || "未知错误"), "err"));
   }, [ctx, tree, toast, loadTree, configId]);
 
+  // 空行业引导：新建第一个配置文件（.conf），创建后自动选中进入块管理
+  const createCfgOk = () => {
+    const nm = cfgName.trim();
+    if (!nm) { toast("请输入配置文件名", "warn"); return; }
+    createNginxConfig({
+      industry_id: id,
+      name: nm,
+      config_text: "http {\n    include mime.types;\n    default_type application/octet-stream;\n    sendfile on;\n}\n",
+      enabled: true,
+    })
+      .then((r) => {
+        setShowCreateCfg(false);
+        setCfgName("");
+        toast("已创建配置文件 " + r.data.name, "ok");
+        return listConfigsByIndustry(id).then((res) => {
+          setConfigs(res.data);
+          setConfigId(r.data.id);
+        });
+      })
+      .catch((e) => toast("创建失败：" + (e.response?.data?.detail || "未知错误"), "err"));
+  };
+
   const value = {
     industryId: id, industry, configs, configId, setConfigId,
     view, setView, ctx, setCtx: switchCtx, tree, setTree: setTreeState,
@@ -311,12 +335,24 @@ export default function IndustryDetail() {
             </div>
           </div>
 
-          {/* 主区（content） */}
+          {/* 主区（content）：空行业显示引导面板，避免空白页 */}
           <div className="ops-main">
-            <div className="view-fade" style={{ flex: 1, display: "flex", minHeight: 0 }}>
-              {view === "block" && <BlockPage />}
-            </div>
-            <div className="foot-glow" />
+            {configs.length === 0 ? (
+              <div className="ops-empty">
+                <div className="ops-empty-card">
+                  <h3>该行业暂无配置文件</h3>
+                  <p>该行业还没有任何 nginx 配置。可以新建一个 <span className="mono">.conf</span> 配置文件开始维护，创建后即可通过「＋ 块」添加 server / upstream 等配置。</p>
+                  <button className="btn primary" onClick={() => setShowCreateCfg(true)}>新建配置文件</button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="view-fade" style={{ flex: 1, display: "flex", minHeight: 0 }}>
+                  {view === "block" && <BlockPage />}
+                </div>
+                <div className="foot-glow" />
+              </>
+            )}
           </div>
         </div>
 
@@ -346,6 +382,24 @@ export default function IndustryDetail() {
 
         {/* 新增顶级块（监听点 / 共性块共用，弹窗内选择 scope） */}
         <AddBlockModal open={showAdd} onClose={() => setShowAdd(false)} onAdded={() => loadTree(configId, ctx)} />
+
+        {/* 空行业引导：新建第一个配置文件 */}
+        {showCreateCfg && (
+          <div className="ops-modal-mask" onClick={() => setShowCreateCfg(false)}>
+            <div className="ops-modal" onClick={(e) => e.stopPropagation()}>
+              <h3>新建配置文件</h3>
+              <div className="fgroup">
+                <label>配置文件名（.conf）</label>
+                <input value={cfgName} onChange={(e) => setCfgName(e.target.value)} placeholder={(industry?.code || "industry") + "_nginx.conf"} autoFocus />
+              </div>
+              <div className="modal-tip">创建后可在块管理中通过「＋ 块」添加 server / upstream / map 等配置，也可用「推送配置」导入已有 conf 文件。</div>
+              <div className="modal-actions">
+                <button className="btn" onClick={() => setShowCreateCfg(false)}>取消</button>
+                <button className="btn primary" onClick={createCfgOk}>创建</button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </OpsContext.Provider>
   );
