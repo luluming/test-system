@@ -3,13 +3,21 @@
 复用 app/api/nginx.py 的 _make_router 风格与 get_db/get_current_user 依赖。
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+import hashlib
+import json
+import logging
+import secrets
+from datetime import datetime, timedelta
+
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, UploadFile, status
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+logger = logging.getLogger("nginx_inner")
+
 from app.api.deps import get_db
-from app.core.security import get_current_user
+from app.core.security import decode_token, get_current_user
 from app.models.nginx import Upstream, UpstreamServer
 from app.models.user import User
 from app.schemas.nginx_inner import (
@@ -215,7 +223,7 @@ def _upstream_preview_text(up: Upstream, servers: list[UpstreamServer]) -> str:
     return "\n".join(lines)
 
 
-from app.models.nginx import ConfigBlock, ConfigOption, NginxConfigVersion, NginxMirrorPair
+from app.models.nginx import ConfigBlock, ConfigOption, NginxConfigVersion, NginxMirrorPair, NginxPushTask, NginxPushToken
 from app.schemas.nginx import MirrorPairCreate, MirrorPairOut
 from app.schemas.nginx_inner import (
     BlockReorderRequest,
@@ -228,11 +236,29 @@ from app.schemas.nginx_inner import (
     NginxVersionCreate,
     NginxVersionOut,
     OptionReorderRequest,
+    PushApplyRequest,
 )
+from app.services.nginx_push import compute_diff, parse_nginx, perform_apply
+from app.services.nginx_snapshot import context_of_config, snapshot_config
 
 blocks_router = APIRouter(prefix="/api/config-blocks", tags=["配置块"])
 options_router = APIRouter(prefix="/api/config-options", tags=["配置选项"])
 config_tree_router = APIRouter(prefix="/api/nginx-configs", tags=["nginx 配置树"])
+
+
+def _auto_archive(db: Session, config_id: int) -> None:
+    """落库成功后自动留档（渲染文本快照，5s 内合并）。失败不阻断业务请求。"""
+    try:
+        snapshot_config(db, config_id, context=context_of_config(db, config_id))
+    except Exception:  # noqa: BLE001
+        logger.warning("配置自动留档失败 config_id=%s", config_id, exc_info=True)
+
+
+def _config_id_of_option(db: Session, option_id: int) -> int:
+    opt = db.execute(select(ConfigOption).where(ConfigOption.id == option_id)).scalar_one_or_none()
+    if opt is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="配置选项不存在")
+    return _get_block(db, opt.block_id).nginx_config_id
 
 
 def _get_block(db: Session, block_id: int) -> ConfigBlock:
@@ -299,6 +325,7 @@ def create_block(
     db.add(row)
     db.commit()
     db.refresh(row)
+    _auto_archive(db, row.nginx_config_id)
     return row
 
 
@@ -355,6 +382,8 @@ def reorder_blocks(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"重排保存失败：{exc}",
         )
+    if payload.ids:
+        _auto_archive(db, by_id[payload.ids[0]].nginx_config_id)
     return {"message": "重排成功"}
 
 
@@ -371,6 +400,7 @@ def update_block(
             setattr(row, field, value)
     db.commit()
     db.refresh(row)
+    _auto_archive(db, row.nginx_config_id)
     return row
 
 
@@ -380,10 +410,12 @@ def delete_block(
     db: Session = Depends(get_db),
     _current_user: User = Depends(get_current_user),
 ) -> None:
+    cfg_id = _get_block(db, block_id).nginx_config_id
     ids = _collect_subtree_ids(db, block_id)
     db.execute(ConfigOption.__table__.delete().where(ConfigOption.block_id.in_(ids)))
     db.execute(ConfigBlock.__table__.delete().where(ConfigBlock.id.in_(ids)))
     db.commit()
+    _auto_archive(db, cfg_id)
 
 
 @blocks_router.post("/{block_id}/mirror/{dst_block_id}", response_model=ConfigBlockOut)
@@ -483,6 +515,7 @@ def mirror_block(
     copy_children(src.id, ndst.id)
     db.commit()
     db.refresh(ndst)
+    _auto_archive(db, src.nginx_config_id)
     return ndst
 
 
@@ -590,6 +623,249 @@ def create_version(
     return row
 
 
+# ---- 本地配置推送（两阶段：预览 → 确认提交）----
+
+def _task_summary(t: NginxPushTask) -> dict:
+    try:
+        diff = json.loads(t.diff_json or "[]")
+    except Exception:  # noqa: BLE001
+        diff = []
+    return {
+        "id": t.id,
+        "nginx_config_id": t.nginx_config_id,
+        "status": t.status,
+        "raw_len": len(t.raw_text or ""),
+        "diff": diff,
+        "created_by": t.created_by,
+        "created_at": t.created_at.isoformat() if t.created_at else None,
+        "applied_at": t.applied_at.isoformat() if t.applied_at else None,
+        "error_detail": t.error_detail,
+    }
+
+
+def _get_push_task(db: Session, config_id: int, task_id: int) -> NginxPushTask:
+    row = db.execute(
+        select(NginxPushTask).where(
+            NginxPushTask.id == task_id,
+            NginxPushTask.nginx_config_id == config_id,
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="推送任务不存在")
+    return row
+
+
+def _resolve_push_actor(db: Session, config_id: int, purpose: str, authorization: str | None) -> str:
+    """推送接口认证：优先 JWT 用户名；否则校验一次性 token（匹配 config+purpose、未用、未过期），
+    使用后立即标记消耗。均失败抛 401。"""
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="缺少认证信息")
+    raw = authorization.split(" ", 1)[1].strip()
+    try:
+        payload = decode_token(raw)
+        return f"user:{payload.get('sub', '')}"
+    except Exception:  # noqa: BLE001 非 JWT → 尝试一次性 token
+        pass
+    row = db.execute(
+        select(NginxPushToken).where(
+            NginxPushToken.nginx_config_id == config_id,
+            NginxPushToken.purpose == purpose,
+            NginxPushToken.token_hash == hashlib.sha256(raw.encode()).hexdigest(),
+            NginxPushToken.used_at.is_(None),
+        )
+    ).scalar_one_or_none()
+    if row is None or row.expires_at < datetime.utcnow():
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="一次性 token 无效、已使用或已过期")
+    row.used_at = datetime.utcnow()
+    db.commit()
+    return f"pushtoken:{row.id}"
+
+
+@config_tree_router.post("/{config_id}/push-tokens")
+def create_push_token(
+    config_id: int,
+    purpose: str = Query(..., pattern="^(preview|apply)$"),
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(get_current_user),
+) -> dict:
+    """签发一次性推送 token（需 JWT）；同 config+purpose 的旧未用 token 立即作废。"""
+    now = datetime.utcnow()
+    for old in db.execute(
+        select(NginxPushToken).where(
+            NginxPushToken.nginx_config_id == config_id,
+            NginxPushToken.purpose == purpose,
+            NginxPushToken.used_at.is_(None),
+        )
+    ).scalars().all():
+        old.used_at = now  # 作废旧 token
+    raw = secrets.token_urlsafe(32)
+    row = NginxPushToken(
+        nginx_config_id=config_id,
+        purpose=purpose,
+        token_hash=hashlib.sha256(raw.encode()).hexdigest(),
+        expires_at=now + timedelta(minutes=10),
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return {"token": raw, "purpose": purpose, "expires_at": row.expires_at.isoformat()}
+
+
+@config_tree_router.post("/{config_id}/push/preview")
+def push_preview(
+    config_id: int,
+    file: UploadFile = File(...),
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> dict:
+    """阶段一：只读解析 + 差异对比，落一条 pending 任务（不写入配置树）。
+    认证支持 JWT 或一次性 preview token（使用即消耗）。"""
+    actor = _resolve_push_actor(db, config_id, "preview", authorization)
+    raw = file.file.read()
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        text = raw.decode("gbk", errors="replace")
+    root, errors = parse_nginx(text)
+    if errors:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"errors": errors},
+        )
+    ctx = context_of_config(db, config_id)
+    db_root = build_config_dict(db, config_id, context=ctx)
+    entries, dup_errors = compute_diff(root, db_root)
+    if dup_errors:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"errors": dup_errors},
+        )
+    counts = {"replace": 0, "new": 0, "none": 0, "keep": 0}
+    for e in entries:
+        counts[e["action"]] += 1
+    task = NginxPushTask(
+        nginx_config_id=config_id,
+        status="pending",
+        raw_text=text,
+        diff_json=json.dumps(entries, ensure_ascii=False),
+        created_by=actor,
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    return {
+        "ok": True,
+        "task_id": task.id,
+        "status": task.status,
+        "diff": entries,
+        "counts": counts,
+        "message": (
+            f"预览成功：将替换 {counts['replace']} 个、新建 {counts['new']} 个、"
+            f"无变化 {counts['none']} 个；系统保留 {counts['keep']} 个"
+        ),
+    }
+
+
+@config_tree_router.post("/{config_id}/push/{task_id}/apply")
+def push_apply(
+    config_id: int,
+    task_id: int,
+    payload: PushApplyRequest,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> dict:
+    """阶段二：确认提交。事务内替换/新建 + 镜像联动 + 强制新版本；失败整体回滚。
+    认证支持 JWT 或一次性 apply token（使用即消耗）。"""
+    _resolve_push_actor(db, config_id, "apply", authorization)
+    task = _get_push_task(db, config_id, task_id)
+    if task.status != "pending":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"任务状态为 {task.status}，不可提交",
+        )
+    ctx = context_of_config(db, config_id)
+    root, errors = parse_nginx(task.raw_text)
+    if errors:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="原文解析异常，任务无效")
+    db_root = build_config_dict(db, config_id, context=ctx)
+    entries, dup_errors = compute_diff(root, db_root)
+    if dup_errors:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="原文重复定义，任务无效")
+    # 竞态保护：预览后配置若被修改 → 差异变化 → 拒绝并要求重新预览
+    if json.dumps(entries, ensure_ascii=False) != task.diff_json:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="配置在预览后已被修改，差异已变化，请重新预览后再提交",
+        )
+    if not any(e["action"] in ("replace", "new") for e in entries):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="无变更可提交（仅存在无变化/保留项）",
+        )
+    task.status = "applying"
+    db.flush()
+    try:
+        applied = perform_apply(db, config_id, root, entries)
+        snapshot_config(db, config_id, force_new=True, commit=False, context=ctx)
+        task.status = "success"
+        task.applied_at = datetime.utcnow()
+        task.error_detail = None
+        db.commit()
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        db.expire_all()
+        task = _get_push_task(db, config_id, task_id)
+        task.status = "failed"
+        task.error_detail = str(exc)
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"提交失败，已整体回滚：{exc}",
+        )
+    mirrored = applied["mirrored"]
+    return {
+        "ok": True,
+        "task_id": task.id,
+        "status": "success",
+        "applied": [{"scope": e["scope"], "display": e["display"]} for e in applied["applied"]],
+        "mirrored": mirrored,
+        "message": (
+            f"已提交：替换/新建 {len(applied['applied'])} 项"
+            + (f"，镜像同步 {len(mirrored)} 对" if mirrored else "")
+        ),
+    }
+
+
+@config_tree_router.get("/{config_id}/push-tasks")
+def list_push_tasks(
+    config_id: int,
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(get_current_user),
+) -> list[dict]:
+    rows = list(
+        db.execute(
+            select(NginxPushTask)
+            .where(NginxPushTask.nginx_config_id == config_id)
+            .order_by(NginxPushTask.id.desc())
+            .limit(50)
+        ).scalars().all()
+    )
+    return [_task_summary(t) for t in rows]
+
+
+@config_tree_router.get("/{config_id}/push-tasks/{task_id}")
+def get_push_task(
+    config_id: int,
+    task_id: int,
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(get_current_user),
+) -> dict:
+    t = _get_push_task(db, config_id, task_id)
+    summary = _task_summary(t)
+    summary["raw_text"] = t.raw_text
+    return summary
+
+
 @config_tree_router.get("/{config_id}/tree")
 def config_tree(
     config_id: int,
@@ -669,6 +945,7 @@ def create_option(
     db.add(row)
     db.commit()
     db.refresh(row)
+    _auto_archive(db, _get_block(db, row.block_id).nginx_config_id)
     return row
 
 
@@ -700,6 +977,7 @@ def reorder_options(
         if oid in by_id:
             by_id[oid].sort_order = index
     db.commit()
+    _auto_archive(db, _get_block(db, payload.block_id).nginx_config_id)
     return {"message": "重排成功"}
 
 
@@ -711,11 +989,13 @@ def update_option(
     _current_user: User = Depends(get_current_user),
 ) -> ConfigOption:
     row = get_option(option_id, db=db)
+    cfg_id = _config_id_of_option(db, option_id)
     for field, value in payload.model_dump(exclude_unset=True).items():
         if value is not None:
             setattr(row, field, value)
     db.commit()
     db.refresh(row)
+    _auto_archive(db, cfg_id)
     return row
 
 
@@ -725,8 +1005,10 @@ def delete_option(
     db: Session = Depends(get_db),
     _current_user: User = Depends(get_current_user),
 ) -> None:
+    cfg_id = _config_id_of_option(db, option_id)
     db.delete(get_option(option_id, db=db))
     db.commit()
+    _auto_archive(db, cfg_id)
 
 
 from app.services.nginx_render import build_config_dict, render_config_text

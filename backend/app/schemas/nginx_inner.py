@@ -175,3 +175,34 @@ class NginxVersionOut(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# ---- 配置推送（本地文件 → 系统，两阶段 preview/apply）----
+
+class PushDiffEntry(BaseModel):
+    """单个差异条目：scope 类型 + key 主键 + 展示名 + 动作。"""
+
+    scope: str
+    key: str
+    display: str
+    action: str  # replace | new | none | keep
+
+
+class PushApplyRequest(BaseModel):
+    """确认提交：可选备注（默认为空）。"""
+
+    note: str | None = None
+
+
+class PushTaskOut(BaseModel):
+    id: int
+    nginx_config_id: int
+    status: str
+    raw_len: int = 0
+    diff: list[PushDiffEntry] = []
+    created_by: str | None = None
+    created_at: datetime | None = None
+    applied_at: datetime | None = None
+    error_detail: str | None = None
+
+    model_config = ConfigDict(from_attributes=True)

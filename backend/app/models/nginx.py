@@ -115,6 +115,54 @@ class ConfigOption(Base):
     )
 
 
+class NginxPushTask(Base):
+    """本地 nginx 配置推送任务：两阶段（预览 → 确认提交）记录。
+
+    preview 阶段解析原文并比对差异后落一条 pending；apply 成功后置 success，
+    原文 raw_text 与 diff_json 双重保底留档（失败时 error_detail 记录原因）。
+    """
+
+    __tablename__ = "nginx_push_tasks"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    nginx_config_id: Mapped[int] = mapped_column(
+        ForeignKey("nginx_configs.id"), index=True, nullable=False
+    )
+    status: Mapped[str] = mapped_column(
+        String(16), default="pending", nullable=False
+    )  # pending | applying | success | failed
+    raw_text: Mapped[str] = mapped_column(Text, nullable=False)
+    diff_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    created_by: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), nullable=False
+    )
+    applied_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    error_detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class NginxPushToken(Base):
+    """推送一次性 token：预览/提交各签发一枚，单次使用、短时过期。
+
+    token 明文仅签发时返回一次，库中只存 SHA-256 哈希；
+    同一 config+purpose 重新签发会立即作废旧未用 token。
+    """
+
+    __tablename__ = "nginx_push_tokens"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    nginx_config_id: Mapped[int] = mapped_column(
+        ForeignKey("nginx_configs.id"), index=True, nullable=False
+    )
+    purpose: Mapped[str] = mapped_column(String(16), nullable=False)  # preview | apply
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), nullable=False
+    )
+
+
 class NginxMirrorPair(Base):
     """镜像同步对：src_listen 为母本监听端口，dst_listen 自动跟随。
 

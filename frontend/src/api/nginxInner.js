@@ -127,3 +127,25 @@ export function getTopology(configId) {
 export function listDirectives() {
   return client.get("/directives");
 }
+
+// ---- 本地配置推送（两阶段：预览 → 确认提交）----
+export function previewPush(configId, file) {
+  const fd = new FormData();
+  fd.append("file", file);
+  return client.post(`/nginx-configs/${configId}/push/preview`, fd);
+}
+export function applyPush(configId, taskId) {
+  return client.post(`/nginx-configs/${configId}/push/${taskId}/apply`, {});
+}
+export function listPushTasks(configId) {
+  return client.get(`/nginx-configs/${configId}/push-tasks`);
+}
+export function getPushTask(configId, taskId) {
+  return client.get(`/nginx-configs/${configId}/push-tasks/${taskId}`);
+}
+// ---- 推送一次性 token（签发后单次使用，10 分钟过期）----
+export function createPushToken(configId, purpose) {
+  return client.post(`/nginx-configs/${configId}/push-tokens`, null, {
+    params: { purpose },
+  });
+}

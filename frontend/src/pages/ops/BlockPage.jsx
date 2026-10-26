@@ -6,6 +6,7 @@ import * as nginx from "../../api/nginx";
 import * as inner from "../../api/nginxInner";
 import { BlockTree, StatBanner, DomMapPanel, ForwardPanel } from "./ConfigPage";
 import ExportModal from "./ExportModal";
+import PushModal from "./PushModal";
 
 /* ---------- 新增顶级块弹窗（对齐 mock abSetScope/abOK） ---------- */
 export function AddBlockModal({ open, onClose, onAdded }) {
@@ -281,6 +282,7 @@ export default function BlockPage() {
   const [showExport, setShowExport] = useState(false);
   const [showMirror, setShowMirror] = useState(false);
   const [showVersions, setShowVersions] = useState(false);
+  const [showPush, setShowPush] = useState(false);
 
   const root = tree[0];
   const servers = (root?.children || []).filter((n) => n.scope === "server");
@@ -348,11 +350,15 @@ export default function BlockPage() {
         <div className="toolbar">
           <span className="file mono" style={{ fontSize: 12 }}>{lib.getFileName()}</span>
           <span className="spacer" />
+          <button className="btn" onClick={() => setShowAdd(true)}>＋ 块</button>
+          <span className="tb-sep" />
+          <button className="btn" onClick={() => setShowExport(true)}>导出配置</button>
+          <button className="btn" title="本地配置推送：上传 conf 预览差异后提交" onClick={() => setShowPush(true)}>推送配置</button>
+          <span className="tb-sep" />
           <button className="btn" title="配置镜像对：两个监听点内容保持一致" onClick={() => setShowMirror(true)}>镜像设置</button>
           <button className="btn" title="查看配置历史版本并对比差异" onClick={() => setShowVersions(true)}>版本对比</button>
-          <button className="btn" onClick={() => setShowAdd(true)}>＋ 块</button>
-          <button className="btn" onClick={() => setShowExport(true)}>导出配置</button>
-          <button className="btn" onClick={() => { ops.loadTree(ops.configId, ops.ctx); toast("已同步最新配置", "ok"); }}>同步</button>
+          <button className="btn" title="从服务端重载最新配置" onClick={() => { ops.loadTree(ops.configId, ops.ctx); toast("已刷新最新配置", "ok"); }}>刷新</button>
+          <span className="tb-sep" />
           <button className="btn primary" title="把当前配置渲染文本存为一个版本" onClick={() => saveVersion()}>保存</button>
         </div>
         <div className="dtabs">
@@ -376,6 +382,7 @@ export default function BlockPage() {
       {showExport && <ExportModal onClose={() => setShowExport(false)} />}
       <MirrorModal open={showMirror} onClose={() => setShowMirror(false)} />
       <VersionModal open={showVersions} onClose={() => setShowVersions(false)} />
+      <PushModal open={showPush} onClose={() => setShowPush(false)} />
     </div>
   );
 }
