@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>方案 C — 列表 + 详情主从 · nginx 配置管理系统 Mockup</title>
+<style>
+  :root{
+    --bg-deep:#0a0a0c;--bg-deep-2:#0d0d10;--bg-sidebar:#111114;--bg-surface:#18181c;
+    --bg-surface-2:#202024;--bg-surface-3:#2a2a30;--bg-hover:#2e2e36;--bg-selected:#2a2a42;
+    --bg-input:#111115;--brand:#4a8af4;--brand-hover:#6ba8fa;
+    --brand-light:rgba(74,138,244,.12);--brand-border:rgba(74,138,244,.25);
+    --success:#22c55e;--success-bg:rgba(34,197,94,.08);--success-border:rgba(34,197,94,.20);
+    --warning:#f59e0b;--warning-bg:rgba(245,158,11,.08);--warning-border:rgba(245,158,11,.20);
+    --error:#ef4444;--error-bg:rgba(239,68,68,.08);--error-border:rgba(239,68,68,.20);
+    --info:#4a8af4;--info-bg:rgba(74,138,244,.08);--info-border:rgba(74,138,244,.20);
+    --text-primary:#e8e8ea;--text-secondary:#b0b0bc;--text-tertiary:#808090;
+    --border-primary:#2a2a2e;--border-secondary:#222226;
+    --shadow-dropdown:0 8px 32px rgba(0,0,0,.45);--shadow-focus:0 0 0 3px rgba(74,138,244,.08);
+    --radius-sm:4px;--radius-md:6px;--radius-lg:8px;
+    --font-sans:-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
+    --font-mono:'JetBrains Mono','SF Mono','Menlo','Consolas',monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:var(--font-sans);background:var(--bg-deep);color:var(--text-primary);font-size:12.5px;height:100vh;overflow:hidden;}
+  .app{display:flex;flex-direction:column;height:100vh;}
+
+  .titlebar{height:36px;flex:0 0 36px;background:var(--bg-deep);border-bottom:1px solid var(--border-primary);display:flex;align-items:center;padding:0 16px;justify-content:space-between;}
+  .titlebar .left{display:flex;align-items:center;gap:12px;font-weight:600;font-size:12px;letter-spacing:-.3px;}
+  .dot{width:6px;height:6px;border-radius:50%;background:var(--success);box-shadow:0 0 4px var(--success);}
+  .titlebar .mid{font-size:11px;color:var(--text-tertiary);}
+  .titlebar .win{display:flex;gap:8px;}.titlebar .win span{width:12px;height:12px;border-radius:50%;}
+  .win .r{background:#ff5f57;}.win .y{background:#febc2e;}.win .g{background:#28c840;}
+
+  .main{flex:1;display:flex;min-height:0;}
+  /* 左列 监听点列表 */
+  .list{width:300px;flex:0 0 300px;background:var(--bg-surface);border-right:1px solid var(--border-primary);display:flex;flex-direction:column;min-height:0;}
+  .list-head{height:40px;flex:0 0 40px;padding:0 16px;border-bottom:1px solid var(--border-secondary);display:flex;align-items:center;justify-content:space-between;}
+  .list-head h4{font-size:13px;font-weight:500;color:var(--text-secondary);}
+  .search{height:34px;margin:10px 12px 4px;padding:0 12px;background:var(--bg-input);border:1px solid var(--border-primary);border-radius:var(--radius-sm);font-size:12px;color:var(--text-primary);display:flex;align-items:center;gap:8px;}
+  .search input{background:transparent;border:none;outline:none;color:var(--text-primary);width:100%;font-size:12px;}
+  .row{display:flex;align-items:center;height:46px;padding:0 16px;cursor:pointer;border-left:2px solid transparent;justify-content:space-between;transition:all .15s;}
+  .row:hover{background:var(--bg-hover);}
+  .row.on{background:var(--bg-selected);border-left-color:var(--brand);}
+  .row .desc{display:flex;flex-direction:column;gap:2px;}
+  .row .nm{font-family:var(--font-mono);font-size:12.5px;color:var(--text-primary);}
+  .row .sm{font-size:10.5px;color:var(--text-tertiary);}
+  .row .rgt{display:flex;flex-direction:column;align-items:flex-end;gap:3px;}
+  .tag{font-size:9px;font-weight:500;padding:1px 6px;border-radius:3px;}
+  .tag.pub{background:var(--success-bg);border:1px solid var(--success-border);color:var(--success);}
+  .tag.priv{background:var(--error-bg);border:1px solid var(--error-border);color:var(--error);}
+  .tag.off{background:transparent;border:1px solid var(--border-primary);color:var(--text-tertiary);}
+
+  /* 右边详情 */
+  .detail{flex:1;background:var(--bg-surface);display:flex;flex-direction:column;min-width:0;}
+  .detail-head{height:44px;flex:0 0 44px;border-bottom:1px solid var(--border-secondary);padding:0 20px;display:flex;align-items:center;justify-content:space-between;}
+  .dh-title{display:flex;align-items:center;gap:10px;}
+  .dh-title .h{font-family:var(--font-mono);font-size:14px;font-weight:600;}
+  .dh-actions{display:flex;gap:8px;}
+  .btn{height:28px;padding:0 14px;border-radius:var(--radius-sm);cursor:pointer;border:1px solid var(--border-primary);background:transparent;color:var(--text-secondary);display:flex;align-items:center;gap:4px;font-size:12px;transition:all .15s;}
+  .btn:hover{background:var(--bg-hover);color:var(--text-primary);}
+  .btn:active{transform:scale(.97);}
+  .btn.primary{background:var(--brand);color:#fff;border-color:transparent;}
+  .btn.primary:hover{background:var(--brand-hover);}
+  .btn.danger{background:var(--error);color:#fff;border-color:transparent;}
+  .btn.danger:hover{filter:brightness(.9);}
+
+  .detail-body{flex:1;overflow-y:auto;padding:20px 24px 8px;}
+  .d-section{margin-bottom:20px;}
+  .d-section>h4{font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:8px;}
+  .field{display:flex;flex-direction:column;gap:4px;margin-bottom:12px;}
+  .field .lbl{font-size:11px;color:var(--text-tertiary);}
+  .field .input{height:32px;background:var(--bg-input);border:1px solid var(--border-primary);border-radius:var(--radius-sm);padding:0 12px;font-size:12.5px;color:var(--text-primary);font-family:var(--font-mono);display:flex;align-items:center;}
+  .field .input:focus-within{border-color:var(--brand);box-shadow:var(--shadow-focus);}
+  .toggle{width:38px;height:20px;border-radius:10px;background:var(--bg-surface-3);position:relative;cursor:pointer;border:1px solid var(--border-primary);}
+  .toggle.on{background:var(--success);border-color:transparent;}
+  .toggle::after{content:'';position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#fff;transition:all .15s;}
+  .toggle.on::after{left:20px;}
+  .tbl{width:100%;border-collapse:collapse;font-size:12px;}
+  .tbl td{border:1px solid var(--border-secondary);padding:8px 12px;}
+  .tbl .key{color:var(--text-tertiary);font-family:var(--font-mono);width:45%;}
+  .tbl .val{color:var(--text-primary);font-family:var(--font-mono);}
+  .path-box{display:flex;gap:8px;align-items:center;font-family:var(--font-mono);font-size:12px;background:var(--bg-surface-2);border:1px solid var(--border-secondary);border-radius:var(--radius-sm);padding:8px 12px;}
+  .path-box .arrow{color:var(--text-tertiary);}
+  .path-box .pub{margin-left:auto;}
+  .footer{height:28px;flex:0 0 28px;background:var(--bg-deep);border-top:1px solid var(--border-primary);display:flex;justify-content:space-between;align-items:center;padding:0 20px;font-size:11px;color:var(--text-tertiary);}
+  .label{position:absolute;top:8px;left:8px;background:var(--brand);color:#fff;font-size:10px;padding:1px 8px;border-radius:4px;font-weight:600;z-index:5;}
+  .chip{border:1px solid var(--border-secondary);background:var(--bg-surface-2);border-radius:var(--radius-sm);padding:2px 8px;font-size:11px;font-family:var(--font-mono);display:inline-flex;align-items:center;gap:4px;}
+  .chip.on{border-color:var(--success-border);background:var(--success-bg);}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="titlebar">
+    <div class="left"><span style="font-size:16px;color:var(--text-secondary);">&#9776;</span><span class="dot"></span><span>Nginx Console</span></div>
+    <div class="mid">配置文件 · 列表 + 详情</div>
+    <div class="win"><span class="r"></span><span class="y"></span><span class="g"></span></div>
+  </div>
+
+  <div class="main">
+    <!-- 列表列 -->
+    <div class="list">
+      <div class="list-head"><h4>配置文件</h4><span class="btn" style="height:24px;padding:0 10px;font-size:11px;">+ 新增</span></div>
+      <div class="search">&#128269;<input placeholder="搜索站点 / 域名 / 端口…"/></div>
+      <div class="row on">
+        <div class="desc"><span class="nm">:443 · api.example.com</span><span class="sm">/conf.d/api.conf</span></div>
+        <div class="rgt"><span class="tag pub">公网</span><span style="font-size:9px;color:var(--success);">&#9679; 运行</span></div>
+      </div>
+      <div class="row">
+        <div class="desc"><span class="nm">:80 · web.example.com</span><span class="sm">/conf.d/web.conf</span></div>
+        <div class="rgt"><span class="tag pub">公网</span><span style="font-size:9px;color:var(--text-tertiary);">&#9679; 停止</span></div>
+      </div>
+      <div class="row">
+        <div class="desc"><span class="nm">:8443 · admin.example.com</span><span class="sm">/conf.d/admin.conf</span></div>
+        <div class="rgt"><span class="tag priv">仅内网</span><span style="font-size:9px;color:var(--success);">&#9679; 运行</span></div>
+      </div>
+      <div class="row">
+        <div class="desc"><span class="nm">:8090 · static.example.com</span><span class="sm">/conf.d/static.conf</span></div>
+        <div class="rgt"><span class="tag pub">公网</span><span style="font-size:9px;color:var(--success);">&#9679; 运行</span></div>
+      </div>
+      <div class="row">
+        <div class="desc"><span class="nm">:3000 · dev.example.com</span><span class="sm">/conf.d/dev.conf</span></div>
+        <div class="rgt"><span class="tag priv">实验</span><span style="font-size:9px;color:var(--text-tertiary);">&#9679; 停止</span></div>
+      </div>
+    </div>
+
+    <!-- 详情 -->
+    <div class="detail">
+      <div class="detail-head">
+        <div class="dh-title"><span class="h">api.example.com.conf</span><span class="tag pub">公网开放</span></div>
+        <div class="dh-actions"><span class="btn">测试</span><span class="btn">Reload</span><span class="btn primary">保存</span></div>
+      </div>
+      <div class="detail-body">
+        <div class="d-section">
+          <h4>基本信息</h4>
+          <div class="field"><span class="lbl">监听端口</span><div class="input">443 (ssl)</div></div>
+          <div class="field"><span class="lbl">server_name</span><div class="input">api.example.com api.example.net</div></div>
+          <div class="field">
+            <span class="lbl">公网开放（needs_client_body）</span>
+            <div style="display:flex;align-items:center;gap:10px;"><div class="toggle on"></div><span style="font-size:11px;color:var(--success);">对外可访问</span></div>
+          </div>
+        </div>
+
+        <div class="d-section">
+          <h4>转发规则</h4>
+          <table class="tbl">
+            <tr><td class="key">/</td><td class="val">/api/</td><td class="val" style="color:var(--info);">&#8594; 127.0.0.1:8000</td><td class="val"><span class="tag pub">公网</span></td></tr>
+            <tr><td class="key">/admin/</td><td class="val">/console/</td><td class="val" style="color:var(--text-tertiary);">&#8594; 127.0.0.1:9000</td><td class="val"><span class="tag priv">内网</span></td></tr>
+          </table>
+          <div style="margin-top:8px;"><span class="btn" style="height:24px;font-size:11px;">+ 添加转发</span></div>
+        </div>
+
+        <div class="d-section">
+          <h4>业务启动端口</h4>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <span class="chip on">&#9679; 8000 · 公网</span>
+            <span class="chip">&#9679; 9000 · 内网</span>
+          </div>
+        </div>
+
+        <div class="d-section">
+          <h4>路径预览</h4>
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            <div class="path-box">api.example.com <span class="arrow">&#8594;</span> :443 <span class="arrow">&#8594;</span> /api/ <span class="arrow">&#8594;</span> 127.0.0.1:8000 <span class="tag pub" style="margin-left:auto;">公网</span></div>
+            <div class="path-box">admin.example.com <span class="arrow">&#8594;</span> :8443 <span class="arrow">&#8594;</span> /console/ <span class="arrow">&#8594;</span> 127.0.0.1:9001 <span class="tag priv" style="margin-left:auto;">内网</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <div><span style="color:var(--success);">&#9679;</span> main</div>
+    <div>选中 5/6 · 1 处未保存修改</div>
+    <div>NGINX · conf.d</div>
+  </div>
+</div>
+<div class="label">方案 C · 列表 + 详情</div>
+</body>
+</html>

@@ -13,6 +13,26 @@ export function updateBlock(id, data) {
 export function deleteBlock(id) {
   return client.delete(`/config-blocks/${id}`);
 }
+export function mirrorBlock(srcId, dstId) {
+  return client.post(`/config-blocks/${srcId}/mirror/${dstId}`);
+}
+// ---- 镜像对配置（配置文件级持久化） ----
+export function listMirrorPairs(configId) {
+  return client.get(`/nginx-configs/${configId}/mirror-pairs`);
+}
+export function createMirrorPair(configId, data) {
+  return client.post(`/nginx-configs/${configId}/mirror-pairs`, data);
+}
+export function deleteMirrorPair(configId, pairId) {
+  return client.delete(`/nginx-configs/${configId}/mirror-pairs/${pairId}`);
+}
+// ---- 配置版本快照（保存 = 存一版渲染文本，用于历史对比） ----
+export function listVersions(configId) {
+  return client.get(`/nginx-configs/${configId}/versions`);
+}
+export function createVersion(configId, data) {
+  return client.post(`/nginx-configs/${configId}/versions`, data);
+}
 export function blockChildren(blockId) {
   return client.get(`/config-blocks/${blockId}/children`);
 }
@@ -32,6 +52,9 @@ export function deleteOption(id) {
 }
 export function reorderOptions(blockId, ids) {
   return client.put("/config-options/reorder", { block_id: blockId, ids });
+}
+export function reorderBlocks(parentId, ids) {
+  return client.put("/config-blocks/reorder", { parent_id: parentId, ids });
 }
 
 // ---- 配置树 / 渲染 / 导出 / 动作 ----

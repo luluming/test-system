@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>方案 C v7 — 泛化块嵌套扩展（主从结构内）</title>
+<style>
+  :root{
+    --bg-deep:#0a0a0c;--bg-deep-2:#0d0d10;--bg-sidebar:#111114;--bg-surface:#18181c;
+    --bg-surface-2:#202024;--bg-surface-3:#2a2a30;--bg-hover:#2e2e36;--bg-selected:#2a2a42;
+    --bg-input:#111115;--brand:#4a8af4;--brand-hover:#6ba8fa;--brand-light:rgba(74,138,244,.12);--brand-border:rgba(74,138,244,.25);
+    --success:#22c55e;--success-bg:rgba(34,197,94,.08);--success-border:rgba(34,197,94,.20);
+    --warning:#f59e0b;--warning-bg:rgba(245,158,11,.08);--warning-border:rgba(245,158,11,.20);
+    --error:#ef4444;--error-bg:rgba(239,68,68,.08);--error-border:rgba(239,68,68,.20);
+    --info:#4a8af4;--info-bg:rgba(74,138,244,.08);--info-border:rgba(74,138,244,.20);
+    --purple:#a78bfa;--purple-bg:rgba(167,139,250,.08);--purple-border:rgba(167,139,250,.2);
+    --text-primary:#e8e8ea;--text-secondary:#b0b0bc;--text-tertiary:#808090;
+    --border-primary:#2a2a2e;--border-secondary:#222226;
+    --radius-xs:2px;--radius-sm:4px;--radius-md:6px;--radius-lg:8px;
+    --font-sans:-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
+    --font-mono:'JetBrains Mono','SF Mono','Menlo','Consolas',monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:var(--font-sans);background:var(--bg-deep);color:var(--text-primary);font-size:12.5px;height:100vh;overflow:hidden;}
+  .app{display:flex;flex-direction:column;height:100vh;}
+  .titlebar{height:36px;flex:0 0 36px;background:var(--bg-deep);border-bottom:1px solid var(--border-primary);display:flex;align-items:center;padding:0 16px;justify-content:space-between;}
+  .titlebar .left{display:flex;align-items:center;gap:12px;font-weight:600;font-size:12px;}
+  .mid{font-size:11px;color:var(--text-tertiary);font-family:var(--font-mono);}
+  .win{display:flex;gap:8px;}.win span{width:12px;height:12px;border-radius:50%;display:inline-block;}
+  .win .r{background:#ff5f57;}.win .y{background:#febc2e;}.win .g{background:#28c840;}
+
+  .scrim{display:flex;flex-direction:column;height:calc(100% - 36px);}
+  .menu{height:38px;flex:0 0 38px;background:var(--bg-surface);border-bottom:1px solid var(--border-primary);display:flex;align-items:center;padding:0 16px;gap:6px;}
+  .navi{display:flex;align-items:center;gap:8px;padding:0 14px;height:30px;border-radius:var(--radius-sm);color:var(--text-secondary);cursor:pointer;font-size:12.5px;border:1px solid transparent;}
+  .navi.on{background:var(--bg-selected);color:var(--text-primary);border-color:var(--brand-border);font-weight:500;}
+  .navi .c{font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);}
+  .main{flex:1;display:flex;min-height:0;}
+  .side{width:180px;flex:0 0 180px;background:var(--bg-sidebar);border-right:1px solid var(--border-primary);display:flex;flex-direction:column;min-height:0;}
+  .sh{font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px;padding:10px 16px 4px;font-weight:600;}
+  .t-item{display:flex;align-items:center;height:28px;padding:0 12px;border-radius:var(--radius-sm);color:var(--text-secondary);cursor:pointer;font-size:12px;margin:0 6px;gap:6px;}
+  .t-item.on{background:var(--bg-selected);color:var(--text-primary);}
+
+  .content{flex:1;display:flex;min-width:0;}
+  .list{width:230px;flex:0 0 230px;border-right:1px solid var(--border-primary);display:flex;flex-direction:column;min-height:0;background:var(--bg-surface);}
+  .row{display:flex;align-items:center;gap:8px;height:44px;padding:0 14px;cursor:pointer;border-left:3px solid transparent;transition:all .15s;}
+  .row.on{background:var(--bg-selected);border-left-color:var(--brand);}
+  .row .port{color:var(--brand);font-weight:600;font-family:var(--font-mono);}
+  .row .nm{font-family:var(--font-mono);font-size:12px;color:var(--text-primary);}
+  .tag{font-size:9px;padding:1px 6px;border-radius:3px;font-weight:500;}
+  .tag.pub{background:var(--success-bg);border:1px solid var(--success-border);color:var(--success);}
+
+  .detail{flex:1;display:flex;flex-direction:column;min-width:0;}
+  .dt-head{height:46px;flex:0 0 46px;border-bottom:1px solid var(--border-primary);padding:0 20px;display:flex;align-items:center;justify-content:space-between;background:var(--bg-sidebar);}
+  .btn{height:26px;padding:0 12px;font-size:11.5px;border-radius:var(--radius-sm);cursor:pointer;border:1px solid var(--border-primary);background:transparent;color:var(--text-secondary);display:flex;align-items:center;gap:5px;white-space:nowrap;}
+  .btn.primary{background:var(--brand);color:#fff;border-color:transparent;}
+  .dt-tabs{height:36px;flex:0 0 36px;border-bottom:1px solid var(--border-secondary);display:flex;padding:0 20px;}
+  .dtab{display:flex;align-items:center;padding:0 14px;font-size:12px;color:var(--text-secondary);cursor:pointer;border-right:1px solid var(--border-secondary);position:relative;}
+  .dtab.on{color:var(--text-primary);}.dtab.on::after{content:'';position:absolute;bottom:0;left:0;right:0;height:2px;background:var(--brand);}
+  .dt-body{flex:1;overflow-y:auto;padding:18px 22px;}
+
+  /* 块树 */
+  .blocktree{display:flex;flex-direction:column;gap:8px;}
+  .brow{display:flex;gap:8px;}
+  .indent{width:18px;flex:0 0 18px;position:relative;}
+  .indent::before{content:'';position:absolute;left:9px;top:0;bottom:0;width:1px;background:var(--border-secondary);}
+  .block{flex:1;border:1px solid var(--border-primary);border-radius:var(--radius-md);background:var(--bg-surface-2);overflow:hidden;min-width:0;}
+  .block-head{display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--bg-surface-3);border-bottom:1px solid var(--border-secondary);}
+  .bkind{font-size:9px;padding:1px 7px;border-radius:var(--radius-xs);font-weight:600;letter-spacing:.4px;text-transform:uppercase;flex:0 0 auto;}
+  .bkind.srv{background:var(--success-bg);border:1px solid var(--success-border);color:var(--success);}
+  .bkind.loc{background:var(--info-bg);border:1px solid var(--info-border);color:var(--info);}
+  .bkind.map{background:var(--warning-bg);border:1px solid var(--warning-border);color:var(--warning);}
+  .bkind.geo{background:var(--success-bg);border:1px solid var(--success-border);color:var(--success);}
+  .bkind.if{background:var(--error-bg);border:1px solid var(--error-border);color:var(--error);}
+  .bkind.lf{background:var(--brand-light);border:1px solid var(--brand-border);color:var(--brand);}
+  .bkind.inc{background:var(--purple-bg);border:1px solid var(--purple-border);color:var(--purple);}
+  .bkind.cm{background:transparent;border:1px solid var(--border-primary);color:var(--text-tertiary);}
+  .bhead{font-family:var(--font-mono);font-size:11.5px;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .badd{margin-left:auto;display:flex;gap:2px;}
+  .badd .btn{height:20px;font-size:9.5px;padding:0 7px;}
+  .kv{padding:5px 10px;font-family:var(--font-mono);font-size:11px;color:var(--text-secondary);display:flex;align-items:center;gap:6px;border-top:1px solid var(--border-secondary);}
+  .kv .d{cursor:text;padding:2px 0;border-bottom:1px dashed transparent;}
+  .kv .d:hover{border-bottom-color:var(--brand-border);}
+  .kv:last-child{border-bottom:none;}
+  .raw{background:var(--bg-deep);border:1px dashed var(--border-secondary);border-radius:var(--radius-sm);padding:6px 12px;margin:6px 10px;font-family:var(--font-mono);font-size:10.5px;color:var(--text-tertiary);}
+  .cm-line{font-family:var(--font-mono);font-size:10.5px;color:var(--text-tertiary);font-style:italic;padding:4px 10px;}
+
+  .add-bar{display:flex;align-items:center;justify-content:center;padding:11px;border:1px dashed var(--border-primary);border-radius:var(--radius-md);color:var(--text-tertiary);cursor:pointer;font-size:12px;gap:6px;}
+  .add-bar:hover{color:var(--brand);border-color:var(--brand-border);}
+
+  .footer{height:28px;flex:0 0 28px;background:var(--bg-deep);border-top:1px solid var(--border-primary);display:flex;justify-content:space-between;align-items:center;padding:0 20px;font-size:11px;color:var(--text-tertiary);}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="titlebar">
+    <div class="left"><span style="font-size:16px;color:var(--text-secondary);">&#9776;</span><span style="width:6px;height:6px;border-radius:50%;background:var(--success);"></span><span>Nginx Console</span></div>
+    <div class="mid">扩展 · 块嵌套主从（方案 C）</div>
+    <div class="win"><span class="r"></span><span class="y"></span><span class="g"></span></div>
+  </div>
+
+  <div class="scrim">
+    <div class="menu">
+      <span class="navi">&#128196; 配置文件</span>
+      <span class="navi on">&#128230; 块管理<span class="c">嵌套</span></span>
+      <span class="navi">&#128279; 全局拓扑</span>
+    </div>
+
+    <div class="main">
+      <div class="side">
+        <div class="sh">监听点</div>
+        <div class="t-item on">:443 api.example.com</div>
+        <div class="t-item">:80 web.example.com</div>
+        <div class="sh" style="margin-top:10px;">共块</div>
+        <div class="t-item">map http_cookie</div>
+        <div class="t-item">upstream api_backend</div>
+      </div>
+
+      <div class="content">
+        <div class="list">
+          <div class="row on"><span class="port">:443</span><span class="nm">api.example.com</span><span style="margin-left:auto;"><span class="tag pub">公网</span></span></div>
+          <div class="row"><span class="port">:80</span><span class="nm">web.example.com</span></div>
+        </div>
+
+        <div class="detail">
+          <div class="dt-head">
+            <div><b style="font-family:var(--font-mono);">api.example.com.conf</b></div>
+            <div style="display:flex;gap:6px;"><span class="btn">同步</span><span class="btn primary">保存</span></div>
+          </div>
+          <div class="dt-tabs"><div class="dtab on">块树（嵌套）</div><div class="dtab">配置预览</div></div>
+
+          <div class="dt-body">
+            <div class="blocktree">
+              <!-- 顶层: server -->
+              <div class="brow">
+                <div class="indent"></div>
+                <div class="block">
+                  <div class="block-head"><span class="bkind srv">server</span><span class="bhead">listen 443 ssl; server_name api.example.com;</span>
+                    <div class="badd"><span class="btn">+ 子块</span><span class="btn">+ KV</span><span class="btn">+ 注释</span><span class="btn">&#10005;</span></div>
+                  </div>
+                  <div class="kv"><span class="d">ssl_certificate = /etc/ssl/api.pem</span></div>
+                  <div class="kv"><span class="d">add_header = X-Frame-Options "SAMEORIGIN"</span></div>
+                </div>
+              </div>
+
+              <!-- 子块1: map (server直下) -->
+              <div class="brow">
+                <div class="indent"></div>
+                <div class="block">
+                  <div class="block-head"><span class="bkind map">map</span><span class="bhead">$http_cookie → $cookie_to_delete</span>
+                    <div class="badd"><span class="btn">+ KV</span><span class="btn">&#10005;</span></div>
+                  </div>
+                  <div class="kv"><span class="d">~*uid=streamax(.*) = "$1"</span></div>
+                  <div class="kv"><span class="d">default = $http_cookie</span></div>
+                </div>
+              </div>
+
+              <!-- 子块2: location (缩进层级) -->
+              <div class="brow">
+                <div class="indent"></div>
+                <div class="block">
+                  <div class="block-head"><span class="bkind loc">location</span><span class="bhead">/api/ → upstream api_backend</span>
+                    <div class="badd"><span class="btn">+ 子块</span><span class="btn">+ KV</span><span class="btn">+ 注释</span><span class="btn">&#10005;</span></div>
+                  </div>
+                  <div class="kv"><span class="d">proxy_pass = http://api_backend</span></div>
+
+                  <!-- location 内 if (再缩进) -->
+                  <div class="brow" style="padding:6px 10px 0;">
+                    <div class="indent"></div>
+                    <div class="block">
+                      <div class="block-head"><span class="bkind if">if</span><span class="bhead">($http_user_agent ~* "bot")</span>
+                        <div class="badd"><span class="btn">+ KV</span><span class="btn">&#10005;</span></div>
+                      </div>
+                      <div class="kv"><span class="d">return = 403;</span></div>
+                      <div class="cm-line">// 嵌套层级由 parent_id 表达：location ⊃ if</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- include -->
+              <div class="brow">
+                <div class="indent"></div>
+                <div class="block">
+                  <div class="block-head"><span class="bkind inc">include</span><span class="bhead">snippets/ssl.conf</span>
+                    <div class="badd"><span class="btn">&#10005;</span></div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 注释块 -->
+              <div class="brow">
+                <div class="indent"></div>
+                <div class="block">
+                  <div class="block-head"><span class="bkind cm"># 注释</span><span class="bhead">以下为灰度灰度测试 map</span>
+                    <div class="badd"><span class="btn">&#10005;</span></div>
+                  </div>
+                  <div class="cm-line"># 整块注释：渲染时输出 # 前缀行</div>
+                </div>
+              </div>
+
+              <!-- raw 冷却指令 -->
+              <div class="brow">
+                <div class="indent"></div>
+                <div class="block">
+                  <div class="block-head"><span class="bkind cm">raw</span><span class="bhead">冷门指令原文行</span>
+                    <div class="badd"><span class="btn">&#10005;</span></div>
+                  </div>
+                  <div class="raw">proxy_cache_path /tmp/cache levels=1:2 keys_zone=cache:10m max_size=1g inactive=60m;</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="add-bar" style="margin-top:12px;">+ 新增块（选择类型：server / location / map / geo / if / log_format / include / 注释 / raw）</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <div><span style="color:var(--success);">&#9679; main</span></div>
+      <div>块嵌套总数 7 · 未保存 2</div>
+      <div>NGINX · conf.d</div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

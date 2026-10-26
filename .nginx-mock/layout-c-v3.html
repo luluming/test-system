@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>方案 C v3 — 全局拓扑预览 + Upstream 组管理</title>
+<style>
+  :root{
+    --bg-deep:#0a0a0c;--bg-surface:#18181c;--bg-surface-2:#202024;--bg-surface-3:#2a2a30;
+    --bg-hover:#2e2e36;--bg-selected:#2a2a42;--bg-input:#111115;--bg-sidebar:#111114;
+    --brand:#4a8af4;--brand-hover:#6ba8fa;--brand-light:rgba(74,138,244,.12);--brand-border:rgba(74,138,244,.25);
+    --success:#22c55e;--success-bg:rgba(34,197,94,.08);--success-border:rgba(34,197,94,.20);
+    --warning:#f59e0b;--warning-bg:rgba(245,158,11,.08);--warning-border:rgba(245,158,11,.20);
+    --error:#ef4444;--error-bg:rgba(239,68,68,.08);--error-border:rgba(239,68,68,.20);
+    --info:#4a8af4;--info-bg:rgba(74,138,244,.08);--info-border:rgba(74,138,244,.20);
+    --text-primary:#e8e8ea;--text-secondary:#b0b0bc;--text-tertiary:#808090;
+    --border-primary:#2a2a2e;--border-secondary:#222226;
+    --radius-xs:2px;--radius-sm:4px;--radius-md:6px;--radius-lg:8px;
+    --font-sans:-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
+    --font-mono:'JetBrains Mono','SF Mono','Menlo','Consolas',monospace;
+    --ease:cubic-bezier(.4,0,.2,1);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:var(--font-sans);background:var(--bg-deep);color:var(--text-primary);font-size:12.5px;height:100vh;overflow:hidden;}
+  .app{display:flex;flex-direction:column;height:100vh;}
+  .titlebar{height:36px;flex:0 0 36px;background:var(--bg-deep);border-bottom:1px solid var(--border-primary);display:flex;align-items:center;padding:0 16px;justify-content:space-between;}
+  .titlebar .left{display:flex;align-items:center;gap:12px;font-weight:600;font-size:12px;}
+  .titlebar .mid{font-size:11px;color:var(--text-tertiary);font-family:var(--font-mono);}
+  .titlebar .win{display:flex;gap:8px;}.win span{width:12px;height:12px;border-radius:50%;display:inline-block;}
+  .win .r{background:#ff5f57;}.win .y{background:#febc2e;}.win .g{background:#28c840;}
+
+  /* 顶部全局菜单 */
+  .menu{height:38px;flex:0 0 38px;background:var(--bg-surface);border-bottom:1px solid var(--border-primary);display:flex;align-items:center;padding:0 16px;gap:6px;}
+  .navi{display:flex;align-items:center;gap:8px;padding:0 14px;height:30px;border-radius:var(--radius-sm);color:var(--text-secondary);cursor:pointer;font-size:12.5px;border:1px solid transparent;}
+  .navi:hover{background:var(--bg-hover);color:var(--text-primary);}
+  .navi.on{background:var(--bg-selected);color:var(--text-primary);border-color:var(--brand-border);font-weight:500;}
+  .navi .c{font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);}
+  .menu .hm{width:1px;height:18px;background:var(--border-primary);margin:0 4px;}
+
+  .main{flex:1;display:flex;min-height:0;}
+  /* 左侧资源树 */
+  .side{width:210px;flex:0 0 210px;background:var(--bg-sidebar);border-right:1px solid var(--border-primary);display:flex;flex-direction:column;min-height:0;}
+  .side-hl{font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px;padding:10px 16px 4px;font-weight:600;}
+  .t-item{display:flex;align-items:center;height:28px;padding:0 12px;border-radius:var(--radius-sm);color:var(--text-secondary);cursor:pointer;font-size:12px;margin:0 6px;gap:8px;}
+  .t-item:hover{background:var(--bg-hover);color:var(--text-primary);}
+  .t-item.on{background:var(--bg-selected);color:var(--text-primary);}
+  .t-item .cnt{margin-left:auto;font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);}
+  .t-item .up-badge{width:6px;height:6px;border-radius:50%;}
+  .up-badge.ok{background:var(--success);}.up-badge.warn{background:var(--warning);}.up-badge.down{background:var(--error);}
+
+  /* 右侧内容三栏 */
+  .content{flex:1;display:flex;min-width:0;background:var(--bg-surface);}
+
+  /* 中间：拓扑预览 */
+  .topo{flex:1;display:flex;flex-direction:column;min-width:0;border-right:1px solid var(--border-primary);}
+  .topo-head{height:40px;flex:0 0 40px;border-bottom:1px solid var(--border-secondary);padding:0 16px;display:flex;align-items:center;justify-content:space-between;}
+  .topo-head b{font-size:13px;font-weight:500;}
+  .topo-body{flex:1;overflow:auto;padding:20px;display:flex;flex-direction:column;gap:10px;}
+  /* 简易拓扑：层级行 */
+  .layers{display:flex;flex-direction:column;gap:14px;min-height:100%;justify-content:center;}
+  .layer{display:flex;align-items:center;gap:12px;}
+  .layer-label{flex:0 0 46px;font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px;text-align:right;}
+  .layer .items{flex:1;display:flex;gap:10px;flex-wrap:wrap;}
+  .node{border:1px solid var(--border-primary);background:var(--bg-surface-2);border-radius:var(--radius-md);padding:8px 12px;min-width:120px;cursor:pointer;transition:all .15s;}
+  .node:hover{border-color:var(--brand-border);}
+  .node.upstream{background:var(--info-bg);border-color:var(--info-border);}
+  .node.srv{border-color:var(--success-border);background:var(--success-bg);}
+  .node.down{border-color:var(--error-border);background:var(--error-bg);}
+  .node .nt{font-family:var(--font-mono);font-size:12px;color:var(--text-primary);display:flex;align-items:center;gap:6px;margin-bottom:3px;}
+  .node .nd{font-size:10px;color:var(--text-tertiary);}
+  .connect{color:var(--text-tertiary);font-size:14px;flex:0 0 auto;}
+
+  /* 右侧：upstream 池管理 */
+  .upstreams{width:360px;flex:0 0 360px;display:flex;flex-direction:column;min-width:0;background:var(--bg-surface);}
+  .up-head{height:40px;flex:0 0 40px;border-bottom:1px solid var(--border-secondary);padding:0 16px;display:flex;align-items:center;justify-content:space-between;}
+  .up-head b{font-size:13px;font-weight:500;}
+  .btn{height:26px;padding:0 12px;font-size:11.5px;border-radius:var(--radius-sm);cursor:pointer;border:1px solid var(--border-primary);background:transparent;color:var(--text-secondary);display:flex;align-items:center;gap:5px;}
+  .btn:hover{background:var(--bg-hover);color:var(--text-primary);}
+  .btn.primary{background:var(--brand);color:#fff;border-color:transparent;}
+  .btn:active{transform:scale(.97);}
+  .up-body{flex:1;overflow-y:auto;padding:12px;}
+  .up-card{background:var(--bg-surface-2);border:1px solid var(--border-primary);border-radius:var(--radius-md);margin-bottom:12px;overflow:hidden;}
+  .up-card-head{padding:10px 12px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border-secondary);}
+  .up-card-head .nm{font-family:var(--font-mono);font-size:12.5px;color:var(--text-primary);font-weight:600;display:flex;align-items:center;gap:8px;}
+  .chip{font-size:10px;padding:1px 8px;border-radius:var(--radius-xs);font-weight:500;}
+  .chip.lc{background:var(--info-bg);border:1px solid var(--info-border);color:var(--info);}
+  .chip.ih{background:var(--success-bg);border:1px solid var(--success-border);color:var(--success);}
+  .srv-row{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;font-family:var(--font-mono);font-size:11.5px;color:var(--text-secondary);border-bottom:1px solid var(--border-secondary);}
+  .srv-row:last-child{border-bottom:none;}
+  .srv-row .w{color:var(--text-tertiary);}
+  .sts{width:7px;height:7px;border-radius:50%;display:inline-block;}
+  .sts.ok{background:var(--success);}.sts.down{background:var(--error);}.sts.ck{background:var(--warning);}
+  .srv-row .act{display:none;gap:4px;}
+  .srv-row:hover .act{display:flex;}
+  .srv-row:hover{background:var(--bg-hover);}
+  .cfg-preview{margin-top:12px;background:var(--bg-deep);border:1px solid var(--border-secondary);border-radius:var(--radius-md);padding:10px 12px;font-family:var(--font-mono);font-size:11px;color:var(--text-secondary);line-height:1.6;white-space:pre;}
+  .cfg-preview .ok{color:var(--success);}
+  .dark-key{color:#6ba8fa;}.dark-num{color:#ff7b72;}
+
+  .footer{height:28px;flex:0 0 28px;background:var(--bg-deep);border-top:1px solid var(--border-primary);display:flex;justify-content:space-between;align-items:center;padding:0 20px;font-size:11px;color:var(--text-tertiary);}
+  .label{position:absolute;top:8px;left:8px;background:var(--brand);color:#fff;font-size:10px;padding:2px 8px;border-radius:4px;font-weight:600;z-index:5;}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="titlebar">
+    <div class="left"><span style="font-size:16px;color:var(--text-secondary);">&#9776;</span><span style="width:6px;height:6px;border-radius:50%;background:var(--success);"></span><span>Nginx Console</span></div>
+    <div class="mid">生产 · 全局视图</div>
+    <div class="win"><span class="r"></span><span class="y"></span><span class="g"></span></div>
+  </div>
+
+  <!-- 顶级菜单 -->
+  <div class="menu">
+    <span class="navi on">&#128279; 全局拓扑 <span class="c">预览</span></span>
+    <span class="navi">&#128196; 配置文件</span>
+    <span class="hm"></span>
+    <span class="navi">&#128230; Upstream 池 <span class="c">3</span></span>
+    <span class="navi">&#128260; 转发规则</span>
+    <span class="navi">&#128267; 业务端口</span>
+    <div style="margin-left:auto;display:flex;gap:8px;"><span class="btn">&#8635; 刷新</span><span class="btn primary">&#9679; 校验全部</span></div>
+  </div>
+
+  <div class="main">
+    <!-- 左侧资源树 -->
+    <div class="side">
+      <div class="side-hl">Upstream 池</div>
+      <div class="t-item on"><span class="up-badge ok"></span>api_backend <span class="cnt">2 节点</span></div>
+      <div class="t-item"><span class="up-badge ok"></span>web_pool <span class="cnt">3 节点</span></div>
+      <div class="t-item"><span class="up-badge warn"></span>log_center <span class="cnt">1/2 节点</span></div>
+      <div class="t-item"><span class="up-badge down"></span>auth_srv <span class="cnt">0/1 节点</span></div>
+      <div class="side-hl" style="margin-top:10px;">监听点</div>
+      <div class="t-item"><span>api.example.com :443</span></div>
+      <div class="t-item"><span>web.example.com :80</span></div>
+      <div class="t-item"><span>admin.example.com :8443</span></div>
+    </div>
+
+    <!-- 中间：全局拓扑 -->
+    <div class="topo">
+      <div class="topo-head"><b>整体效果预览 · 全局拓扑</b><span style="font-size:11px;color:var(--text-tertiary);">4 upstream · 6 监听点 · 12 转发</span></div>
+      <div class="topo-body">
+        <div class="layers">
+          <!-- 域名层 -->
+          <div class="layer"><div class="layer-label">域名</div><div class="items">
+            <div class="node"><div class="nt">api.example.com</div></div>
+            <div class="node"><div class="nt">web.example.com</div></div>
+            <div class="node"><div class="nt">admin.example.com</div></div>
+          </div></div>
+          <!-- 监听点层 -->
+          <div class="layer"><div class="layer-label">监听点</div><div class="items">
+            <div class="node"><div class="nt"><span style="color:var(--brand);font-weight:600;">:443</span> ssl</div></div>
+            <div class="node"><div class="nt"><span style="color:var(--brand);font-weight:600;">:80</span></div></div>
+            <div class="node"><div class="nt"><span style="color:var(--brand);font-weight:600;">:8443</span> 内网</div></div>
+          </div></div>
+          <!-- upstream 层 -->
+          <div class="layer"><div class="layer-label">Upstream</div>
+            <div class="connect">&#8595;</div>
+            <div class="items">
+              <div class="node upstream"><div class="nt">api_backend <span class="chip lc" style="font-size:9px;">least_conn</span></div><div class="nd">2/2 节点</div></div>
+              <div class="node upstream"><div class="nt">web_pool <span class="chip ih" style="font-size:9px;">ip_hash</span></div><div class="nd">3/3 节点</div></div>
+              <div class="node upstream" style="border-color:var(--warning-border);"><div class="nt">log_center <span class="chip lc" style="font-size:9px;">round_robin</span></div><div class="nd" style="color:var(--warning);">1/2 节点告警</div></div>
+            </div>
+          </div>
+          <!-- 服务器层 -->
+          <div class="layer"><div class="layer-label">后端</div>
+            <div class="connect">&#8595;</div>
+            <div class="items">
+              <div class="node srv"><div class="nt"><span class="sts ok"></span>10.0.0.11</div><div class="nd">w=1 · :8000</div></div>
+              <div class="node srv"><div class="nt"><span class="sts ok"></span>10.0.0.12</div><div class="nd">w=1 · :8000</div></div>
+              <div class="node srv"><div class="nt"><span class="sts ok"></span>10.0.1.21</div><div class="nd">w=2 · :8080</div></div>
+              <div class="node down"><div class="nt"><span class="sts down"></span>10.0.1.22</div><div class="nd" style="color:var(--error);">down · :8080</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 右侧：upstream 池管理 + 配置预览 -->
+    <div class="upstreams">
+      <div class="up-head"><b>Upstream 组 · api_backend</b><span class="btn primary">+ 节点</span></div>
+      <div class="up-body">
+        <div class="up-card">
+          <div class="up-card-head">
+            <span class="nm"><span class="up-badge ok"></span>api_backend</span>
+            <span class="chip lc">least_conn</span>
+          </div>
+          <div class="srv-row"><span><span class="sts ok"></span> 10.0.0.11:8000</span><span class="w">weight 1 · check yes</span><span class="act"><span class="btn" style="height:20px;font-size:10px;">测试</span><span class="btn" style="height:20px;font-size:10px;">停用</span></span></div>
+          <div class="srv-row"><span><span class="sts ok"></span> 10.0.0.12:8000</span><span class="w">weight 1 · check yes</span><span class="act"><span class="btn" style="height:20px;font-size:10px;">测试</span><span class="btn" style="height:20px;font-size:10px;">停用</span></span></div>
+        </div>
+
+        <!-- 配置生成预览 -->
+        <div class="up-head" style="border:none;padding:8px 4px 4px;height:auto;"><b>变更校验预览</b><span class="chip lc" style="background:var(--success-bg);color:var(--success);border-color:var(--success-border);">nginx -t 通过</span></div>
+        <div class="cfg-preview"><span class="dark-key">upstream</span> api_backend {
+    <span class="dark-key">least_conn</span>;
+    <span class="dark-key">server</span> 10.0.0.11:<span class="dark-num">8000</span> <span class="dark-key">weight</span>=<span class="dark-num">1</span>;
+    <span class="dark-key">server</span> 10.0.0.12:<span class="dark-num">8000</span> <span class="dark-key">weight</span>=<span class="dark-num">1</span>;
+    <span class="dark-key">keepalive</span> <span class="dark-num">32</span>;
+}
+
+   <span class="ok">&#10004; 校验通过 · 共 28 行</span></div>
+
+        <div style="margin-top:14px;display:flex;gap:8px;">
+          <span class="btn primary" style="flex:1;justify-content:center;">应用到服务器</span>
+          <span class="btn" style="flex:1;justify-content:center;">取消</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <div style="display:flex;gap:14px;"><span style="color:var(--success);">&#9679; main</span></div>
+    <div style="display:flex;gap:14px;"><span style="color:var(--success);">全部校验通过</span><span style="color:var(--error);">1 down</span></div>
+    <div>4 upstream · 6 监听点 · NGINX</div>
+  </div>
+</div>
+</body>
+</html>

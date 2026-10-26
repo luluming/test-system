@@ -32,9 +32,9 @@ export default function IndustryCloneModal({ templates, open, onClose, onCreated
         <input value={owner} onChange={(e) => setOwner(e.target.value)} placeholder="如：李工" />
         {err && <p className="err">{err}</p>}
         <div className="modal-actions">
-          <button className="ghost" onClick={onClose}>取消</button>
+          <button className="btn" onClick={onClose}>取消</button>
           <button
-            className="primary-btn"
+            className="btn primary"
             disabled={!canSubmit || loading}
             onClick={async () => {
               setLoading(true); setErr("");

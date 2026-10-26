@@ -1,72 +1,26 @@
-import { Layout, Menu } from "antd";
-import {
-  DashboardOutlined,
-  DeploymentUnitOutlined,
-  LogoutOutlined,
-} from "@ant-design/icons";
-import { Navigate, Outlet, Route, Routes, useNavigate } from "react-router-dom";
+import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import ResetPassword from "./pages/ResetPassword";
-import Dashboard from "./pages/Dashboard";
-import OpsConsole from "./pages/OpsConsole";
 import IndustryDashboard from "./pages/IndustryDashboard";
 import IndustryDetail from "./pages/IndustryDetail";
+import AppShell from "./components/AppShell";
 import { clearToken, getToken } from "./store/auth";
 
-// 需要登录才能访问的布局：左侧菜单 + 内容区
+// 需要登录才能访问的布局：统一 IDE 外壳（标题栏/内容区/状态栏）
+// 进入 /ops/:industryId 工作台时，AppShell 自动切换沉浸模式隐藏全局外壳
 function ProtectedLayout() {
-  const navigate = useNavigate();
+  const location = useLocation();
 
   // 未登录时重定向到登录页
   if (!getToken()) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to="/login" replace state={{ from: location }} />;
   }
 
-  // 退出登录：清除 token 并跳转登录页
-  const handleLogout = () => {
-    clearToken();
-    navigate("/login");
-  };
-
-  return (
-    <Layout style={{ minHeight: "100vh" }}>
-      <Layout.Sider width={200}>
-        <Menu
-          theme="dark"
-          mode="inline"
-          defaultSelectedKeys={["dashboard"]}
-          style={{ height: "100%", borderRight: 0 }}
-          items={[
-            {
-              key: "dashboard",
-              icon: <DashboardOutlined />,
-              label: "仪表盘",
-              onClick: () => navigate("/"),
-            },
-            {
-              key: "ops",
-              icon: <DeploymentUnitOutlined />,
-              label: "运维配置",
-              onClick: () => navigate("/ops"),
-            },
-            {
-              key: "logout",
-              icon: <LogoutOutlined />,
-              label: "退出登录",
-              onClick: handleLogout,
-            },
-          ]}
-        />
-      </Layout.Sider>
-      <Layout.Content style={{ padding: 24 }}>
-        <Outlet />
-      </Layout.Content>
-    </Layout>
-  );
+  return <AppShell />;
 }
 
-// 应用路由配置
+// 应用路由配置：行业管理为唯一全局入口，行业工作台沉浸式
 export default function App() {
   return (
     <Routes>
@@ -75,13 +29,11 @@ export default function App() {
       {/* 重置密码：公开路由，无需登录 */}
       <Route path="/reset-password" element={<ResetPassword />} />
       <Route element={<ProtectedLayout />}>
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/ops" element={<OpsConsole />} />
-        <Route path="/industries" element={<IndustryDashboard />} />
+        <Route path="/" element={<IndustryDashboard />} />
         <Route path="/ops/:industryId" element={<IndustryDetail />} />
       </Route>
-      {/* 兜底：未匹配路径重定向到行业落地页 */}
-      <Route path="*" element={<Navigate to="/industries" replace />} />
+      {/* 兜底：未匹配路径重定向到行业管理首页 */}
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }

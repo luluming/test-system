@@ -1,41 +1,54 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { getIndustry } from "../api/industry";
 import { listConfigsByIndustry } from "../api/nginx";
-import { getConfigTree } from "../api/nginxInner";
-import { reloadNginx, testNginxConfig } from "../api/nginxInner";
+import { getConfigTree, deleteBlock, mirrorBlock, listMirrorPairs, createMirrorPair, deleteMirrorPair, reorderBlocks } from "../api/nginxInner";
 import { OpsContext } from "./ops/OpsContext";
 import "./ops/ops.css";
 import "./dashboard.css";
 
 import * as lib from "../lib/nginx-inner";
 
-import ConfigPage from "./ops/ConfigPage";
-import BlockPage from "./ops/BlockPage";
-import TopologyPage from "./ops/TopologyPage";
-import BizPortPage from "./ops/BizPortPage";
+import BlockPage, { AddBlockModal } from "./ops/BlockPage";
 
 const VIEWS = [
-  { key: "config", label: "配置文件", icon: "📄" },
   { key: "block", label: "块管理", icon: "📁" },
-  { key: "topology", label: "全局拓扑", icon: "🔗" },
-  { key: "biz", label: "业务端口", icon: "📋" },
 ];
 
-/* 行内悬停操作浮层：测连 / 启停 / 重载 */
-function SideItem({ node, off, onToggle, onPing, onReload }) {
+/* 行内悬停操作浮层：排序（监听点 ▲▼） / 删除 */
+function SideItem({ node, off, active, onSelect, onMove, onDelete, mirror }) {
   const port = lib.listenPlain(node);
-  const name = node.scope === "server" ? lib.snameOf(node) : lib.upNameOf(node);
+  const name = node.scope === "server" ? port : lib.upNameOf(node);
   const locs = node.children.filter((c) => c.scope === "location").length;
   return (
-    <div className={`t-item${off ? " t-off" : ""}`} style={off ? { opacity: 0.55 } : undefined} title={name}>
+    <div
+      className={`t-item${off ? " t-off" : ""}${active ? " on" : ""}`}
+      style={off ? { opacity: 0.55 } : undefined}
+      title={name}
+      onClick={onSelect}
+    >
       <span className="t-ico">{node.scope === "server" ? "◈" : "▤"}</span>
       <span className="t-nm">{node.scope === "server" ? port : name}</span>
+      {mirror && (
+        <span
+          className={`mir-badge ${mirror.role}${mirror.same ? "" : " diff"}`}
+          title={mirror.role === "dst"
+            ? `自动镜像自 ${mirror.peer}：内容由 ${mirror.peer} 同步，勿直接修改`
+            : `镜像母本：${mirror.peer} 自动跟随本监听点`}
+        >
+          {mirror.role === "dst" ? `↻镜像 ${mirror.peer}` : "母本"}
+          <i className={`dot ${mirror.same ? "same" : "diff"}`} />
+        </span>
+      )}
       {node.scope === "server" ? <span className="t-cnt">{locs} loc</span> : null}
       <span className="t-ops">
-        <button className="t-op" title="连通性测试" onClick={(e) => { e.stopPropagation(); onPing(); }}>测连</button>
-        <button className="t-op" title="启用/停用" onClick={(e) => { e.stopPropagation(); onToggle(); }}>启停</button>
-        <button className="t-op" title="reload" onClick={(e) => { e.stopPropagation(); onReload(); }}>重载</button>
+        {node.scope === "server" && typeof onMove === "function" && (
+          <>
+            <button className="t-op" title="上移（配置文件顺序）" onClick={(e) => { e.stopPropagation(); onMove(-1); }}>▲</button>
+            <button className="t-op" title="下移（配置文件顺序）" onClick={(e) => { e.stopPropagation(); onMove(1); }}>▼</button>
+          </>
+        )}
+        {onDelete && <button className="t-op del" title="删除该块" onClick={(e) => { e.stopPropagation(); onDelete(); }}>✕</button>}
       </span>
     </div>
   );
@@ -57,7 +70,8 @@ export default function IndustryDetail() {
   const [highlightListen, setHighlightListen] = useState(null);
   const [exportInfo, setExportInfo] = useState({ dom: 0, up: 0 });
   const [toasts, setToasts] = useState([]);
-  const [offMap, setOffMap] = useState({});
+  const [mirrorPairs, setMirrorPairs] = useState([]);
+  const [showAdd, setShowAdd] = useState(false);
   const toastSeq = useRef(0);
 
   const toast = useCallback((msg, type) => {
@@ -92,7 +106,8 @@ export default function IndustryDetail() {
       setCtxState(c);
       setTreeState(norm);
       setStats(lib.countAll(norm));
-      setSelected(norm[0] && norm[0].children[0] ? norm[0].children[0] : null);
+      const kids = norm[0] ? norm[0].children : [];
+      setSelected(kids.find((n) => n.scope === "server") || kids[0] || null);
     } catch {
       toast("配置树加载失败", "err");
     }
@@ -101,40 +116,106 @@ export default function IndustryDetail() {
 
   // configId / ctx 变化时重载树
   useEffect(() => {
+    const cfg = configs.find((x) => x.id === configId);
+    lib.setFileName(cfg ? cfg.name : "");
     loadTree(configId, ctx);
-  }, [configId, ctx, loadTree]);
+  }, [configId, ctx, loadTree, configs]);
 
+  // .conf ⇄ .stream 是两条独立 NginxConfig 记录：切换上下文时联动切换对应配置
   const switchCtx = (c) => {
     if (c === ctx) return;
+    const target = configs.find((x) => (c === "stream") === x.name.includes(".stream"));
+    if (target && target.id !== configId) setConfigId(target.id);
     setCtxState(c);
-    loadTree(configId, c);
   };
 
-  const toggleOff = (node) => {
-    const k = node._id;
-    setOffMap((prev) => ({ ...prev, [k]: !prev[k] }));
-    toast(offMap[k] ? "已启用该监听点" : "已停用该监听点", offMap[k] ? "ok" : "warn");
-  };
-
-  const handleReload = () => {
-    if (!configId) return;
-    toast("正在 reload nginx…");
-    reloadNginx(configId)
-      .then((r) => toast(r.data?.output || "reload 成功，配置已热载", "ok"))
-      .catch(() => toast("reload 失败", "err"));
-  };
-
-  const handlePing = () => {
-    if (!configId) return;
-    toast("连通性测试…");
-    testNginxConfig(configId)
-      .then((r) => {
-        const res = (r.data && r.data.results) || [];
-        const bad = res.filter((x) => !x.ok);
-        toast(bad.length ? `连通性测试：${bad.length} 个端口异常` : "连通性测试：全部正常", bad.length ? "warn" : "ok");
+  // 删除监听点 / 共性块（带确认，落库后重载树）
+  const deleteSide = (node) => {
+    const kind = node.scope === "server" ? "监听点" : "共性块";
+    const label = node.scope === "server" ? lib.listenPlain(node) : lib.upNameOf(node);
+    if (!window.confirm(`确认删除该${kind}「${label}」？此操作不可恢复。`)) return;
+    const bid = node.id || (node.ref && node.ref.id);
+    if (!bid) { toast("该块缺少数据库 id，无法删除", "err"); return; }
+    deleteBlock(bid)
+      .then(() => {
+        if (selected && selected._id === node._id) setSelected(null);
+        loadTree(configId, ctx);
+        toast(`已删除${kind}「${label}」`, "ok");
       })
-      .catch(() => toast("连通性测试失败", "err"));
+      .catch((e) => toast("删除失败：" + (e.response?.data?.detail || "未知错误"), "err"));
   };
+
+  // 监听点顺序调整（▲▼）：在顶层 children 中交换相邻 server，全量落库重排
+  const moveSide = (node, dir) => {
+    const kids = tree[0]?.children || [];
+    const list = kids.filter((n) => n.scope === "server");
+    const i = list.indexOf(node), j = i + dir;
+    if (j < 0 || j >= list.length) return;
+    const a = list[i], b = list[j];
+    const ai = kids.indexOf(a), bi = kids.indexOf(b);
+    [kids[ai], kids[bi]] = [kids[bi], kids[ai]];
+    lib.setTree(lib.getTree());
+    setTreeState([...tree]);
+    const ids = kids.map((x) => x.id).filter(Boolean);
+    if (ids.length < 2) return;
+    reorderBlocks(null, ids)
+      .then(() => { loadTree(configId, ctx); toast("监听点顺序已保存", "ok"); })
+      .catch((e) => toast("顺序保存失败：" + (e.response?.data?.detail || "未知错误"), "err"));
+  };
+
+  // 刷新镜像对（后端持久化 → 模块 MIRRORS + 状态）
+  const refreshMirrors = useCallback(() => {
+    if (!configId) return;
+    listMirrorPairs(configId)
+      .then((r) => {
+        const pairs = r.data || [];
+        lib.setMirrors(Object.fromEntries(pairs.map((p) => [p.src_listen, p.dst_listen])));
+        setMirrorPairs(pairs);
+      })
+      .catch(() => {});
+  }, [configId]);
+
+  // 加载镜像对；旧数据自动迁移：443+20551 已对齐但无镜像对记录 → 补默认对
+  useEffect(() => {
+    if (!configId) return;
+    listMirrorPairs(configId)
+      .then((r) => {
+        if ((r.data || []).length) { refreshMirrors(); return; }
+        const T = lib.getTree()[0];
+        const has = (p) => (T?.children || []).some((s) => s.scope === "server" && lib.mirrorPortOf(s) === p);
+        if (has("443") && has("20551")) {
+          createMirrorPair(configId, { src_listen: "443", dst_listen: "20551" }).finally(() => refreshMirrors());
+        } else {
+          lib.setMirrors({});
+          setMirrorPairs([]);
+        }
+      })
+      .catch(() => refreshMirrors());
+  }, [configId, refreshMirrors]);
+
+  // 镜像自动同步：内存树立即同步（镜像端 ← 母本端，支持多对），并调用后端 mirror 接口落库后重载
+  const syncMirrorsNow = useCallback(() => {
+    if (ctx !== "conf") return;
+    const T = tree[0];
+    if (!T) return;
+    const srvList = (T.children || []).filter((n) => n.scope === "server");
+    const pairs = lib.getMirrors();
+    const hit = Object.entries(pairs).map(([srcPort, dstPort]) => {
+      const src = srvList.find((x) => lib.mirrorPortOf(x) === srcPort);
+      const dst = srvList.find((x) => lib.mirrorPortOf(x) === dstPort);
+      if (!src || !dst) return null;
+      if (!lib.syncMirrors(src)) return null; // 内容已一致则跳过
+      return { src, dst };
+    }).filter(Boolean);
+    if (!hit.length) return;
+    setTreeState(lib.getTree());
+    Promise.all(hit.map(({ src, dst }) => {
+      const srcId = src.id, dstId = dst.id;
+      if (!srcId || !dstId) return Promise.resolve();
+      return mirrorBlock(srcId, dstId).then(() => loadTree(configId, ctx));
+    })).then(() => toast(`已同步镜像：${hit.map((h) => `${lib.mirrorPortOf(h.dst)} ← ${lib.mirrorPortOf(h.src)}`).join("、")}`, "ok"))
+      .catch((e) => toast("镜像落库失败：" + (e.response?.data?.detail || "未知错误"), "err"));
+  }, [ctx, tree, toast, loadTree, configId]);
 
   const value = {
     industryId: id, industry, configs, configId, setConfigId,
@@ -142,11 +223,27 @@ export default function IndustryDetail() {
     stats, setStats, selected, setSelected, dirty, setDirty,
     highlightListen, setHighlightListen,
     exportInfo, setExportInfo, toast,
-    loadTree,
+    loadTree, syncMirrorsNow, refreshMirrors,
   };
 
   const servers = (tree[0]?.children || []).filter((n) => n.scope === "server");
   const commons = (tree[0]?.children || []).filter((n) => ["map", "upstream", "split_clients", "geo"].includes(n.scope));
+
+  // 镜像对状态：母本 / 镜像目标 + 一致判定（listen 端口归一化后比对结构签名）
+  const mirrorMap = useMemo(() => {
+    const m = {};
+    servers.forEach((s) => {
+      const info = lib.mirrorInfoOf(s);
+      if (!info) return;
+      const peer = servers.find((x) => lib.mirrorPortOf(x) === info.peer);
+      m[s._id] = {
+        role: info.role,
+        peer: info.peer,
+        same: !!peer && lib.mirrorSigOf(s) === lib.mirrorSigOf(peer),
+      };
+    });
+    return m;
+  }, [servers, mirrorPairs]);
 
   return (
     <OpsContext.Provider value={value}>
@@ -164,7 +261,7 @@ export default function IndustryDetail() {
           </div>
         </div>
 
-        {/* 四视图菜单 38px（对齐 mock：仅导航，无 ctxseg） */}
+        {/* 视图菜单 38px（仅块管理） */}
         <div className="ops-menubar">
           {VIEWS.map((v) => (
             <div key={v.key} className={`navi${view === v.key ? " on" : ""}`} data-view={v.key} onClick={() => setView(v.key)}>
@@ -185,23 +282,30 @@ export default function IndustryDetail() {
               ))}
             </div>
             <div className="side-group grow">
-              <div className="side-head">监听点 ({servers.length})</div>
+              <div className="side-head" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingRight: 10 }}>
+                <span>监听点 ({servers.length})</span>
+                <button className="side-add" title="新增监听点（server 块）" onClick={() => setShowAdd(true)}>＋ 监听点</button>
+              </div>
               {servers.map((s) => (
                 <SideItem
                   key={s._id}
                   node={s}
-                  off={!!offMap[s._id]}
-                  onToggle={() => toggleOff(s)}
-                  onPing={handlePing}
-                  onReload={handleReload}
+                  active={!!(selected && selected._id === s._id)}
+                  onSelect={() => setSelected(s)}
+                  onMove={(dir) => moveSide(s, dir)}
+                  onDelete={() => deleteSide(s)}
+                  mirror={mirrorMap[s._id]}
                 />
               ))}
               {servers.length === 0 && <div className="empty-hint">当前上下文无 server 块</div>}
             </div>
-            <div className="side-group">
-              <div className="side-head">共性块 ({commons.length})</div>
+            <div className="side-group cmn">
+              <div className="side-head" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingRight: 10 }}>
+                <span>共性块 ({commons.length})</span>
+                <button className="side-add" title="新增共性块（upstream / map / geo）" onClick={() => setShowAdd(true)}>＋ 共性块</button>
+              </div>
               {commons.map((n) => (
-                <SideItem key={n._id} node={n} off={false} onToggle={() => {}} onPing={() => {}} onReload={handleReload} />
+                <SideItem key={n._id} node={n} active={!!(selected && selected._id === n._id)} onSelect={() => setSelected(n)} onDelete={() => deleteSide(n)} />
               ))}
               {commons.length === 0 && <div className="empty-hint" style={{ padding: "10px 14px" }}>无 map/upstream/geo 块</div>}
             </div>
@@ -210,10 +314,7 @@ export default function IndustryDetail() {
           {/* 主区（content） */}
           <div className="ops-main">
             <div className="view-fade" style={{ flex: 1, display: "flex", minHeight: 0 }}>
-              {view === "config" && <ConfigPage />}
               {view === "block" && <BlockPage />}
-              {view === "topology" && <TopologyPage />}
-              {view === "biz" && <BizPortPage />}
             </div>
             <div className="foot-glow" />
           </div>
@@ -242,6 +343,9 @@ export default function IndustryDetail() {
             <div key={t.id} className={`toast ${t.type || ""}`}>{t.msg}</div>
           ))}
         </div>
+
+        {/* 新增顶级块（监听点 / 共性块共用，弹窗内选择 scope） */}
+        <AddBlockModal open={showAdd} onClose={() => setShowAdd(false)} onAdded={() => loadTree(configId, ctx)} />
       </div>
     </OpsContext.Provider>
   );

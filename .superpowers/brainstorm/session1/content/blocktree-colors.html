@@ -1,0 +1,89 @@
+<h2>块树配色方案（整体协调）</h2>
+<p class="subtitle">同一段真实配置（server / location / upstream / map）用三种配色渲染。当前问题：蓝/绿/橙黄/红 高饱和多色相混排。点击卡片选你喜欢的方案。</p>
+
+<!-- 方案 A -->
+<div class="option" data-choice="a-monohue" onclick="toggleSelect(this)" style="display:flex;gap:14px;align-items:flex-start;width:100%;padding:14px">
+  <div style="flex:0 0 150px">
+    <h3 style="margin:0 0 4px">A · 品牌蓝单色系（推荐）</h3>
+    <p style="font-size:12px;color:#9a9aa6;margin:0">所有块徽章统一在品牌蓝家族内分级（深→浅），指令名同品牌蓝；红色只留给 if 警示。整体克制、一色到底。</p>
+  </div>
+  <div style="flex:1;font-family:Consolas,Menlo,monospace;font-size:11px;background:#18181c;border:1px solid #2a2a2e;border-radius:8px;padding:12px">
+    <div style="border:1px solid #2a2a2e;border-radius:6px;background:#202024;margin-bottom:6px;overflow:hidden">
+      <div style="background:#2a2a30;padding:4px 8px"><span style="font-size:9px;padding:0 6px;border-radius:3px;color:#4a8af4;background:rgba(74,138,244,.12);border:1px solid rgba(74,138,244,.25);font-family:inherit">server</span> <span style="color:#e8e8ea">443 ssl http2 {</span></div>
+      <div style="padding:4px 8px;color:#4a8af4">listen <span style="color:#b0b0bc">443 ssl http2;</span></div>
+      <div style="padding:4px 8px;color:#4a8af4">server_name <span style="color:#b0b0bc">af-ftcloud.ifleetvision.com;</span></div>
+      <div style="border-top:1px solid #222226;margin:4px 8px"></div>
+      <div style="border:1px solid #2a2a2e;border-radius:6px;background:#202024;margin:0 8px 8px 22px;overflow:hidden">
+        <div style="background:#2a2a30;padding:4px 8px"><span style="font-size:9px;padding:0 6px;border-radius:3px;color:#6ba8fa;background:rgba(107,168,250,.12);border:1px solid rgba(107,168,250,.25);font-family:inherit">location</span> <span style="color:#e8e8ea">/api/ {</span></div>
+        <div style="padding:4px 8px;color:#4a8af4">proxy_pass <span style="color:#b0b0bc">http://api_backend;</span></div>
+      </div>
+      <div style="padding:4px 8px;color:#4a8af4;font-size:9px;color:#808090">↑ 同族色分级：server 深蓝徽章 → location 浅蓝徽章</div>
+    </div>
+    <div style="border:1px solid #2a2a2e;border-radius:6px;background:#202024;margin-bottom:6px;overflow:hidden">
+      <div style="background:#2a2a30;padding:4px 8px"><span style="font-size:9px;padding:0 6px;border-radius:3px;color:#7aa2f7;background:rgba(122,162,247,.10);border:1px solid rgba(122,162,247,.20);font-family:inherit">upstream</span> <span style="color:#e8e8ea">api_backend {</span></div>
+      <div style="padding:4px 8px;color:#4a8af4">server <span style="color:#b0b0bc">10.0.0.97:20690 weight=5 max_fails=2 fail_timeout=30s;</span></div>
+    </div>
+    <div style="border:1px solid #2a2a2e;border-radius:6px;background:#202024;overflow:hidden">
+      <div style="background:#2a2a30;padding:4px 8px"><span style="font-size:9px;padding:0 6px;border-radius:3px;color:#7aa2f7;background:rgba(122,162,247,.10);border:1px solid rgba(122,162,247,.20);font-family:inherit">map</span> <span style="color:#e8e8ea">$http_upgrade $connection_upgrade {</span></div>
+      <div style="padding:4px 8px;color:#4a8af4">default <span style="font-size:9px;padding:0 6px;border-radius:3px;color:#22c55e;background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.2)">置底</span> <span style="color:#b0b0bc">upgrade;</span></div>
+      <div style="padding:4px 8px;color:#4a8af4">'' <span style="color:#b0b0bc">close;</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- 方案 B -->
+<div class="option" data-choice="b-neutral" onclick="toggleSelect(this)" style="display:flex;gap:14px;align-items:flex-start;width:100%;padding:14px">
+  <div style="flex:0 0 150px">
+    <h3 style="margin:0 0 4px">B · 中性灰阶 + 单一强调</h3>
+    <p style="font-size:12px;color:#9a9aa6;margin:0">块徽章全部灰阶（surface3 底 + 灰字），指令名灰阶；仅选中块与激活态用品牌蓝。极简、几乎无色。</p>
+  </div>
+  <div style="flex:1;font-family:Consolas,Menlo,monospace;font-size:11px;background:#18181c;border:1px solid #2a2a2e;border-radius:8px;padding:12px">
+    <div style="border:1px solid #2a2a2e;border-radius:6px;background:#202024;margin-bottom:6px;overflow:hidden">
+      <div style="background:#2a2a30;padding:4px 8px"><span style="font-size:9px;padding:0 6px;border-radius:3px;color:#b0b0bc;background:#2a2a30;border:1px solid #3a3a3e;font-family:inherit">server</span> <span style="color:#e8e8ea">443 ssl http2 {</span></div>
+      <div style="padding:4px 8px;color:#b0b0bc">listen <span style="color:#808090">443 ssl http2;</span></div>
+      <div style="padding:4px 8px;color:#b0b0bc">server_name <span style="color:#808090">af-ftcloud.ifleetvision.com;</span></div>
+      <div style="border-top:1px solid #222226;margin:4px 8px"></div>
+      <div style="border:1px solid #2a2a2e;border-radius:6px;background:#202024;margin:0 8px 8px 22px;overflow:hidden">
+        <div style="background:#2a2a30;padding:4px 8px"><span style="font-size:9px;padding:0 6px;border-radius:3px;color:#b0b0bc;background:#2a2a30;border:1px solid #3a3a3e;font-family:inherit">location</span> <span style="color:#e8e8ea">/api/ {</span></div>
+        <div style="padding:4px 8px;color:#b0b0bc">proxy_pass <span style="color:#808090">http://api_backend;</span></div>
+      </div>
+      <div style="padding:4px 8px;font-size:9px;color:#808090">↑ 无彩色徽章，仅边框/背景层次区分</div>
+    </div>
+    <div style="border:1px solid #2a2a2e;border-radius:6px;background:#202024;margin-bottom:6px;overflow:hidden">
+      <div style="background:#2a2a30;padding:4px 8px"><span style="font-size:9px;padding:0 6px;border-radius:3px;color:#b0b0bc;background:#2a2a30;border:1px solid #3a3a3e;font-family:inherit">upstream</span> <span style="color:#e8e8ea">api_backend {</span></div>
+      <div style="padding:4px 8px;color:#b0b0bc">server <span style="color:#808090">10.0.0.97:20690 weight=5 max_fails=2 fail_timeout=30s;</span></div>
+    </div>
+    <div style="border:1px solid #2a2a2e;border-radius:6px;background:#202024;overflow:hidden">
+      <div style="background:#2a2a30;padding:4px 8px"><span style="font-size:9px;padding:0 6px;border-radius:3px;color:#b0b0bc;background:#2a2a30;border:1px solid #3a3a3e;font-family:inherit">map</span> <span style="color:#e8e8ea">$http_upgrade $connection_upgrade {</span></div>
+      <div style="padding:4px 8px;color:#b0b0bc">default <span style="font-size:9px;padding:0 6px;border-radius:3px;color:#22c55e;background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.2)">置底</span> <span style="color:#808090">upgrade;</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- 方案 C -->
+<div class="option" data-choice="c-dual" onclick="toggleSelect(this)" style="display:flex;gap:14px;align-items:flex-start;width:100%;padding:14px">
+  <div style="flex:0 0 150px">
+    <h3 style="margin:0 0 4px">C · 双色族分层</h3>
+    <p style="font-size:12px;color:#9a9aa6;margin:0">http 上下文（server/location）用品牌蓝；stream/upstream 用青绿；map 用灰蓝；if 红。按语境分层、两个色族。</p>
+  </div>
+  <div style="flex:1;font-family:Consolas,Menlo,monospace;font-size:11px;background:#18181c;border:1px solid #2a2a2e;border-radius:8px;padding:12px">
+    <div style="border:1px solid #2a2a2e;border-radius:6px;background:#202024;margin-bottom:6px;overflow:hidden">
+      <div style="background:#2a2a30;padding:4px 8px"><span style="font-size:9px;padding:0 6px;border-radius:3px;color:#4a8af4;background:rgba(74,138,244,.12);border:1px solid rgba(74,138,244,.25);font-family:inherit">server</span> <span style="color:#e8e8ea">443 ssl http2 {</span></div>
+      <div style="padding:4px 8px;color:#6ba8fa">listen <span style="color:#b0b0bc">443 ssl http2;</span></div>
+      <div style="padding:4px 8px;color:#6ba8fa">server_name <span style="color:#b0b0bc">af-ftcloud.ifleetvision.com;</span></div>
+    </div>
+    <div style="border:1px solid #2a2a2e;border-radius:6px;background:#202024;margin-bottom:6px;overflow:hidden">
+      <div style="background:#2a2a30;padding:4px 8px"><span style="font-size:9px;padding:0 6px;border-radius:3px;color:#2dd4bf;background:rgba(45,212,191,.10);border:1px solid rgba(45,212,191,.22);font-family:inherit">upstream</span> <span style="color:#e8e8ea">db_backend_3306 {</span></div>
+      <div style="padding:4px 8px;color:#2dd4bf">server <span style="color:#b0b0bc">10.0.0.97:3306;</span></div>
+    </div>
+    <div style="border:1px solid #2a2a2e;border-radius:6px;background:#202024;overflow:hidden">
+      <div style="background:#2a2a30;padding:4px 8px"><span style="font-size:9px;padding:0 6px;border-radius:3px;color:#7aa2f7;background:rgba(122,162,247,.10);border:1px solid rgba(122,162,247,.2);font-family:inherit">map</span> <span style="color:#e8e8ea">$http_upgrade $connection_upgrade {</span></div>
+      <div style="padding:4px 8px;color:#7aa2f7">default <span style="font-size:9px;padding:0 6px;border-radius:3px;color:#22c55e;background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.2)">置底</span> <span style="color:#808090">upgrade;</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top:14px">
+  <h3 style="font-size:13px">我的建议</h3>
+  <p class="subtitle" style="font-size:12px">推荐 A：信息层次靠「同色分级 + 背景层次」，全页只有一个色族 + 语义红（if），最符合整体协调；B 过于单调，C 两色族在混排时仍会显得「彩色」。最终也都会同步适配顶部标签/全局拓扑等区域。</p>
+</div>

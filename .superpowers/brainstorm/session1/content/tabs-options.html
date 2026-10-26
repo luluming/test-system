@@ -1,0 +1,61 @@
+<h2>「配置文件」标签去留</h2>
+<p class="subtitle">工作台顶部现有 4 个标签：配置文件 / 块管理 / 全局拓扑 / 业务端口。点击卡片选择你觉得合适的方案（可先预览各方案对比）。</p>
+
+<div class="mockup">
+  <div class="mockup-header">现状：4 标签，内容重叠示意</div>
+  <div class="mockup-body" style="padding:12px 14px;font-family:Segoe UI,PingFang SC,Microsoft YaHei,sans-serif;background:#0a0a0c;color:#e8e8ea">
+    <div style="display:flex;gap:2px;border-bottom:1px solid #2a2a2e;padding-bottom:6px">
+      <span style="padding:4px 12px;font-size:12px;border-bottom:2px solid #4a8af4;color:#e8e8ea">📄 配置文件</span>
+      <span style="padding:4px 12px;font-size:12px;color:#b0b0bc">📁 块管理</span>
+      <span style="padding:4px 12px;font-size:12px;color:#b0b0bc">🔗 全局拓扑</span>
+      <span style="padding:4px 12px;font-size:12px;color:#b0b0bc">📋 业务端口</span>
+    </div>
+    <div style="font-size:11px;color:#808090;margin-top:8px;line-height:1.7">
+      「配置文件」页内含 5 个子页：概览(监听点表格) / 域名映射 / 转发规则 / 业务端口 / 块树<br/>
+      <span style="color:#f59e0b">⚠ 概览≈块管理的监听点列表；块树=块管理的只读版；业务端口=顶部「业务端口」标签的重复</span><br/>
+      <span style="color:#22c55e">唯一独有内容：域名映射 + 转发规则 + 配置列表切换</span>
+    </div>
+  </div>
+</div>
+
+<div class="options">
+  <div class="option" data-choice="merge3" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>删除「配置文件」，合并成 3 标签</h3>
+      <p>域名映射 + 转发规则 + 配置列表并入「块管理」页子页；概览表格、只读块树、业务端口子页全部移除。</p>
+      <div style="display:flex;gap:2px;border-bottom:1px solid #2a2a2e;padding-bottom:4px;padding-top:4px">
+        <span style="padding:3px 10px;font-size:11px;border-bottom:2px solid #4a8af4;color:#e8e8ea">📁 块管理</span>
+        <span style="padding:3px 10px;font-size:11px;color:#b0b0bc">🔗 全局拓扑</span>
+        <span style="padding:3px 10px;font-size:11px;color:#b0b0bc">📋 业务端口</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="keep-slim" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>保留但瘦身：4 标签不变</h3>
+      <p>保留「配置文件」，删掉与块管理重复的「块树」「业务端口」子页，只留 概览 / 域名映射 / 转发规则。</p>
+      <div style="display:flex;gap:2px;border-bottom:1px solid #2a2a2e;padding-bottom:4px;padding-top:4px">
+        <span style="padding:3px 10px;font-size:11px;border-bottom:2px solid #4a8af4;color:#e8e8ea">📄 配置文件</span>
+        <span style="padding:3px 10px;font-size:11px;color:#b0b0bc">📁 块管理</span>
+        <span style="padding:3px 10px;font-size:11px;color:#b0b0bc">🔗 全局拓扑</span>
+        <span style="padding:3px 10px;font-size:11px;color:#b0b0bc">📋 业务端口</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="keep-all" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>原样保留</h3>
+      <p>保持现状 4 标签，不改动（重复内容共存，后续再议）。</p>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top:14px">
+  <h3 style="font-size:13px">我的建议</h3>
+  <p class="subtitle" style="font-size:12px">推荐 A：块管理已是默认进入页且承担核心编辑，域名映射/转发规则并入后信息架构最干净；配置文件独有的信息密度并未因删除而丢失。</p>
+</div>

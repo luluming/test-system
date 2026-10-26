@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>nginx 配置管理 · 布局方案预览</title>
+<style>
+  :root{
+    --bg-deep:#0a0a0c;--bg-surface-2:#202024;--bg-hover:#2e2e36;--brand:#4a8af4;--brand-hover:#6ba8fa;
+    --border-primary:#2a2a2e;--border-secondary:#222226;--text-primary:#e8e8ea;--text-secondary:#b0b0bc;--text-tertiary:#808090;
+    --success:#22c55e;--warning:#f59e0b;--error:#ef4444;
+    --radius-md:6px;--radius-lg:8px;--font-sans:-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:var(--font-sans);background:var(--bg-deep);color:var(--text-primary);min-height:100vh;padding:40px 32px;}
+  h1{font-size:21px;font-weight:600;margin-bottom:6px;letter-spacing:-.3px;}
+  .sub{color:var(--text-secondary);font-size:13.5px;margin-bottom:32px;}
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;max-width:1400px;}
+  .card{background:var(--bg-surface-2);border:1px solid var(--border-primary);border-radius:var(--radius-lg);overflow:hidden;display:flex;flex-direction:column;text-decoration:none;color:inherit;transition:all .15s;}
+  .card:hover{transform:translateY(-2px);border-color:var(--brand);box-shadow:0 8px 32px rgba(74,138,244,.12);}
+  .thumb{height:190px;background:var(--bg-surface-2);overflow:hidden;position:relative;}
+  .thumb.banner{position:absolute;top:10px;left:10px;background:var(--brand);color:#fff;font-size:10px;font-weight:600;padding:1px 8px;border-radius:4px;}
+  .body{padding:16px 18px 18px;border-top:1px solid var(--border-secondary);}
+  .body h3{font-size:15px;font-weight:500;margin-bottom:6px;}
+  .body p{font-size:12.5px;color:var(--text-secondary);line-height:1.6;}
+  .body .tags{display:flex;gap:6px;margin-bottom:10px;}
+  .tag{font-size:10px;padding:1px 8px;border-radius:4px;border:1px solid;}
+  .tag.t1{border-color:rgba(74,138,244,.25);color:var(--brand);}
+  .tag.t2{border-color:rgba(245,158,11,.25);color:var(--warning);}
+  /* 缩略图线框 */
+  .sketch{border:1px solid var(--border-secondary);border-radius:var(--radius-md);margin:10px;background:var(--bg-deep);display:flex;height:calc(100% - 20px);overflow:hidden;}
+  .sk-b{width:34%;border-right:1px solid var(--border-secondary);}
+  .sk-c{flex:1;background:var(--bg-surface-2);}
+  .sk-r{width:26%;border-left:1px solid var(--border-secondary);}
+  .sk-lines{padding:8px;display:flex;flex-direction:column;gap:5px;}
+  .sk-line{height:8px;border-radius:3px;background:var(--bg-hover);}
+  .sk-line.x{background:rgba(74,138,244,.4);}
+  .sk-bar{height:20px;border-bottom:1px solid var(--border-secondary);background:var(--bg-deep);}
+  /* B 缩略图 */
+  .sk-card-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:8px;}
+  .sk-mini{border:1px solid var(--border-secondary);border-radius:6px;padding:6px;display:flex;flex-direction:column;gap:4px;background:var(--bg-surface-2);}
+  .sk-mini .r{height:7px;border-radius:3px;background:var(--bg-hover);}
+  .sk-mini .r.g{background:rgba(34,197,94,.4);height:7px;}
+  .sk-mini .b.hot{border-color:rgba(74,138,244,.35);}
+</style>
+</head>
+<body>
+  <h1>nginx 配置管理系统 · 布局方案总览</h1>
+  <div class="sub">同一套仿真数据（3 站点 / 8 域名映射 / 14 端口），用三种布局呈现，点卡片进入查看完整效果</div>
+
+  <div class="grid">
+    <!-- A -->
+    <a class="card" href="layout-a-mock.html">
+      <div class="thumb banner" style="position:absolute;">方案 A</div>
+      <div class="thumb">
+        <div class="sketch">
+          <div class="sk-b"><div class="sk-bar"></div><div class="sk-lines"><div class="sk-line x"></div><div class="sk-line"></div><div class="sk-line"></div><div class="sk-line"></div><div class="sk-line"></div></div></div>
+          <div class="sk-c"><div class="sk-bar"></div><div class="sk-lines" style="padding:10px 14px;"><div class="sk-line x" style="width:80%;"></div><div class="sk-line"></div><div class="sk-line" style="width:60%;"></div><div class="sk-line" style="width:90%;"></div><div class="sk-line"></div></div></div>
+        </div>
+      </div>
+      <div class="body">
+        <div class="tags"><span class="tag t1">编辑器主导</span><span class="tag t1">IDE 式</span><span class="tag t2">深度编辑</span></div>
+        <h3>方案 A · 编辑器主导</h3>
+        <p>左侧文件树 + 中部多标签配置编辑器 + 右侧选中站点详情。面向"逐字改配置 + 看清关联"的重度管控场景。</p>
+      </div>
+    </a>
+
+    <!-- B -->
+    <a class="card" href="layout-b-mock.html">
+      <div class="thumb banner" style="position:absolute;">方案 B</div>
+      <div class="thumb">
+        <div class="sk-card-grid">
+          <div class="sk-mini hot"><div class="r"></div><div class="r g" style="width:70%;"></div><div class="r"></div></div>
+          <div class="sk-mini"><div class="r"></div><div class="r" style="width:50%;"></div><div class="r"></div></div>
+          <div class="sk-mini"><div class="r"></div><div class="r g" style="width:80%;"></div><div class="r"></div></div>
+          <div class="sk-mini"><div class="r"></div><div class="r" style="width:60%;"></div><div class="r"></div></div>
+        </div>
+      </div>
+      <div class="body">
+        <div class="tags"><span class="tag t1">卡片式</span><span class="tag t1">监听点视图</span><span class="tag t2">直观关系</span></div>
+        <h3>方案 B · 卡片式监听点视图</h3>
+        <p>每个监听端口是一张卡片，卡片内直接铺开该端口的域名映射、转发规则、业务端口与公网开关，一眼看清整条链路。</p>
+      </div>
+    </a>
+
+    <!-- C -->
+    <a class="card" href="layout-c-mock.html">
+      <div class="thumb banner" style="position:absolute;">方案 C</div>
+      <div class="thumb">
+        <div class="sketch">
+          <div class="sk-b"><div class="sk-bar"></div><div class="sk-lines"><div class="sk-line x"></div><div class="sk-line"></div><div class="sk-line"></div></div></div>
+          <div class="sk-c"><div class="sk-lines" style="padding:8px;"><div class="sk-line" style="width:100%;height:26px;background:var(--bg-hover);"></div></div></div>
+          <div class="sk-r"><div class="sk-bar"></div><div class="sk-lines"><div class="sk-line x"></div><div class="sk-line"></div><div class="sk-line" style="width:70%;"></div></div></div>
+        </div>
+      </div>
+      <div class="body">
+        <div class="tags"><span class="tag t1">列表 + 详情</span><span class="tag t1">主从式</span><span class="tag t2">通用平衡</span></div>
+        <h3>方案 C · 列表 + 详情主从</h3>
+        <p>左侧一列监听点/域名列表，右侧详情表单承载映射、转发、公网开关与编辑。批量浏览 + 精准编辑的通用经典布局。</p>
+      </div>
+    </a>
+  </div>
+</body>
+</html>

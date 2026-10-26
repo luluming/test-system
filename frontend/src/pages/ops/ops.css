@@ -63,7 +63,7 @@
   transition: background .15s var(--ease), padding-left .15s var(--ease), color .15s var(--ease);
 }
 .t-item:hover { background: var(--bg-hover); color: var(--text-pri); padding-left: 14px; }
-.t-item.on { background: var(--brand-light); color: var(--text-pri); font-weight: 600; }
+.t-item.on { background: var(--brand-light); color: var(--text-pri); font-weight: 600; box-shadow: inset 2px 0 0 var(--brand); }
 .t-item .t-ico { color: var(--text-ter); font-size: 10px; width: 14px; text-align: center; flex: none; }
 .t-item .t-nm { overflow: hidden; text-overflow: ellipsis; }
 .t-item .t-cnt { margin-left: auto; color: var(--text-ter); font-size: 10px; font-family: var(--mono); flex: none; }
@@ -75,6 +75,39 @@
   transition: all .12s var(--ease);
 }
 .t-op:hover { background: var(--bg-surface3); color: var(--text-pri); border-color: var(--border); }
+.t-op.del:hover { color: #ef4444; border-color: var(--error-border); background: var(--error-bg); }
+/* 分区头新增按钮（监听点 / 共性块） */
+.side-add { border: 1px solid var(--border); background: transparent; color: var(--text-ter); font-size: 9.5px; padding: 1px 6px; border-radius: 3px; cursor: pointer; font-family: var(--mono); transition: all .12s var(--ease); }
+.side-add:hover { color: var(--brand); border-color: var(--brand-border); background: var(--brand-light); }
+/* 镜像徽标（母本 / 镜像目标 + 一致状态点） */
+.mir-badge {
+  display: inline-flex; align-items: center; gap: 4px; flex: none; white-space: nowrap;
+  font-size: 9px; font-family: var(--mono); padding: 0 5px; height: 15px; border-radius: 3px;
+  border: 1px solid var(--brand-border); color: var(--brand-hover); background: rgba(74,138,244,.05);
+}
+.mir-badge.src { border-color: var(--border); color: var(--text-ter); background: transparent; }
+.mir-badge.diff { border-color: rgba(245,158,11,.35); color: #f59e0b; background: rgba(245,158,11,.06); }
+.mir-badge .dot { width: 5px; height: 5px; border-radius: 50%; display: inline-block; flex: none; }
+.mir-badge .dot.same { background: var(--success); }
+.mir-badge .dot.diff { background: #f59e0b; box-shadow: 0 0 0 2px rgba(245,158,11,.2); }
+
+/* === 镜像设置弹窗 === */
+.mir-list { display: flex; flex-direction: column; gap: 6px; max-height: 240px; overflow-y: auto; }
+.mir-row { display: flex; align-items: center; gap: 10px; padding: 7px 10px; background: var(--bg-hover); border: 1px solid var(--border); border-radius: 6px; font-size: 12.5px; }
+.mir-row .mir-src { color: var(--brand); font-weight: 600; }
+.mir-row .mir-dst { color: var(--text-sec); }
+.mir-arrow { font-size: 11px; color: var(--text-ter); flex: none; }
+.mir-row .t-op { margin-left: auto; }
+.mir-add { margin-top: 12px; }
+.mir-sel { height: 28px; background: var(--bg-input); border: 1px solid var(--border); border-radius: 5px; color: var(--text-pri); padding: 0 8px; font-size: 12.5px; min-width: 130px; }
+.mir-sel:focus { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(74,138,244,.08); outline: none; }
+
+/* === 版本对比 diff === */
+.dif-row.del { background: rgba(239,68,68,.10); color: #f2a6a6; }
+.dif-row.add { background: rgba(34,197,94,.10); color: #9fe3b0; }
+.dif-row.same { color: var(--text-ter); }
+/* 共性块分区独立滚动（内容多时不再被裁切） */
+.side-group.cmn { max-height: 44vh; overflow-y: auto; }
 
 /* ---- 状态栏 ---- */
 .ops-statusbar {
@@ -107,6 +140,8 @@
 .lp-row .lp-nm { font-size: 12.5px; color: var(--text-pri); }
 .lp-row .lp-meta { font-size: 10px; color: var(--text-ter); font-family: var(--mono); }
 .lp-row.alarm { border-left-color: #ef4444; }
+.lp-row.unset { opacity: .62; }
+.lp-row.unset:hover { opacity: 1; }
 .detail-panel { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--bg-surface); }
 
 /* ---- Tab 栏（五 Tab）---- */
@@ -129,9 +164,6 @@
 }
 .btn:hover { background: var(--bg-hover); color: var(--text-pri); border-color: var(--brand-border); }
 .btn:active { transform: scale(.97); }
-.btn.primary { background: var(--brand); border-color: transparent; color: #fff; }
-.btn.primary:hover { background: var(--brand-hover); }
-.btn.primary:active { transform: scale(.97); }
 .btn.danger { color: #ef4444; border-color: rgba(239,68,68,.3); }
 .btn.danger:hover { background: rgba(239,68,68,.12); color: #f87171; }
 .btn.icon { width: 26px; padding: 0; justify-content: center; }
@@ -141,11 +173,16 @@
 /* ---- 统计卡 ---- */
 .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px; }
 .card {
-  background: var(--bg-surface2); border: 1px solid var(--border-soft); border-radius: 8px; padding: 12px 16px;
-  display: flex; flex-direction: column; gap: 2px;
+  background: var(--bg-surface2); border: 1px solid var(--border-soft); border-radius: 8px; padding: 10px 16px 12px;
+  display: flex; flex-direction: column; justify-content: center; gap: 4px;
 }
-.card b { font-family: var(--mono); font-size: 22px; letter-spacing: -.5px; }
+.card b { font-family: var(--mono); font-size: 22px; letter-spacing: -.5px; line-height: 1.15; }
 .card small { color: var(--text-ter); font-size: 11px; }
+/* 颜色语义编码：左侧 2px 品牌色条 + 数值同色 */
+.card.blue { border-left: 2px solid var(--brand); }
+.card.green { border-left: 2px solid var(--success); }
+.card.yellow { border-left: 2px solid var(--warning); }
+.card.red { border-left: 2px solid #ef4444; }
 .card.blue b { color: var(--brand); }
 .card.green b { color: var(--success); }
 .card.yellow b { color: var(--warning); }
@@ -166,7 +203,7 @@
 }
 .ov-tbl tbody tr { border-bottom: 1px solid var(--border-soft); transition: background .15s var(--ease); cursor: pointer; }
 .ov-tbl tbody tr:hover { background: var(--rowhover); }
-.ov-tbl tbody tr.on { background: var(--brand-light); }
+.ov-tbl tbody tr.on { background: var(--brand-light); box-shadow: inset 2px 0 0 var(--brand); }
 .ov-tbl td { padding: 10px 12px; font-size: 12.5px; }
 .ov-h { font-size: 12px; color: var(--text-sec); font-weight: 600; margin: 14px 0 4px; }
 .ov-h.mt { margin-top: 18px; }
@@ -233,19 +270,30 @@
   font-size: 9px; padding: 1px 6px; border-radius: 3px; font-weight: 600; font-family: var(--font-sans, sans-serif);
   border: 1px solid var(--border); color: var(--text-sec); flex: none;
 }
+/* 品牌蓝单色系：块徽章统一在品牌蓝家族内分级；红仅留给 if 语义警示 */
 .bkind.srv { color: var(--brand); border-color: var(--brand-border); background: var(--brand-light); }
-.bkind.loc { color: var(--success); border-color: rgba(34,197,94,.25); background: var(--success-bg); }
-.bkind.map { color: var(--warning); border-color: rgba(245,158,11,.25); background: var(--warning-bg); }
-.bkind.up { color: var(--warning); border-color: rgba(245,158,11,.25); background: var(--warning-bg); }
+.bkind.loc { color: var(--brand-hover); border-color: rgba(107,168,250,.28); background: rgba(107,168,250,.10); }
+.bkind.map { color: #7aa2f7; border-color: rgba(122,162,247,.22); background: rgba(122,162,247,.09); }
+.bkind.up { color: #7aa2f7; border-color: rgba(122,162,247,.22); background: rgba(122,162,247,.09); }
+.bkind.spl { color: #7aa2f7; border-color: rgba(122,162,247,.22); background: rgba(122,162,247,.09); }
+.bkind.geo { color: #7aa2f7; border-color: rgba(122,162,247,.22); background: rgba(122,162,247,.09); }
+.bkind.stm { color: var(--brand); border-color: var(--brand-border); background: var(--brand-light); }
+.bkind.evt { color: var(--brand-hover); border-color: rgba(107,168,250,.28); background: rgba(107,168,250,.10); }
 .bkind.if { color: #ef4444; border-color: rgba(239,68,68,.25); background: rgba(239,68,68,.08); }
 .bkind.com { color: var(--text-ter); }
 .bkind.raw { color: var(--text-ter); }
-.bkind.stm { color: var(--brand); border-color: var(--brand-border); background: var(--brand-light); }
-.bkind.evt { color: var(--success); border-color: rgba(34,197,94,.25); background: var(--success-bg); }
 .bkind.x { color: var(--text-ter); }
 .t-head .t-actions { margin-left: auto; display: flex; gap: 4px; align-items: center; }
 .t-edit { border: none; background: transparent; color: var(--text-ter); font-size: 11px; cursor: pointer; padding: 2px 6px; border-radius: 4px; font-family: var(--mono); }
 .t-edit:hover { background: var(--bg-hover); color: var(--text-pri); }
+/* 块头双击改名 + ＋子块 下拉菜单 */
+.hdr { cursor: text; }
+.hdr:hover { text-decoration: underline; text-decoration-color: rgba(255, 255, 255, 0.35); text-underline-offset: 3px; }
+.hdr-edit { background: var(--bg-deep2); color: var(--text-pri); border: 1px solid var(--brand); border-radius: 4px; padding: 1px 6px; font-family: var(--mono); font-size: 12px; width: 260px; }
+.add-wrap { position: relative; display: inline-flex; }
+.sub-menu { position: absolute; top: 24px; right: 0; z-index: 40; background: var(--bg-surface2); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4); display: flex; flex-direction: column; min-width: 110px; padding: 4px; }
+.sub-it { border: none; background: transparent; color: var(--text-sec); font-size: 11px; text-align: left; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-family: var(--mono); }
+.sub-it:hover { background: var(--bg-hover); color: var(--text-pri); }
 
 .t-body { padding: 6px 8px; }
 .kv-row {

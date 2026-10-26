@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>方案C+ · 三处数据展示增强静态预览</title>
+<style>
+  :root{
+    --bg-deep:#0a0a0c;--bg-deep-2:#0d0d10;--bg-sidebar:#111114;--bg-surface:#18181c;
+    --bg-surface-2:#202024;--bg-surface-3:#2a2a30;--bg-hover:#2e2e36;--bg-selected:#2a2a42;
+    --bg-input:#111115;--brand:#4a8af4;--brand-hover:#6ba8fa;--brand-border:rgba(74,138,244,.25);
+    --success:#22c55e;--success-bg:rgba(34,197,94,.08);--success-border:rgba(34,197,94,.20);
+    --warning:#f59e0b;--warning-bg:rgba(245,158,11,.08);--warning-border:rgba(245,158,11,.20);
+    --error:#ef4444;--error-bg:rgba(239,68,68,.08);--error-border:rgba(239,68,68,.20);
+    --info:#4a8af4;--info-bg:rgba(74,138,244,.08);--info-border:rgba(74,138,244,.20);
+    --text-primary:#e8e8ea;--text-secondary:#b0b0bc;--text-tertiary:#808090;
+    --border-primary:#2a2a2e;--border-secondary:#222226;
+    --radius-xs:2px;--radius-sm:4px;--radius-md:6px;--radius-lg:8px;
+    --font-sans:-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
+    --font-mono:'JetBrains Mono','SF Mono','Menlo','Consolas',monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:var(--font-sans);background:var(--bg-deep);color:var(--text-primary);font-size:12.5px;height:100vh;overflow:hidden;}
+  .app{display:flex;flex-direction:column;height:100vh;}
+  .titlebar{height:36px;flex:0 0 36px;background:var(--bg-deep);border-bottom:1px solid var(--border-primary);display:flex;align-items:center;padding:0 16px;justify-content:space-between;}
+  .titlebar .left{display:flex;align-items:center;gap:12px;font-weight:600;font-size:12px;}
+  .mid{font-size:11px;color:var(--text-tertiary);font-family:var(--font-mono);}
+  .win{display:flex;gap:8px;}.win span{width:12px;height:12px;border-radius:50%;display:inline-block;}
+  .win .r{background:#ff5f57;}.win .y{background:#febc2e;}.win .g{background:#28c840;}
+
+  .scrim{display:flex;flex-direction:column;height:calc(100% - 36px);}
+  .menu{height:38px;flex:0 0 38px;background:var(--bg-surface);border-bottom:1px solid var(--border-primary);display:flex;align-items:center;padding:0 16px;gap:6px;}
+  .badge-ann{height:22px;padding:0 9px;font-size:10px;border-radius:var(--radius-sm);background:var(--brand-light);border:1px solid var(--brand-border);color:var(--brand);display:flex;align-items:center;gap:6px;margin-left:8px;}
+  .navi{display:flex;align-items:center;gap:8px;padding:0 14px;height:30px;border-radius:var(--radius-sm);color:var(--text-secondary);cursor:pointer;font-size:12.5px;border:1px solid transparent;transition:all .15s;}
+  .navi:hover{background:var(--bg-hover);color:var(--text-primary);}
+  .navi.on{background:var(--bg-selected);color:var(--text-primary);border-color:var(--brand-border);font-weight:500;}
+  .navi .c{font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);}
+
+  .main{flex:1;display:flex;min-height:0;}
+  .side{width:180px;flex:0 0 180px;background:var(--bg-sidebar);border-right:1px solid var(--border-primary);display:flex;flex-direction:column;min-height:0;}
+  .sh{font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px;padding:10px 16px 4px;font-weight:600;}
+  .t-scroll{flex:1;overflow-y:auto;min-height:0;padding-bottom:8px;}
+  .t-item{display:flex;align-items:center;height:28px;padding:0 12px;border-radius:var(--radius-sm);color:var(--text-secondary);cursor:pointer;font-size:12px;margin:0 6px;gap:6px;transition:all .15s;overflow:hidden;}
+  .t-item.on{background:var(--bg-selected);color:var(--text-primary);box-shadow:inset 2px 0 0 var(--brand);}
+  .t-item .tt{font-family:var(--font-mono);font-size:10.5px;color:var(--text-tertiary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .t-item.on .tt{color:var(--brand);}
+
+  .content{flex:1;display:flex;min-width:0;}
+  .list{width:230px;flex:0 0 230px;border-right:1px solid var(--border-primary);display:flex;flex-direction:column;min-height:0;background:var(--bg-surface);}
+  .list .lhead{height:36px;flex:0 0 36px;display:flex;align-items:center;padding:0 14px;font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border-secondary);font-weight:600;}
+  .list-scroll{flex:1;overflow-y:auto;min-height:0;}
+  .row{display:flex;align-items:center;gap:8px;height:44px;padding:0 14px;cursor:pointer;border-left:3px solid transparent;transition:all .15s;border-bottom:1px solid var(--border-secondary);}
+  .row:hover{background:var(--bg-hover);}
+  .row.on{background:var(--bg-selected);border-left-color:var(--brand);}
+  .row .port{color:var(--brand);font-weight:600;font-family:var(--font-mono);}
+  .row .nm{font-family:var(--font-mono);font-size:12px;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .row .cnt{font-size:10px;color:var(--text-tertiary);font-family:var(--font-mono);margin-left:auto;}
+
+  .detail{flex:1;display:flex;flex-direction:column;min-width:0;}
+  .dt-head{height:46px;flex:0 0 46px;border-bottom:1px solid var(--border-primary);padding:0 20px;display:flex;align-items:center;justify-content:space-between;background:var(--bg-sidebar);}
+  .dt-head .file{font-family:var(--font-mono);font-size:12px;}
+  .dt-head .sub{font-size:10.5px;color:var(--text-tertiary);margin-left:4px;font-family:var(--font-mono);}
+  .btn{height:26px;padding:0 12px;font-size:11.5px;border-radius:var(--radius-sm);cursor:pointer;border:1px solid var(--border-primary);background:transparent;color:var(--text-secondary);display:flex;align-items:center;gap:5px;white-space:nowrap;transition:all .15s;}
+  .btn:hover{background:var(--bg-hover);color:var(--text-primary);border-color:var(--brand-border);}
+  .btn:active{transform:scale(.97);}
+  .btn.primary{background:var(--brand);color:#fff;border-color:transparent;}
+  .dt-body{flex:1;overflow-y:auto;padding:18px 22px;animation:fadeIn .2s cubic-bezier(.4,0,.2,1);}
+  @keyframes fadeIn{from{opacity:0;transform:translateY(2px);}to{opacity:1;transform:none;}}
+
+  /* ===== 方案C+ 增强样式 ===== */
+
+  /* 增强1：全局链路条 GlobalChain */
+  .chain-box{background:var(--bg-surface-2);border:1px solid var(--border-primary);border-radius:var(--radius-md);padding:12px 16px;margin-bottom:16px;position:relative;}
+  .chain-label{font-size:9.5px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:9px;display:flex;align-items:center;gap:6px;}
+  .chain-label .tap{font-size:9px;padding:0 6px;border-radius:var(--radius-xs);background:var(--brand-light);border:1px solid var(--brand-border);color:var(--brand);text-transform:none;}
+  .oc-chain{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+  .oc-node{display:inline-flex;align-items:center;gap:4px;font-family:var(--font-mono);font-size:11px;color:var(--text-secondary);background:var(--bg-surface-3);border:1px solid var(--border-primary);border-radius:var(--radius-sm);padding:4px 9px;white-space:nowrap;cursor:pointer;transition:all .15s;}
+  .oc-node:hover{border-color:var(--brand-border);color:var(--text-primary);box-shadow:0 0 0 3px rgba(74,138,244,.08);}
+  .oc-node.is-domain{color:var(--info);}
+  .oc-node.is-upstream{color:var(--warning);}
+  .oc-node.is-backend{color:var(--success);}
+  .oc-node.is-fault{color:var(--error);border-color:var(--error-border);}
+  .oc-node.is-fault .dot{color:var(--error);font-size:8px;margin-left:3px;animation:blink 1s step-end infinite;}
+  @keyframes blink{50%{opacity:.2}}
+  .oc-arrow{color:var(--text-tertiary);font-family:var(--font-mono);font-size:11px;}
+  .oc-pill{font-size:10px;padding:2px 7px;border-radius:var(--radius-xs);font-weight:500;white-space:nowrap;}
+  .oc-pill.pub{background:var(--success-bg);border:1px solid var(--success-border);color:var(--success);}
+  .oc-pill.priv{background:var(--bg-surface-3);border:1px solid var(--border-primary);color:var(--text-tertiary);}
+
+  /* 增强2：统计看板 StatBanner */
+  .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px;}
+  .card{background:var(--bg-surface-2);border:1px solid var(--border-primary);border-radius:var(--radius-md);padding:12px 14px;}
+  .card b{font-size:19px;display:block;font-weight:600;}
+  .card small{color:var(--text-tertiary);font-size:11px;}
+  .card .warn-flag{color:var(--error);margin-left:4px;font-size:10px;}
+  .card.blue b{color:var(--brand);}.card.green b{color:var(--success);}.card.yellow b{color:var(--warning);}.card.red b{color:var(--error);}
+
+  /* 增强3：路径链路 PathChain */
+  .rule-row{background:var(--bg-surface-2);border:1px solid var(--border-primary);border-radius:var(--radius-md);padding:10px 14px;margin-bottom:8px;}
+  .rule-meta{font-size:9.5px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:6px;display:flex;align-items:center;gap:6px;}
+  .rule-meta .uuid{font-family:var(--font-mono);color:var(--text-tertiary);text-transform:none;letter-spacing:0;}
+  .oc-chain.compact{gap:5px;}
+  .oc-chain.compact .oc-node{padding:3px 8px;font-size:10.5px;}
+  .oc-node.is-target-up{color:var(--success);}
+
+  .tag{font-size:9px;padding:1px 6px;border-radius:3px;font-weight:500;white-space:nowrap;}
+  .tag.sslY{background:var(--success-bg);border:1px solid var(--success-border);color:var(--success);}
+  .tag.sslN{background:var(--bg-surface-3);border:1px solid var(--border-primary);color:var(--text-tertiary);}
+  .footer{height:28px;flex:0 0 28px;background:var(--bg-deep);border-top:1px solid var(--border-primary);display:flex;justify-content:space-between;align-items:center;padding:0 20px;font-size:11px;color:var(--text-tertiary);}
+  .cplus-flag{font-size:10px;color:var(--brand);}
+  ::-webkit-scrollbar{width:5px;height:5px;background:transparent;}
+  ::-webkit-scrollbar-thumb{background:#3a3a3e;border-radius:10px;}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- 标题栏 -->
+  <div class="titlebar">
+    <div style="display:flex;align-items:center;gap:10px;"><span>☰</span><span class="left">Nginx Console</span><span style="width:6px;height:6px;border-radius:50%;background:var(--success);"></span></div>
+    <div class="mid">businesscenter_nginx_CD_master.conf · 方案C+ 静态预览</div>
+    <div class="win"><span class="r"></span><span class="y"></span><span class="g"></span></div>
+  </div>
+
+  <div class="scrim">
+    <!-- 菜单 -->
+    <div class="menu">
+      <div class="navi on"><span>配置文件</span><span class="c">(active)</span></div>
+      <div class="navi"><span>块管理</span><span class="c">(demo)</span></div>
+      <div class="navi"><span>全局拓扑</span><span class="c">22→105→31</span></div>
+      <span class="badge-ann">方案C+ 新增：GlobalChain · StatBanner · PathChain</span>
+    </div>
+
+    <div class="main">
+      <!-- 左侧边栏 -->
+      <div class="side">
+        <div class="sh">监听点 <span>(22)</span></div>
+        <div class="t-scroll">
+          <div class="t-item on"><span style="width:8px;height:8px;border-radius:50%;background:var(--success);flex:0 0 auto;"></span><span class="tt">:80</span></div>
+          <div class="t-item"><span style="width:8px;height:8px;border-radius:50%;background:var(--success);flex:0 0 auto;"></span><span class="tt">:443</span></div>
+          <div class="t-item"><span style="width:8px;height:8px;border-radius:50%;background:var(--success);flex:0 0 auto;"></span><span class="tt">:8080</span></div>
+        </div>
+        <div class="sh">共性块</div>
+        <div class="t-scroll">
+          <div class="t-item"><span class="tt">upstream · 31</span></div>
+          <div class="t-item"><span class="tt">map · 1</span></div>
+        </div>
+      </div>
+
+      <!-- 内容区：配置文件主从视图 -->
+      <div class="content">
+        <div class="list">
+          <div class="lhead">监听点</div>
+          <div class="list-scroll">
+            <div class="row on"><span class="port">:80</span><span class="nm">api.example.com</span><span class="cnt">5 loc</span></div>
+            <div class="row"><span class="port">:443</span><span class="nm">shop.example.com</span><span class="cnt">12 loc</span></div>
+            <div class="row"><span class="port">:8080</span><span class="nm">internal.example.com</span><span class="cnt">3 loc</span></div>
+            <div class="row"><span class="port">:8443</span><span class="nm">admin.example.com</span><span class="cnt">2 loc</span></div>
+          </div>
+        </div>
+
+        <div class="detail">
+          <div class="dt-head">
+            <div><span class="file">businesscenter_nginx_CD_master.conf</span><span class="sub">· :80 · api.example.com</span></div>
+            <div style="display:flex;gap:6px;"><span class="btn">导出配置</span><span class="btn">同步</span><span class="btn primary">保存</span></div>
+          </div>
+
+          <div class="dt-body" id="bodyBlock">
+            <!-- 增强2：StatBanner 顶部统计看板 -->
+            <div class="chain-box" style="padding-bottom:14px;">
+              <div class="chain-label">配置文件统计 <span class="cplus-flag">StatBanner · 方案C+</span></div>
+              <div class="cards" style="margin-bottom:0;">
+                <div class="card blue"><b>22</b><small>server 监听块</small></div>
+                <div class="card green"><b>105</b><small>location 转发</small></div>
+                <div class="card yellow"><b>31</b><small>upstream 组</small></div>
+                <div class="card red"><b>3</b><small>if 弱提示 <span class="warn-flag">ⓘ建议收敛</span></small></div>
+              </div>
+            </div>
+
+            <!-- 增强1：GlobalChain 全局链路（:80 → api.example.com） -->
+            <div class="chain-box">
+              <div class="chain-label">全局链路 · <span class="tt-title" style="font-family:var(--font-mono);">api_backend</span>
+                <span class="tap">点击节点可跳转</span>
+                <span class="cplus-flag" style="margin-left:auto;">GlobalChain · 方案C+</span></div>
+              <div class="oc-chain">
+                <span class="oc-node is-domain">api.example.com</span><span class="oc-arrow">→</span>
+                <span class="oc-node">:80 http2</span><span class="oc-arrow">→</span>
+                <span class="oc-node">/api/</span><span class="oc-arrow">→</span>
+                <span class="oc-node is-upstream">api_backend</span><span class="oc-arrow">→</span>
+                <span class="oc-node is-backend">10.0.0.97:20500 · w5</span><span class="oc-arrow">→</span>
+                <span class="oc-node is-backend">10.0.0.98:20500 · w5</span><span class="oc-arrow">→</span>
+                <span class="oc-node is-backend">10.0.0.99:20500 · w5</span><span class="oc-arrow">→</span>
+                <span class="oc-node is-backend is-fault">10.0.0.100:20500 · w1<span class="dot">●</span></span><span class="oc-arrow">→</span>
+                <span class="oc-node is-backend">+3</span>
+              </div>
+            </div>
+
+            <!-- 增强3：PathChain 转发规则详情 -->
+            <div class="chain-label" style="margin:16px 0 8px;display:flex;align-items:center;">转发规则路径链路
+              <span class="cplus-flag" style="margin-left:6px;">PathChain · 方案C+</span></div>
+
+            <div class="rule-row">
+              <div class="rule-meta"><span>GET · /api/v1/list</span><span class="uuid">rule_1024</span><span style="margin-left:auto;"><span class="tag sslY">公网</span></span></div>
+              <div class="oc-chain compact">
+                <span class="oc-pill pub">公网</span><span class="oc-arrow">→</span>
+                <span class="oc-node is-domain">api.example.com</span><span class="oc-arrow">→</span>
+                <span class="oc-node">:80</span><span class="oc-arrow">→</span>
+                <span class="oc-node">/api/v1/list</span><span class="oc-arrow">→</span>
+                <span class="oc-node is-target-up">upstream:api_backend</span>
+              </div>
+            </div>
+
+            <div class="rule-row">
+              <div class="rule-meta"><span>POST · /shop/order/submit</span><span class="uuid">rule_2048</span><span style="margin-left:auto;"><span class="tag sslN">内网</span></span></div>
+              <div class="oc-chain compact">
+                <span class="oc-pill priv">内网</span><span class="oc-arrow">→</span>
+                <span class="oc-node is-domain">shop.example.com</span><span class="oc-arrow">→</span>
+                <span class="oc-node">:443</span><span class="oc-arrow">→</span>
+                <span class="oc-node">/shop/order/submit</span><span class="oc-arrow">→</span>
+                <span class="oc-node is-upstream">order_center</span>
+              </div>
+            </div>
+
+            <div class="rule-row">
+              <div class="rule-meta"><span>ANY · /health</span><span class="uuid">rule_4096</span><span style="margin-left:auto;"><span class="tag sslY">公网</span></span></div>
+              <div class="oc-chain compact">
+                <span class="oc-pill pub">公网</span><span class="oc-arrow">→</span>
+                <span class="oc-node is-domain">internal.example.com</span><span class="oc-arrow">→</span>
+                <span class="oc-node">:8080</span><span class="oc-arrow">→</span>
+                <span class="oc-node">/health</span><span class="oc-arrow">→</span>
+                <span class="oc-node is-target-up">10.0.0.50:9000</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 状态栏 -->
+    <div class="footer">
+      <div>main · <span style="color:var(--success);">● clean</span></div>
+      <div>22 server · 105 location · 31 upstream · 3 if</div>
+      <div class="cplus-flag">方案C+ 静态预览 · Ln 1 · Col 1</div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // -- 行级点击：切换 .on 并刷新链路标题（演示联动） --
+  document.querySelectorAll(".row").forEach(function(r,w){ r.addEventListener("click",function(){
+    document.querySelectorAll(".row").forEach(function(x){x.classList.remove("on");});
+    r.classList.add("on");
+  });});
+  document.querySelectorAll(".t-item").forEach(function(t){ t.addEventListener("click",function(){
+    document.querySelectorAll(".t-item").forEach(function(x){x.classList.remove("on");});
+    t.classList.add("on");
+  });});
+  // -- 节点点击：toast 提示跳转归宿（静态演示） --
+  function toast(msg,t){ var box=document.getElementById("toastBox")||(function(){var d=document.createElement("div");d.id="toastBox";d.style.cssText="position:fixed;right:24px;bottom:24px;display:flex;flex-direction:column;gap:8px;z-index:200;";document.body.appendChild(d);return d;})();
+    var el=document.createElement("div"); el.style.cssText="min-width:280px;background:var(--bg-surface-2);box-shadow:0 8px 32px rgba(0,0,0,.45);border-radius:6px;padding:10px 16px;border-left:4px solid "+(t==="ok"?"var(--success)":"var(--brand)")+";font-size:11px;color:var(--text-primary);";
+    el.textContent=msg; box.appendChild(el); setTimeout(function(){el.style.opacity="0";el.style.transition="opacity .3s";setTimeout(function(){el.remove();},320);},2200);
+  }
+  document.querySelectorAll(".oc-node").forEach(function(n){ n.addEventListener("click",function(){
+    var kind=n.classList.contains("is-backend")?"后端节点":n.classList.contains("is-upstream")?"upstream 组":n.classList.contains("is-domain")?"域名":"节点";
+    var f=n.classList.contains("is-fault")?"（故障·健康检查失败）":"";
+    toast("点击 → 跳转至"+kind+"配置视图："+n.textContent.replace("●","").trim()+f,"ok");
+  });});
+</script>
+</body>
+</html>

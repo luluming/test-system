@@ -4,7 +4,7 @@
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -215,14 +215,18 @@ def _upstream_preview_text(up: Upstream, servers: list[UpstreamServer]) -> str:
     return "\n".join(lines)
 
 
-from app.models.nginx import ConfigBlock, ConfigOption
+from app.models.nginx import ConfigBlock, ConfigOption, NginxConfigVersion, NginxMirrorPair
+from app.schemas.nginx import MirrorPairCreate, MirrorPairOut
 from app.schemas.nginx_inner import (
+    BlockReorderRequest,
     ConfigBlockCreate,
     ConfigBlockOut,
     ConfigBlockUpdate,
     ConfigOptionCreate,
     ConfigOptionOut,
     ConfigOptionUpdate,
+    NginxVersionCreate,
+    NginxVersionOut,
     OptionReorderRequest,
 )
 
@@ -322,6 +326,38 @@ def block_children(
     )
 
 
+@blocks_router.put("/reorder")
+def reorder_blocks(
+    payload: BlockReorderRequest,
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(get_current_user),
+) -> dict:
+    rows = list(
+        db.execute(
+            select(ConfigBlock).where(ConfigBlock.parent_id == payload.parent_id)
+        ).scalars().all()
+    )
+    by_id = {b.id: b for b in rows}
+    # 事务原子性：任一 id 不存在即整体拒绝，避免部分块排序被更新
+    missing = [oid for oid in payload.ids if oid not in by_id]
+    if missing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"重排失败：包含不存在的块 id：{missing}",
+        )
+    try:
+        for index, oid in enumerate(payload.ids):
+            by_id[oid].sort_order = index
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"重排保存失败：{exc}",
+        )
+    return {"message": "重排成功"}
+
+
 @blocks_router.put("/{block_id}", response_model=ConfigBlockOut)
 def update_block(
     block_id: int,
@@ -348,6 +384,210 @@ def delete_block(
     db.execute(ConfigOption.__table__.delete().where(ConfigOption.block_id.in_(ids)))
     db.execute(ConfigBlock.__table__.delete().where(ConfigBlock.id.in_(ids)))
     db.commit()
+
+
+@blocks_router.post("/{block_id}/mirror/{dst_block_id}", response_model=ConfigBlockOut)
+def mirror_block(
+    block_id: int,
+    dst_block_id: int,
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(get_current_user),
+) -> ConfigBlock:
+    """镜像同步：把 src 块整棵子树（含 options）覆盖复制到 dst 块。
+
+    唯一保留项：dst 块自身的 listen 端口值（防止镜像把监听点端口覆盖掉）。
+    """
+    src = _get_block(db, block_id)
+    dst = _get_block(db, dst_block_id)
+    if src.nginx_config_id != dst.nginx_config_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="源块与目标块必须属于同一配置文件",
+        )
+    cfg_id = src.nginx_config_id
+
+    # 1) 记录 dst 原 listen 值（同步后恢复，保证监听点端口不变）
+    dst_listen = None
+    for o in db.execute(
+        select(ConfigOption).where(ConfigOption.block_id == dst.id)
+    ).scalars().all():
+        if o.directive == "listen":
+            dst_listen = o.value
+            break
+
+    # 2) 级联删除 dst 现有子树（含 dst 自身 options），保留其 parent/位置信息
+    dst_parent_id, dst_scope, dst_header, dst_file, dst_order = (
+        dst.parent_id, dst.scope, dst.header, dst.belongs_to_file, dst.sort_order,
+    )
+    ids = _collect_subtree_ids(db, dst_block_id)
+    db.execute(ConfigOption.__table__.delete().where(ConfigOption.block_id.in_(ids)))
+    db.execute(ConfigBlock.__table__.delete().where(ConfigBlock.id.in_(ids)))
+    db.flush()
+
+    # 3) 重建 dst 本体，再深拷贝 src 的子树到 dst
+    rows = _all_block_rows(db, cfg_id)
+    child_map: dict[int | None, list[ConfigBlock]] = {}
+    for b in rows:
+        child_map.setdefault(b.parent_id, []).append(b)
+    opt_map: dict[int, list[ConfigOption]] = {}
+    if rows:
+        rid = [b.id for b in rows]
+        for o in db.execute(
+            select(ConfigOption).where(ConfigOption.block_id.in_(rid))
+        ).scalars().all():
+            opt_map.setdefault(o.block_id, []).append(o)
+
+    ndst = ConfigBlock(
+        nginx_config_id=cfg_id,
+        parent_id=dst_parent_id,
+        scope=dst_scope,
+        header=dst_header,
+        belongs_to_file=dst_file,
+        sort_order=dst_order,
+    )
+    db.add(ndst)
+    db.flush()
+
+    def copy_options(block_id: int, options: list[ConfigOption]) -> None:
+        for o in options:
+            val = o.value
+            if o.directive == "listen" and dst_listen is not None:
+                val = dst_listen
+            db.add(
+                ConfigOption(
+                    block_id=block_id,
+                    directive=o.directive,
+                    value=val,
+                    row_type=o.row_type,
+                    is_free_text=o.is_free_text,
+                    sort_order=o.sort_order,
+                )
+            )
+
+    def copy_children(old_pid: int | None, new_pid: int | None) -> None:
+        for b in child_map.get(old_pid, []):
+            nb = ConfigBlock(
+                nginx_config_id=cfg_id,
+                parent_id=new_pid,
+                scope=b.scope,
+                header=b.header,
+                belongs_to_file=b.belongs_to_file,
+                sort_order=b.sort_order,
+            )
+            db.add(nb)
+            db.flush()
+            copy_options(nb.id, opt_map.get(b.id, []))
+            copy_children(b.id, nb.id)
+
+    copy_options(ndst.id, opt_map.get(src.id, []))
+    copy_children(src.id, ndst.id)
+    db.commit()
+    db.refresh(ndst)
+    return ndst
+
+
+# ---- 镜像对配置（配置文件级元数据：母本端口 → 镜像端口，内容同步走 mirror 接口）----
+@config_tree_router.get("/{config_id}/mirror-pairs", response_model=list[MirrorPairOut])
+def list_mirror_pairs(
+    config_id: int,
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(get_current_user),
+) -> list[NginxMirrorPair]:
+    return list(
+        db.execute(
+            select(NginxMirrorPair)
+            .where(NginxMirrorPair.nginx_config_id == config_id)
+            .order_by(NginxMirrorPair.id)
+        ).scalars().all()
+    )
+
+
+@config_tree_router.post(
+    "/{config_id}/mirror-pairs", response_model=MirrorPairOut, status_code=status.HTTP_201_CREATED
+)
+def create_mirror_pair(
+    config_id: int,
+    payload: MirrorPairCreate,
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(get_current_user),
+) -> NginxMirrorPair:
+    if payload.src_listen == payload.dst_listen:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="母本与镜像端口不能相同")
+    row = NginxMirrorPair(
+        nginx_config_id=config_id,
+        src_listen=payload.src_listen,
+        dst_listen=payload.dst_listen,
+    )
+    db.add(row)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="该镜像对已存在")
+    db.refresh(row)
+    return row
+
+
+@config_tree_router.delete(
+    "/{config_id}/mirror-pairs/{pair_id}", status_code=status.HTTP_204_NO_CONTENT
+)
+def delete_mirror_pair(
+    config_id: int,
+    pair_id: int,
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(get_current_user),
+) -> None:
+    row = db.execute(
+        select(NginxMirrorPair).where(
+            NginxMirrorPair.id == pair_id,
+            NginxMirrorPair.nginx_config_id == config_id,
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="镜像对不存在")
+    db.delete(row)
+    db.commit()
+
+
+# ---- 配置版本快照：保存 = 渲染文本存一版，用于历史对比 ----
+@config_tree_router.get("/{config_id}/versions", response_model=list[NginxVersionOut])
+def list_versions(
+    config_id: int,
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(get_current_user),
+) -> list[NginxConfigVersion]:
+    return list(
+        db.execute(
+            select(NginxConfigVersion)
+            .where(NginxConfigVersion.nginx_config_id == config_id)
+            .order_by(NginxConfigVersion.version.desc())
+        ).scalars().all()
+    )
+
+
+@config_tree_router.post(
+    "/{config_id}/versions", response_model=NginxVersionOut, status_code=status.HTTP_201_CREATED
+)
+def create_version(
+    config_id: int,
+    payload: NginxVersionCreate,
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(get_current_user),
+) -> NginxConfigVersion:
+    max_row = db.execute(
+        select(func.max(NginxConfigVersion.version)).where(
+            NginxConfigVersion.nginx_config_id == config_id
+        )
+    ).scalar()
+    row = NginxConfigVersion(
+        nginx_config_id=config_id,
+        version=(max_row or 0) + 1,
+        content=payload.content,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
 
 
 @config_tree_router.get("/{config_id}/tree")

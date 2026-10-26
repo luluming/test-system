@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>方案 C v5 — 泛化块 + map 块编辑效果图</title>
+<style>
+  :root{
+    --bg-deep:#0a0a0c;--bg-deep-2:#0d0d10;--bg-sidebar:#111114;--bg-surface:#18181c;
+    --bg-surface-2:#202024;--bg-surface-3:#2a2a30;--bg-hover:#2e2e36;--bg-selected:#2a2a42;
+    --bg-input:#111115;--brand:#4a8af4;--brand-hover:#6ba8fa;--brand-light:rgba(74,138,244,.12);--brand-border:rgba(74,138,244,.25);
+    --success:#22c55e;--success-bg:rgba(34,197,94,.08);--success-border:rgba(34,197,94,.20);
+    --info:#4a8af4;--info-bg:rgba(74,138,244,.08);--info-border:rgba(74,138,244,.20);
+    --warning:#f59e0b;--warning-bg:rgba(245,158,11,.08);--warning-border:rgba(245,158,11,.20);
+    --text-primary:#e8e8ea;--text-secondary:#b0b0bc;--text-tertiary:#808090;
+    --border-primary:#2a2a2e;--border-secondary:#222226;
+    --radius-xs:2px;--radius-sm:4px;--radius-md:6px;--radius-lg:8px;
+    --font-sans:-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
+    --font-mono:'JetBrains Mono','SF Mono','Menlo','Consolas',monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:var(--font-sans);background:var(--bg-deep);color:var(--text-primary);font-size:12.5px;height:100vh;overflow:hidden;}
+  .app{display:flex;flex-direction:column;height:100vh;}
+  .titlebar{height:36px;flex:0 0 36px;background:var(--bg-deep);border-bottom:1px solid var(--border-primary);display:flex;align-items:center;padding:0 16px;justify-content:space-between;}
+  .titlebar .left{display:flex;align-items:center;gap:12px;font-weight:600;font-size:12px;}
+  .titlebar .mid{font-size:11px;color:var(--text-tertiary);font-family:var(--font-mono);}
+  .win{display:flex;gap:8px;}.win span{width:12px;height:12px;border-radius:50%;display:inline-block;}
+  .win .r{background:#ff5f57;}.win .y{background:#febc2e;}.win .g{background:#28c840;}
+
+  .scrim{display:flex;flex-direction:column;height:calc(100% - 36px);}
+  .menu{height:38px;flex:0 0 38px;background:var(--bg-surface);border-bottom:1px solid var(--border-primary);display:flex;align-items:center;padding:0 16px;gap:6px;}
+  .navi{display:flex;align-items:center;gap:8px;padding:0 14px;height:30px;border-radius:var(--radius-sm);color:var(--text-secondary);cursor:pointer;font-size:12.5px;border:1px solid transparent;}
+  .navi.on{background:var(--bg-selected);color:var(--text-primary);border-color:var(--brand-border);font-weight:500;}
+  .navi .c{font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);}
+  .main{flex:1;display:flex;min-height:0;}
+  .side{width:190px;flex:0 0 190px;background:var(--bg-sidebar);border-right:1px solid var(--border-primary);display:flex;flex-direction:column;min-height:0;}
+  .sh{font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px;padding:10px 16px 4px;font-weight:600;}
+  .t-item{display:flex;align-items:center;height:28px;padding:0 12px;border-radius:var(--radius-sm);color:var(--text-secondary);cursor:pointer;font-size:12px;margin:0 6px;gap:6px;}
+  .t-item.on{background:var(--bg-selected);color:var(--text-primary);}
+  .t-item .ic{font-size:11px;color:var(--text-tertiary);}
+
+  .content{flex:1;display:flex;min-width:0;}
+  .detail{flex:1;display:flex;flex-direction:column;min-width:0;background:var(--bg-surface);}
+  .dt-head{height:46px;flex:0 0 46px;border-bottom:1px solid var(--border-primary);padding:0 20px;display:flex;align-items:center;justify-content:space-between;background:var(--bg-sidebar);}
+  .btn{height:26px;padding:0 12px;font-size:11.5px;border-radius:var(--radius-sm);cursor:pointer;border:1px solid var(--border-primary);background:transparent;color:var(--text-secondary);display:flex;align-items:center;gap:5px;white-space:nowrap;}
+  .btn.primary{background:var(--brand);color:#fff;border-color:transparent;}
+  .dt-tabs{height:36px;flex:0 0 36px;border-bottom:1px solid var(--border-secondary);display:flex;padding:0 20px;}
+  .dtab{display:flex;align-items:center;padding:0 14px;font-size:12px;color:var(--text-secondary);cursor:pointer;border-right:1px solid var(--border-secondary);position:relative;}
+  .dtab.on{color:var(--text-primary);}.dtab.on::after{content:'';position:absolute;bottom:0;left:0;right:0;height:2px;background:var(--brand);}
+  .dt-body{flex:1;overflow-y:auto;padding:18px 22px;}
+  .dsec{margin-bottom:20px;}
+  .dsec>h4{font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:10px;display:flex;align-items:center;gap:8px;}
+  .dsec>h4 .ctl{margin-left:auto;font-size:11px;color:var(--brand);cursor:pointer;letter-spacing:0;text-transform:none;}
+
+  /* 通用块容器 */
+  .block{border:1px solid var(--border-primary);border-radius:var(--radius-md);background:var(--bg-surface-2);overflow:hidden;margin-bottom:10px;}
+  .block-head{display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--bg-surface-3);border-bottom:1px solid var(--border-secondary);}
+  .bkind{font-size:9px;padding:1px 8px;border-radius:var(--radius-xs);font-weight:600;letter-spacing:.5px;text-transform:uppercase;}
+  .bkind.map{background:var(--warning-bg);border:1px solid var(--warning-border);color:var(--warning);}
+  .bkind.loc{background:var(--info-bg);border:1px solid var(--info-border);color:var(--info);}
+  .bkind.srv{background:var(--success-bg);border:1px solid var(--success-border);color:var(--success);}
+  .bhead-txt{font-family:var(--font-mono);font-size:12px;color:var(--text-primary);}
+  .block-acts{margin-left:auto;display:flex;gap:4px;}
+  .block-acts .btn{height:22px;font-size:10px;padding:0 8px;}
+
+  /* KV 行（map 条件行） */
+  .kv-rows{padding:4px 0;}
+  .kv-row{display:flex;align-items:center;gap:8px;padding:5px 12px;border-bottom:1px solid var(--border-secondary);}
+  .kv-row:last-child{border-bottom:none;}
+  .kv-row:hover{background:var(--bg-hover);}
+  .grip{color:var(--text-tertiary);cursor:grab;font-size:12px;}
+  .directive{width:280px;flex:0 0 280px;height:26px;background:var(--bg-input);border:1px solid var(--border-primary);border-radius:var(--radius-sm);padding:0 10px;font-family:var(--font-mono);font-size:11px;color:var(--text-primary);display:flex;align-items:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .directive.regex{color:var(--warning);}
+  .directive.default{color:var(--info);}
+  .value{flex:1;height:26px;background:var(--bg-input);border:1px solid var(--border-primary);border-radius:var(--radius-sm);padding:0 10px;font-family:var(--font-mono);font-size:11px;color:var(--text-primary);display:flex;align-items:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .comma{color:var(--text-tertiary);font-family:var(--font-mono);}
+  .kv-acts{display:flex;gap:2px;}
+  .kv-acts .x{color:var(--text-tertiary);cursor:pointer;padding:2px 4px;font-size:12px;}
+  .kv-acts .x:hover{color:var(--error);}
+  .tag{font-size:9px;padding:1px 7px;border-radius:3px;font-weight:500;}
+  .tag.rex{background:var(--warning-bg);border:1px solid var(--warning-border);color:var(--warning);}
+  .kv-add{display:flex;align-items:center;justify-content:center;padding:8px;color:var(--text-tertiary);cursor:pointer;font-size:11.5px;gap:6px;}
+  .kv-add:hover{color:var(--brand);}
+
+  /* 条件类型快速选择 */
+  .type-picker{display:flex;gap:6px;align-items:center;margin-left:auto;}
+  .tp{font-size:9px;padding:2px 8px;border-radius:var(--radius-xs);border:1px solid var(--border-primary);color:var(--text-tertiary);cursor:pointer;}
+  .tp.on{background:var(--warning-bg);border-color:var(--warning-border);color:var(--warning);}
+
+  .block-hint{font-size:10px;color:var(--text-tertiary);font-family:var(--font-mono);padding:6px 12px;background:var(--bg-deep);border-top:1px solid var(--border-secondary);}
+
+  .render{background:var(--bg-deep);border:1px solid var(--border-secondary);border-radius:var(--radius-md);padding:14px 16px;font-family:var(--font-mono);font-size:11.5px;line-height:1.7;color:var(--text-secondary);white-space:pre;overflow:auto;max-height:200px;}
+  .k{color:#6ba8fa;}.n{color:#ff7b72;}.s{color:#7ee787;}.cm{color:#4a4a52;}.d{color:var(--text-primary);}
+
+  .footer{height:28px;flex:0 0 28px;background:var(--bg-deep);border-top:1px solid var(--border-primary);display:flex;justify-content:space-between;align-items:center;padding:0 20px;font-size:11px;color:var(--text-tertiary);}
+  .label{position:absolute;top:8px;left:8px;background:var(--brand);color:#fff;font-size:10px;padding:2px 8px;border-radius:4px;font-weight:600;z-index:5;}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="titlebar">
+    <div class="left"><span style="font-size:16px;color:var(--text-secondary);">&#9776;</span><span style="width:6px;height:6px;border-radius:50%;background:var(--success);"></span><span>Nginx Console</span></div>
+    <div class="mid">api.example.com · :443</div>
+    <div class="win"><span class="r"></span><span class="y"></span><span class="g"></span></div>
+  </div>
+
+  <div class="scrim">
+    <div class="menu">
+      <span class="navi">&#128279; 全局拓扑</span>
+      <span class="navi on">&#128196; 配置文件</span>
+      <span class="navi">&#128230; Upstream 池</span>
+    </div>
+
+    <div class="main">
+      <div class="side">
+        <div class="sh">监听点</div>
+        <div class="t-item on"><span class="ic">&#128196;</span>:443 api.example.com</div>
+        <div class="t-item"><span class="ic">&#128196;</span>:80 web.example.com</div>
+        <div class="sh" style="margin-top:10px;">通用共块</div>
+        <div class="t-item"><span class="ic">&#128230;</span>upstream api_backend</div>
+        <div class="t-item"><span class="ic">&#9881;</span>map http_cookie</div>
+      </div>
+
+      <div class="content">
+        <div class="detail">
+          <div class="dt-head">
+            <div style="display:flex;align-items:center;gap:10px;"><b style="font-family:var(--font-mono);">api.example.com.conf</b></div>
+            <div style="display:flex;gap:6px;"><span class="btn">同步</span><span class="btn primary">保存</span></div>
+          </div>
+          <div class="dt-tabs">
+            <div class="dtab on">块 / 指令编辑</div>
+            <div class="dtab">配置预览</div>
+          </div>
+
+          <div class="dt-body">
+            <div class="dsec">
+              <h4>通用块（泛化模型）<span style="color:var(--text-tertiary);font-weight:400;text-transform:none;">server → location → map → if …</span><span class="ctl">+ 新增块</span></h4>
+
+              <!-- 一个 server 块标 -->
+              <div class="block">
+                <div class="block-head"><span class="bkind srv">server</span><span class="bhead-txt">server { listen 443 ssl; server_name api.example.com; }</span>
+                  <div class="block-acts"><span class="btn">+ 子块</span><span class="btn">+ 指令</span><span class="btn">&#10005;</span></div>
+                </div>
+              </div>
+
+              <!-- map 块：核心展示 -->
+              <div class="block" style="border-color:var(--warning-border);">
+                <div class="block-head">
+                  <span class="bkind map">map</span>
+                  <span class="bhead-txt">$http_cookie</span>
+                  <span style="color:var(--text-tertiary);">&#8594;</span>
+                  <span class="bhead-txt" style="color:var(--warning);">$cookie_to_delete</span>
+                  <div class="type-picker">
+                    <span class="tp">&#9633; 字符串</span><span class="tp on">&#9633; 正则 ~*</span><span class="tp">&#9633; default</span>
+                  </div>
+                  <div class="block-acts"><span class="btn">+ 条件</span><span class="btn">&#10005;</span></div>
+                </div>
+
+                <div class="kv-rows">
+                  <!-- 条件行 1 正则 -->
+                  <div class="kv-row">
+                    <span class="grip">&#10022;</span>
+                    <div class="directive regex">~*(?P&lt;pre&gt;.*?)uid=streamax(?P&lt;post&gt;.*)</div>
+                    <span class="comma">=</span>
+                    <div class="value">"$pre$post"</div>
+                    <span class="tag rex">正则</span>
+                    <div class="kv-acts"><span class="x">&#9998;</span><span class="x">&#10005;</span></div>
+                  </div>
+                  <!-- 条件行 2 字符串 -->
+                  <div class="kv-row">
+                    <span class="grip">&#10022;</span>
+                    <div class="directive">dev.example.com</div>
+                    <span class="comma">=</span>
+                    <div class="value">"development"</div>
+                    <span class="tag" style="background:var(--info-bg);border:1px solid var(--info-border);color:var(--info);">字符串</span>
+                    <div class="kv-acts"><span class="x">&#9998;</span><span class="x">&#10005;</span></div>
+                  </div>
+                  <!-- 条件行 3 default -->
+                  <div class="kv-row">
+                    <span class="grip">&#10022;</span>
+                    <div class="directive default">default</div>
+                    <span class="comma">=</span>
+                    <div class="value">$http_cookie</div>
+                    <span class="tag" style="background:var(--success-bg);border:1px solid var(--success-border);color:var(--success);">default</span>
+                    <div class="kv-acts"><span class="x">&#9998;</span><span class="x">&#10005;</span></div>
+                  </div>
+                </div>
+                <div class="kv-add">+ 新增条件（自动识别 正则/字符串/default）</div>
+                <div class="block-hint">// 每行即一条 map 规则：条件 = 值；支持拖拽排序，default 恒置末尾</div>
+              </div>
+
+              <!-- location 块（泛化，带 KV） -->
+              <div class="block">
+                <div class="block-head"><span class="bkind loc">location</span><span class="bhead-txt">/api/ &#8594; upstream api_backend</span>
+                  <div class="block-acts"><span class="btn">+ 子块</span><span class="btn">+ 指令</span><span class="btn">&#10005;</span></div>
+                </div>
+                <div class="kv-rows">
+                  <div class="kv-row"><span class="grip">&#10022;</span><div class="directive" style="font-family:var(--font-mono);color:var(--brand);">proxy_pass</div><span class="comma">=</span><div class="value">http://api_backend</div><div class="kv-acts"><span class="x">&#10005;</span></div></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="dsec">
+              <h4>渲染预览</h4>
+              <div class="render"><span class="k">map</span> <span class="n">$http_cookie</span> <span class="n">$cookie_to_delete</span> {
+    <span class="k">~*(?P&lt;pre&gt;.*?)uid=streamax(?P&lt;post&gt;.*)</span> <span class="s">"$pre$post"</span>;
+    dev.example.com <span class="s">"development"</span>;
+    <span class="k">default</span> <span class="n">$http_cookie</span>;
+}
+
+<span class="k">server</span> {
+    <span class="k">listen</span> <span class="n">443</span> ssl;
+    <span class="k">server_name</span> api.example.com;
+
+    <span class="k">location</span> <span class="s">/api/</span> {
+        <span class="k">proxy_pass</span> http://api_backend;
+    }
+    set $cookie_to_delete <span class="s">$cookie_to_delete</span>; <span class="cm"># 由 map 填充，供后续指令消费</span>
+}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <div><span style="color:var(--success);">&#9679; main</span></div>
+      <div>1 处未保存 · 3 个块</div>
+      <div>NGINX · conf.d</div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

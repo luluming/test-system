@@ -1,0 +1,2079 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>businesscenter_nginx_CD_master.conf · 方案C 泛化块主从视图</title>
+<style>
+  :root{
+    --bg-deep:#0a0a0c;--bg-deep-2:#0d0d10;--bg-sidebar:#111114;--bg-surface:#18181c;
+    --bg-surface-2:#202024;--bg-surface-3:#2a2a30;--bg-hover:#2e2e36;--bg-selected:#2a2a42;
+    --bg-input:#111115;--brand:#4a8af4;--brand-hover:#6ba8fa;--brand-light:rgba(74,138,244,.12);--brand-border:rgba(74,138,244,.25);
+    --success:#22c55e;--success-bg:rgba(34,197,94,.08);--success-border:rgba(34,197,94,.20);
+    --warning:#f59e0b;--warning-bg:rgba(245,158,11,.08);--warning-border:rgba(245,158,11,.20);
+    --error:#ef4444;--error-bg:rgba(239,68,68,.08);--error-border:rgba(239,68,68,.20);
+    --info:#4a8af4;--info-bg:rgba(74,138,244,.08);--info-border:rgba(74,138,244,.20);
+    --purple:#a78bfa;--purple-bg:rgba(167,139,250,.08);--purple-border:rgba(167,139,250,.2);
+    --text-primary:#e8e8ea;--text-secondary:#b0b0bc;--text-tertiary:#808090;
+    --border-primary:#2a2a2e;--border-secondary:#222226;
+    --radius-xs:2px;--radius-sm:4px;--radius-md:6px;--radius-lg:8px;
+    --font-sans:-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
+    --font-mono:'JetBrains Mono','SF Mono','Menlo','Consolas',monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:var(--font-sans);background:var(--bg-deep);color:var(--text-primary);font-size:12.5px;height:100vh;overflow:hidden;}
+  .app{display:flex;flex-direction:column;height:100vh;}
+  .titlebar{height:36px;flex:0 0 36px;background:var(--bg-deep);border-bottom:1px solid var(--border-primary);display:flex;align-items:center;padding:0 16px;justify-content:space-between;}
+  .titlebar .left{display:flex;align-items:center;gap:12px;font-weight:600;font-size:12px;}
+  .mid{font-size:11px;color:var(--text-tertiary);font-family:var(--font-mono);}
+  .win{display:flex;gap:8px;}.win span{width:12px;height:12px;border-radius:50%;display:inline-block;}
+  .win .r{background:#ff5f57;}.win .y{background:#febc2e;}.win .g{background:#28c840;}
+
+  .scrim{display:flex;flex-direction:column;height:calc(100% - 36px);}
+  .menu{height:38px;flex:0 0 38px;background:var(--bg-surface);border-bottom:1px solid var(--border-primary);display:flex;align-items:center;padding:0 16px;gap:6px;}
+  .navi{display:flex;align-items:center;gap:8px;padding:0 14px;height:30px;border-radius:var(--radius-sm);color:var(--text-secondary);cursor:pointer;font-size:12.5px;border:1px solid transparent;transition:all .15s;}
+  .navi:hover{background:var(--bg-hover);color:var(--text-primary);}
+  .navi.on{background:var(--bg-selected);color:var(--text-primary);border-color:var(--brand-border);font-weight:500;}
+  .navi .c{font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);}
+  /* 视图主从容器：统一 左side + 中list + 右detail */
+  .main{flex:1;display:flex;min-height:0;}
+
+  /* 左侧边栏 */
+  .side{width:180px;flex:0 0 180px;background:var(--bg-sidebar);border-right:1px solid var(--border-primary);display:flex;flex-direction:column;min-height:0;}
+  .sh{font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px;padding:10px 16px 4px;font-weight:600;}
+  /* 文件上下文切换（http 配置文件 conf / stream 配置文件 stream） */
+  .ctxseg{display:flex;gap:4px;margin:8px 10px 2px;padding:3px;background:var(--bg-input);border:1px solid var(--border-primary);border-radius:var(--radius-md);}
+  .ctx-i{flex:1;height:24px;display:flex;align-items:center;justify-content:center;border-radius:var(--radius-sm);font-size:10.5px;font-family:var(--font-mono);color:var(--text-tertiary);cursor:pointer;transition:all .15s;user-select:none;white-space:nowrap;}
+  .ctx-i:hover{color:var(--text-primary);background:var(--bg-hover);}
+  .ctx-i.on{background:var(--brand-light);color:var(--brand);border:1px solid var(--brand-border);font-weight:600;}
+  .t-scroll{flex:1;overflow-y:auto;min-height:0;padding-bottom:8px;}
+  .t-item{display:flex;align-items:center;height:28px;padding:0 12px;border-radius:var(--radius-sm);color:var(--text-secondary);cursor:grab;font-size:12px;margin:0 6px;gap:6px;transition:all .15s;overflow:hidden;}
+  .t-item:active{cursor:grabbing;}
+  .t-item.dragging{opacity:.45;box-shadow:var(--shadow-elevated);}
+  .t-item.drop-before{box-shadow:inset 2px 2px 0 var(--brand), inset 2px -2px 0 var(--brand);}
+  .t-item:hover{background:var(--bg-hover);color:var(--text-primary);}
+  .t-item.on{background:var(--bg-selected);color:var(--text-primary);box-shadow:inset 2px 0 0 var(--brand);}
+  .t-item .tt{font-family:var(--font-mono);font-size:10.5px;color:var(--text-tertiary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .t-item.on .tt{color:var(--brand);}
+
+  .content{flex:1;display:flex;min-width:0;}
+  /* 监听点列表 */
+  .list{width:230px;flex:0 0 230px;border-right:1px solid var(--border-primary);display:flex;flex-direction:column;min-height:0;background:var(--bg-surface);}
+  .list .lhead{height:36px;flex:0 0 36px;display:flex;align-items:center;padding:0 14px;font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border-secondary);font-weight:600;}
+  .list-scroll{flex:1;overflow-y:auto;min-height:0;}
+  .row{display:flex;align-items:center;gap:8px;height:44px;padding:0 14px;cursor:pointer;border-left:3px solid transparent;transition:all .15s;border-bottom:1px solid var(--border-secondary);}
+  .row:hover{background:var(--bg-hover);}
+  .row.on{background:var(--bg-selected);border-left-color:var(--brand);}
+  .row .port{color:var(--brand);font-weight:600;font-family:var(--font-mono);}
+  .row .nm{font-family:var(--font-mono);font-size:12px;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .row .cnt{font-size:10px;color:var(--text-tertiary);font-family:var(--font-mono);}
+  .tag{font-size:9px;padding:1px 6px;border-radius:3px;font-weight:500;white-space:nowrap;}
+  .tag.pub{background:var(--success-bg);border:1px solid var(--success-border);color:var(--success);}
+
+  /* 详情 */
+  .detail{flex:1;display:flex;flex-direction:column;min-width:0;}
+  .dt-head{height:46px;flex:0 0 46px;border-bottom:1px solid var(--border-primary);padding:0 20px;display:flex;align-items:center;justify-content:space-between;background:var(--bg-sidebar);}
+  .dt-head .file{font-family:var(--font-mono);font-size:12px;}
+  .dt-head .sub{font-size:10.5px;color:var(--text-tertiary);margin-left:4px;font-family:var(--font-mono);}
+  .btn{height:26px;padding:0 12px;font-size:11.5px;border-radius:var(--radius-sm);cursor:pointer;border:1px solid var(--border-primary);background:transparent;color:var(--text-secondary);display:flex;align-items:center;gap:5px;white-space:nowrap;transition:all .15s;}
+  .btn:hover{background:var(--bg-hover);color:var(--text-primary);border-color:var(--border-focus,#6ba8fa);}
+  .btn:active{transform:scale(.97);}
+  .btn.primary{background:var(--brand);color:#fff;border-color:transparent;}
+  .btn.primary:hover{background:var(--brand-hover);}
+  .dt-tabs{height:36px;flex:0 0 36px;border-bottom:1px solid var(--border-secondary);display:flex;padding:0 20px;}
+  .dtab{display:flex;align-items:center;padding:0 14px;font-size:12px;color:var(--text-secondary);cursor:pointer;border-right:1px solid var(--border-secondary);position:relative;transition:color .15s;}
+  .dtab:hover{color:var(--text-primary);}
+  .dtab.on{color:var(--text-primary);}.dtab.on::after{content:'';position:absolute;bottom:0;left:0;right:0;height:2px;background:var(--brand);}
+  .dtab .n{font-size:9px;color:var(--text-tertiary);margin-left:6px;font-family:var(--font-mono);}
+  .dt-body{flex:1;overflow-y:auto;padding:18px 22px;animation:fadeIn .2s var(--ease,cubic-bezier(.4,0,.2,1));}
+  @keyframes fadeIn{from{opacity:0;transform:translateY(2px);}to{opacity:1;transform:none;}}
+
+  /* 卡式块树 */
+  /* ===== 块树（平铺 + data-depth 递进，层级清晰） ===== */
+  .blocktree{display:flex;flex-direction:column;gap:6px;}
+  /* 每个 brow 平铺在统一容器，靠 margin-left 表达深度；左侧层级线随深度递强 */
+  .brow{display:flex;gap:8px;border-left:2px solid transparent;padding-left:10px;border-radius:var(--radius-md);position:relative;}
+  .brow::after{content:'';position:absolute;left:0;top:8px;bottom:8px;width:2px;background:var(--border-secondary);border-radius:1px;}
+  .brow[data-depth="0"]{margin-left:0;padding-left:0; border-left:none;}
+  .brow[data-depth="0"]::after{display:none;}
+  .brow[data-depth="1"]{margin-left:14px;}
+  .brow[data-depth="1"]::after{background:var(--brand-border);}
+  .brow[data-depth="2"]{margin-left:32px;}
+  .brow[data-depth="2"]::after{background:var(--border-primary);}
+  .brow[data-depth="3"]{margin-left:50px;}
+  [data-depth="3"].brow::after,[data-depth="4"].brow::after,[data-depth="5"].brow::after{background:var(--border-secondary);}
+  /* 子块容器：纵向平铺，缩进由 data-depth margin 统一接管 */
+  .brow-children{display:flex;flex-direction:column;gap:6px;padding:8px 0 2px 0;}
+  /* 深度递进：server 最醒目，子块背景/字号递减 */
+  .brow[data-depth="0"] .block{background:var(--bg-surface-3);border-color:var(--brand-border);}
+  .brow[data-depth="0"] .block-head{background:var(--bg-selected);}
+  .brow[data-depth="1"] .block{background:var(--bg-surface-2);}
+  .brow[data-depth="2"] .block{background:var(--bg-surface-2);}
+  .block{flex:1;border:1px solid var(--border-primary);border-radius:var(--radius-md);background:var(--bg-surface-2);overflow:hidden;min-width:0;transition:border-color .15s;}
+  .block:hover{border-color:var(--border-focus,#6ba8fa);}
+  .block-head{display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--bg-surface-3);border-bottom:1px solid var(--border-secondary);cursor:pointer;}
+  .bchev{font-size:8px;color:var(--text-tertiary);transition:transform .18s var(--ease);flex:0 0 auto;}
+  .bchev.rot{transform:rotate(90deg);}
+  .brow.collapsed>.block>.brow-children{display:none;}
+  .kv-edi{height:24px;background:var(--bg-input);border:1px solid var(--border-focus);border-radius:var(--radius-sm);color:var(--text-primary);font-size:12px;font-family:var(--font-mono);padding:0 8px;min-width:160px;}
+  .kv-edi.kv-v{flex:1;min-width:220px;}
+  .kv-new{background:var(--brand-subtle);}
+  .bkhead-edi{height:24px;background:var(--bg-input);border:1px solid var(--border-focus);border-radius:var(--radius-sm);color:var(--text-primary);font-size:12px;font-family:var(--font-mono);padding:0 8px;width:min(380px,70%);}
+  .bkind{font-size:9px;padding:1px 7px;border-radius:var(--radius-xs);font-weight:600;letter-spacing:.4px;text-transform:uppercase;flex:0 0 auto;}
+  .bkind.srv{background:var(--success-bg);border:1px solid var(--success-border);color:var(--success);}
+  .bkind.loc{background:var(--info-bg);border:1px solid var(--info-border);color:var(--info);}
+  .bkind.map{background:var(--warning-bg);border:1px solid var(--warning-border);color:var(--warning);}
+  .bkind.geo{background:var(--success-bg);border:1px solid var(--success-border);color:var(--success);}
+  .bkind.if{background:var(--error-bg);border:1px solid var(--error-border);color:var(--error);}
+  .bkind.lxc{background:var(--warning-bg);border:1px solid var(--warning-border);color:var(--warning);}
+  .bkind.lf{background:var(--brand-light);border:1px solid var(--brand-border);color:var(--brand);}
+  .bkind.inc{background:var(--purple-bg);border:1px solid var(--purple-border);color:var(--purple);}
+  .bkind.up{background:var(--warning-bg);border:1px solid var(--warning-border);color:var(--warning);}
+  .bkind.spl{background:var(--brand-light);border:1px solid var(--brand-border);color:var(--brand);}
+  .bkind.stm{background:var(--purple-bg);border:1px solid var(--purple-border);color:var(--purple);}
+  .bkind.evt{background:var(--purple-bg);border:1px solid var(--purple-border);color:var(--purple);}
+  .bkind.htp{background:var(--info-bg);border:1px solid var(--info-border);color:var(--info);}
+  .bkind.cm{background:transparent;border:1px solid var(--border-primary);color:var(--text-tertiary);}
+  .bkind.x{background:var(--bg-surface-3);border:1px solid var(--border-primary);color:var(--text-tertiary);}
+  .bhead{font-family:var(--font-mono);font-size:11.5px;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .bhead .skey{color:var(--brand);}
+  .badd{margin-left:auto;display:flex;gap:2px;flex:0 0 auto;}
+  .badd .btn{height:20px;font-size:9.5px;padding:0 7px;}
+  .kv{padding:5px 10px;font-family:var(--font-mono);font-size:11px;color:var(--text-secondary);display:flex;align-items:center;gap:6px;border-top:1px solid var(--border-secondary);}
+  .kv .d{cursor:text;padding:2px 0;border-bottom:1px dashed transparent;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .kv .d:hover{border-bottom-color:var(--brand-border);}
+  .kv .kd{color:var(--text-tertiary);flex:0 0 auto;}
+  .kv .kv-mini{font-size:9px;color:var(--brand);flex:0 0 auto;}
+  /* R3: 引号包裹/正则键原样行与 map default 整行原样，允许换行不被截断 */
+  .kv .d.raw{white-space:pre-wrap;word-break:break-all;overflow:visible;}
+  .kv.kv-raw{background:var(--brand-subtle);}
+  .kv.kv-def{background:var(--success-bg);}
+  .kv .kv-mini.warn{color:var(--error);}
+  .kv .kv-mini.ok{color:var(--success);}
+  /* 删除按钮：默认隐藏，行/块悬停时浮现；危险色 */
+  .kv-del,.blk-del{flex:0 0 auto;width:18px;height:18px;line-height:1;border-radius:var(--radius-xs);border:1px solid transparent;background:transparent;color:var(--text-tertiary);cursor:pointer;font-size:13px;opacity:0;transition:all .15s;}
+  .kv:hover .kv-del,.block-head:hover .blk-del{opacity:1;}
+  .kv-del:hover,.blk-del:hover{color:var(--error);border-color:var(--error-border);background:var(--error-bg);}
+  .kv:last-child{border-bottom:none;}
+  /* 位置敏感重排按钮：默认隐藏，悬停浮现；主色 */
+  .kv-mv,.blk-mv{flex:0 0 auto;width:18px;height:18px;line-height:1;border-radius:var(--radius-xs);border:1px solid transparent;background:transparent;color:var(--text-tertiary);cursor:pointer;font-size:11px;opacity:0;transition:all .15s;}
+  .kv:hover .kv-mv,.block-head:hover .blk-mv{opacity:1;}
+  .kv-mv:hover,.blk-mv:hover{color:var(--brand);border-color:var(--brand-border);background:var(--brand-light);}
+  .kv-ed{flex:0 0 auto;height:18px;padding:0 6px;line-height:1;font-size:10px;border-radius:var(--radius-xs);border:1px solid transparent;background:transparent;color:var(--text-secondary);cursor:pointer;opacity:0;transition:all .15s;font-family:var(--font-mono);}
+  .kv:hover .kv-ed{opacity:1;}
+  .kv-ed:hover{color:var(--brand);border-color:var(--brand-border);background:var(--brand-light);}
+  .kv.kv-editing{outline:1px solid var(--brand-border);outline-offset:1px;}
+  .addsub{display:inline-flex;gap:2px;}
+  .addsub .btn{font-size:9.5px;padding:0 6px;}
+  /* 危险按钮（删除确认弹窗主操作） */
+  .btn.danger{background:var(--error);color:#fff;}
+  .btn.danger:hover{filter:brightness(.9);transform:translateY(-1px);}
+  .btn.danger:active{filter:brightness(.8);transform:scale(.97);}
+  .raw{background:var(--bg-deep);border:1px dashed var(--border-secondary);border-radius:var(--radius-sm);padding:6px 12px;margin:6px 10px;font-family:var(--font-mono);font-size:10.5px;color:var(--text-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .cm-line{font-family:var(--font-mono);font-size:10.5px;color:var(--text-tertiary);font-style:italic;padding:4px 10px;}
+  .add-bar{display:flex;align-items:center;justify-content:center;padding:11px;border:1px dashed var(--border-primary);border-radius:var(--radius-md);color:var(--text-tertiary);cursor:pointer;font-size:12px;gap:6px;transition:all .15s;}
+  .add-bar:hover{color:var(--brand);border-color:var(--brand-border);}
+
+  /* 配置预览 tab */
+  .preview-wrap{max-height:100%;}
+  pre.rendered{background:var(--bg-deep);border:1px solid var(--border-primary);border-radius:var(--radius-md);padding:14px 16px;font-family:var(--font-mono);font-size:11px;line-height:1.55;color:var(--text-primary);white-space:pre-wrap;word-break:break-all;overflow:auto;max-height:70vh;}
+  pre.rendered .cm{color:var(--text-tertiary);font-style:italic;}
+  pre.rendered .hl-default{color:#fde68a;}
+  pre.rendered .hl-if{color:var(--warning);}
+  pre.rendered .hl-skv{color:var(--brand);}
+
+  .footer{height:28px;flex:0 0 28px;background:var(--bg-deep);border-top:1px solid var(--border-primary);display:flex;justify-content:space-between;align-items:center;padding:0 20px;font-size:11px;color:var(--text-tertiary);}
+
+  ::-webkit-scrollbar{width:5px;height:5px;background:transparent;}
+  ::-webkit-scrollbar-thumb{background:#3a3a3e;border-radius:10px;border:1px solid transparent;background-clip:padding-box;}
+  ::-webkit-scrollbar-thumb:hover{background:#4a4a4e;}
+
+  /* ===== 视图切换 ===== */
+  .view{flex:1;display:flex;min-height:0;position:relative;}
+  .view[hidden]{display:none;}
+  .ov-content{width:100%;padding:22px 26px;overflow:auto;}
+  .ghead{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;}
+  .grow-note{color:var(--text-tertiary);font-size:11px;}
+  .t-row{display:flex;flex-wrap:wrap;gap:6px;}
+  .t-node{font-family:var(--font-mono);font-size:10.5px;color:var(--text-secondary);background:var(--bg-surface-3);border:1px solid var(--border-primary);border-radius:var(--radius-sm);padding:3px 8px;white-space:nowrap;}
+  .t-node.loc{color:var(--info);border-color:var(--info-border);background:var(--info-bg);}
+  .t-node.bk{color:var(--success);border-color:var(--success-border);background:var(--success-bg);}
+
+  /* ===== 方案C+ 增强样式：StatBanner 看板 / GlobalChain 全局链路 / PathChain 路径链路 ===== */
+  .cplus-tag{font-size:9px;color:var(--brand);font-weight:500;letter-spacing:.4px;margin-left:8px;}
+  /* StatBanner 在 .card 基础上加告警角标 */
+  .card .warn-flag{color:var(--error);font-size:10px;margin-left:4px;}
+  /* GlobalChain 链路条 */
+  .chain-box{background:var(--bg-surface-2);border:1px solid var(--border-primary);border-radius:var(--radius-md);padding:12px 16px;margin-bottom:16px;}
+  .chain-label{font-size:9.5px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:9px;display:flex;align-items:center;gap:6px;}
+  .chain-label .tap{font-size:9px;padding:0 6px;border-radius:var(--radius-xs);background:var(--brand-light);border:1px solid var(--brand-border);color:var(--brand);text-transform:none;cursor:pointer;}
+  .oc-chain{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+  .oc-node{display:inline-flex;align-items:center;gap:4px;font-family:var(--font-mono);font-size:11px;color:var(--text-secondary);background:var(--bg-surface-3);border:1px solid var(--border-primary);border-radius:var(--radius-sm);padding:4px 9px;white-space:nowrap;cursor:pointer;transition:all .15s;}
+  .oc-node:hover{border-color:var(--brand-border);color:var(--text-primary);box-shadow:0 0 0 3px rgba(74,138,244,.08);}
+  .oc-node.is-domain{color:var(--info);}
+  .oc-node.is-upstream{color:var(--warning);}
+  .oc-node.is-backend{color:var(--success);}
+  .oc-node.is-fault{color:var(--error);border-color:var(--error-border);}
+  .oc-node.is-fault .dot{color:var(--error);font-size:8px;margin-left:3px;animation:blink 1s step-end infinite;}
+  @keyframes blink{50%{opacity:.2}}
+  .oc-arrow{color:var(--text-tertiary);font-family:var(--font-mono);font-size:11px;}
+  .oc-pill{font-size:10px;padding:2px 7px;border-radius:var(--radius-xs);font-weight:500;white-space:nowrap;}
+  .oc-pill.pub{background:var(--success-bg);border:1px solid var(--success-border);color:var(--success);}
+  .oc-pill.priv{background:var(--bg-surface-3);border:1px solid var(--border-primary);color:var(--text-tertiary);}
+  /* PathChain 转发规则行 */
+  .rule-row{background:var(--bg-surface-2);border:1px solid var(--border-primary);border-radius:var(--radius-md);padding:10px 14px;margin-bottom:8px;}
+  .rule-meta{font-size:9.5px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:6px;display:flex;align-items:center;gap:6px;}
+  .rule-meta .uuid{font-family:var(--font-mono);color:var(--text-secondary);text-transform:none;letter-spacing:0;background:var(--bg-surface-3);padding:1px 6px;border-radius:var(--radius-xs);}
+  .oc-chain.compact{gap:5px;}
+  .oc-chain.compact .oc-node{padding:3px 8px;font-size:10.5px;}
+  .oc-node.is-target-up{color:var(--success);}
+  /* R2: proxy_pass 未命中 upstream 组的警示节点 */
+  .oc-node.unmatched{color:var(--error);border-color:var(--error-border);background:var(--error-bg);}
+  .oc-node.unmatched::after{content:"✗ 未匹配";color:var(--error);font-size:9px;font-weight:600;margin-left:2px;}
+  .oc-node.matchok{color:var(--success);}
+  .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px;}
+  .card{background:var(--bg-surface-2);border:1px solid var(--border-primary);border-radius:var(--radius-md);padding:12px 14px;}
+  .card b{font-size:19px;display:block;font-weight:600;}
+  .card small{color:var(--text-tertiary);font-size:11px;}
+  .card.blue b{color:var(--brand);}.card.green b{color:var(--success);}.card.yellow b{color:var(--warning);}.card.red b{color:var(--error);}
+  .ov-h{color:var(--text-secondary);font-size:12px;margin:16px 0 8px;font-weight:600;}
+  table{width:100%;border-collapse:collapse;font-size:12px;}
+  th{text-align:left;color:var(--text-tertiary);font-weight:600;font-size:11px;padding:7px 10px;border-bottom:1px solid var(--border-primary);background:var(--bg-sidebar);white-space:nowrap;}
+  td{padding:7px 10px;border-bottom:1px solid var(--border-secondary);font-family:var(--font-mono);font-size:11.5px;vertical-align:middle;color:var(--text-secondary);}
+  tr:hover td{background:var(--bg-hover);}
+  .tag.sslY{background:var(--success-bg);border:1px solid var(--success-border);color:var(--success);}
+  .tag.sslN{background:var(--bg-surface-3);border:1px solid var(--border-primary);color:var(--text-tertiary);}
+  .tag.ok{background:var(--success-bg);border:1px solid var(--success-border);color:var(--success);}
+  .tag.none{background:var(--error-bg);border:1px solid var(--error-border);color:var(--error);}
+
+  /* ===== 业务端口分组 ===== */
+  .biz-groups{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px;}
+  .bg{background:var(--bg-surface-2);border:1px solid var(--border-primary);border-radius:var(--radius-md);overflow:hidden;}
+  .bg-head{display:flex;align-items:center;gap:8px;padding:9px 12px;background:var(--bg-surface-3);border-bottom:1px solid var(--border-secondary);}
+  .bg-head .bport{color:var(--brand);font-family:var(--font-mono);font-weight:600;font-size:13px;}
+  .bg-head .bssl{font-size:9px;margin-left:auto;}
+  .bg-row{padding:6px 12px;border-top:1px solid var(--border-secondary);font-family:var(--font-mono);font-size:11px;color:var(--text-secondary);display:flex;gap:6px;align-items:center;}
+  .bg-row .ploc{color:var(--info);flex:0 0 auto;}
+  .bg-row .pup{color:var(--warning);}
+
+  /* ===== 全局拓扑 行级操作 ===== */
+  .op{height:20px;min-width:22px;padding:0 6px;font-size:9.5px;border-radius:var(--radius-sm);border:1px solid var(--border-primary);background:transparent;color:var(--text-tertiary);cursor:pointer;transition:all .15s;font-family:var(--font-sans);}
+  .op:hover{color:var(--text-primary);border-color:var(--brand-border);background:var(--bg-hover);}
+  .op.tok{color:var(--success);border-color:var(--success-border);}
+  .op.tsee{color:var(--warning);border-color:var(--warning-border);}
+  .op.ping{color:var(--brand);border-color:var(--brand-border);}
+  .op:active{transform:scale(.96);}
+
+  /* ===== 导出弹窗 ===== */
+  .modal-mask{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:100;}
+  .modal-mask[hidden]{display:none;}
+  .modal{width:720px;max-width:92vw;max-height:88vh;background:var(--bg-surface-2);border-radius:var(--radius-lg);box-shadow:0 24px 64px rgba(0,0,0,.5);display:flex;flex-direction:column;overflow:hidden;}
+  .modal-head{height:52px;flex:0 0 52px;border-bottom:1px solid var(--border-primary);padding:0 18px;display:flex;align-items:center;justify-content:space-between;}
+  .modal-body{flex:1;overflow:auto;padding:16px 18px;}
+  .modal-foot{height:54px;flex:0 0 54px;border-top:1px solid var(--border-primary);padding:0 18px;display:flex;align-items:center;gap:8px;}
+  .modal-tip{color:var(--text-secondary);font-size:11.5px;line-height:1.7;background:var(--info-bg);border:1px solid var(--info-border);border-radius:var(--radius-sm);padding:9px 12px;margin-bottom:12px;}
+  .modal-tip b{color:var(--info);}
+  .modal-subhead{font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px;margin:10px 0 8px;font-weight:600;}
+  /* 新增块弹窗：分段类型选择 + 表单字段（IDE 深色设计系统） */
+  .seg{display:flex;flex-wrap:wrap;gap:4px;background:var(--bg-input);border:1px solid var(--border-primary);border-radius:var(--radius-md);padding:3px;}
+  .seg .seg-i{flex:0 1 auto;min-width:62px;height:28px;display:flex;align-items:center;justify-content:center;padding:0 9px;border-radius:var(--radius-sm);font-size:11.5px;font-family:var(--font-mono);color:var(--text-secondary);cursor:pointer;transition:all .15s;user-select:none;}
+  .seg .seg-i:hover{background:var(--bg-hover);color:var(--text-primary);}
+  .seg .seg-i.on{background:var(--brand);color:#fff;font-weight:500;}
+  .fgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:6px;}
+  .fld{display:flex;flex-direction:column;gap:5px;}
+  .fld label{font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px;font-weight:600;}
+  .fld input{height:32px;background:var(--bg-input);border:1px solid var(--border-primary);border-radius:var(--radius-sm);color:var(--text-primary);font-size:12.5px;padding:0 10px;font-family:var(--font-mono);caret-color:var(--brand);outline:none;transition:all .15s;}
+  .fld input:focus{border-color:var(--border-focus);box-shadow:var(--shadow-focus);}
+  .monob{font-family:var(--font-mono);color:var(--info);font-size:10.5px;}
+  .switch{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--text-secondary);cursor:pointer;user-select:none;}
+  .switch .sw-on{width:30px;height:16px;border-radius:8px;background:var(--brand);position:relative;flex:0 0 auto;transition:background .2s;}
+  .switch .sw-on::after{content:'';position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:#fff;transition:left .2s;}
+  .switch.off .sw-on{background:var(--bg-surface-3);}
+  .switch.off .sw-on::after{background:var(--text-tertiary);left:16px;}
+  .export-out{max-height:240px;margin-top:4px;}
+  /* 导出 IP/域名替换（按指令）规则表 */
+  .sub-row-tip{font-size:10.5px;color:var(--text-tertiary);line-height:1.7;background:var(--brand-subtle);border:1px solid var(--brand-border);border-radius:var(--radius-sm);padding:8px 10px;margin-bottom:8px;}
+  .sub-row-tip b{color:var(--brand);}
+  .sub-tbl{width:100%;border-collapse:collapse;}
+  .sub-tbl th{color:var(--text-tertiary);font-size:10px;text-transform:uppercase;letter-spacing:.5px;text-align:left;padding:4px 6px;font-weight:600;}
+  .sub-tbl td{padding:3px 4px;vertical-align:middle;}
+  .sub-tbl select,.sub-tbl input{width:100%;background:var(--bg-input);border:1px solid var(--border-primary);border-radius:var(--radius-sm);padding:4px 8px;color:var(--text-primary);font-family:var(--font-mono);font-size:11px;}
+  .sub-tbl select:focus,.sub-tbl input:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px rgba(74,138,244,.08);}
+  .sub-tbl .sub-del{cursor:pointer;color:var(--text-tertiary);font-size:12px;padding:2px 6px;border-radius:var(--radius-xs);}
+  .sub-tbl .sub-del:hover{color:var(--error);background:var(--error-bg);}
+  pre.rendered .subst{color:#fde68a;background:var(--warning-bg);border-radius:2px;}
+  pre.rendered .sub-mark{color:var(--warning);font-size:10px;margin-left:6px;}
+  .up-grp-box{display:flex;flex-direction:column;gap:4px;max-height:150px;overflow:auto;border:1px solid var(--border-primary);border-radius:var(--radius-sm);padding:6px 8px;background:var(--bg-input);}
+  .up-grp{display:flex;align-items:flex-start;gap:8px;padding:3px 4px;border-radius:var(--radius-xs);cursor:pointer;font-size:11px;color:var(--text-secondary);line-height:1.5;}
+  .up-grp:hover{background:var(--bg-hover);color:var(--text-primary);}
+  .up-grp input{accent-color:var(--brand);margin-top:2px;flex:0 0 auto;}
+  .up-grp .dim{display:block;color:var(--text-tertiary);font-size:9.5px;margin-top:1px;font-family:var(--font-mono);}
+  .up-search{width:100%;box-sizing:border-box;margin-bottom:6px;background:var(--bg-input);border:1px solid var(--border-primary);border-radius:var(--radius-sm);color:var(--text-primary);font-size:11px;padding:6px 10px;caret-color:var(--brand);outline:none;}
+  .up-search:hover{border-color:var(--border-primary);}
+  .up-search:focus{border-color:var(--border-focus);box-shadow:var(--shadow-focus);}
+  .up-hint{font-size:10.5px;color:var(--text-tertiary);padding:5px 4px;text-align:left;}
+  .up-grp .grp-toggle{cursor:pointer;color:var(--text-tertiary);font-size:10px;margin-left:auto;flex:0 0 auto;padding:0 5px;border-radius:var(--radius-xs);}
+  .up-grp .grp-toggle:hover{color:var(--brand);}
+  .up-grp .grp-detail{flex:1 0 100%;color:var(--text-tertiary);font-size:9.5px;font-family:var(--font-mono);line-height:1.7;background:var(--bg-surface-2);border-radius:var(--radius-xs);padding:5px 7px;margin-top:3px;word-break:break-all;}
+  .up-ip{width:100%;box-sizing:border-box;margin-top:6px;background:var(--bg-input);border:1px solid var(--border-primary);border-radius:var(--radius-sm);color:var(--text-primary);font-family:var(--font-mono);font-size:11px;padding:8px 10px;caret-color:var(--brand);outline:none;resize:vertical;}
+  .up-ip:focus{border-color:var(--border-focus);box-shadow:var(--shadow-focus);}
+  .up-rule{border:1px solid var(--border-primary);border-radius:var(--radius-md);padding:8px 10px;background:var(--bg-surface);margin-bottom:8px;}
+  .up-rule-head{display:flex;align-items:center;gap:8px;margin-bottom:6px;}
+  .up-rule-tag{font-size:10px;font-weight:600;letter-spacing:.5px;color:var(--brand);text-transform:uppercase;}
+  .up-rule-tools{margin-left:auto;display:flex;gap:2px;}
+  .up-rule-tools .rbtn{width:20px;height:20px;display:flex;align-items:center;justify-content:center;border-radius:var(--radius-xs);color:var(--text-tertiary);cursor:pointer;font-size:11px;font-family:var(--font-mono);}
+  .up-rule-tools .rbtn:hover{background:var(--bg-hover);color:var(--text-primary);}
+  .up-rule-tools .rbtn.del:hover{background:var(--error-bg);color:var(--error);}
+  .up-rule .up-grp-box{max-height:110px;}
+  .up-quick{display:flex;gap:6px;margin:4px 0 6px;}
+  .up-quick .btn{padding:2px 10px;font-size:10.5px;height:22px;}
+  .block.t-off{opacity:.45;}
+
+  /* ===== toast ===== */
+  #toastBox{position:fixed;right:24px;bottom:24px;display:flex;flex-direction:column;gap:8px;z-index:200;}
+  .toast{min-width:280px;max-width:420px;background:var(--bg-surface-2);box-shadow:0 8px 32px rgba(0,0,0,.45);border-radius:var(--radius-md);padding:10px 16px;border-left:4px solid var(--brand);font-size:11px;color:var(--text-primary);display:flex;align-items:center;gap:8px;animation:slideUp .25s cubic-bezier(.4,0,.2,1);}
+  .toast.ok{border-left-color:var(--success);}.toast.warn{border-left-color:var(--warning);}.toast.err{border-left-color:var(--error);}
+  @keyframes slideUp{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:none;}}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="titlebar">
+    <div class="left"><span style="font-size:16px;color:var(--text-secondary);">&#9776;</span><span style="width:6px;height:6px;border-radius:50%;background:var(--success);"></span><span>Nginx Console</span></div>
+    <div class="mid">businesscenter_nginx_CD_master.conf · 方案C 泛化块主从</div>
+    <div class="win"><span class="r"></span><span class="y"></span><span class="g"></span></div>
+  </div>
+
+  <div class="scrim">
+    <div class="menu">
+      <span class="navi" data-view="overview">&#128196; 配置文件</span>
+      <span class="navi on" data-view="blockmgr">&#128230; 块管理<span class="c" id="metaBlocks"></span></span>
+      <span class="navi" data-view="topology">&#128279; 全局拓扑</span>
+      <span class="navi" data-view="bizport">&#128211; 业务端口</span>
+    </div>
+
+    <div class="main">
+      <!-- 左侧边栏（全局共用）：监听点 + 共性块 -->
+      <div class="side">
+        <div class="ctxseg" id="ctxSeg" title="配置文件 / stream(TCP) 文件上下文切换：stream 内容独立成 .stream 文件管理，与 http 的 location 等互不混入">
+          <span class="ctx-i on" data-ctx="conf">.conf</span>
+          <span class="ctx-i" data-ctx="stream">.stream</span>
+        </div>
+        <div class="sh">监听点 <span id="srvCount" style="text-transform:none;letter-spacing:0;"></span></div>
+        <div class="t-scroll" id="sideListen"></div>
+        <div class="sh">共性块</div>
+        <div class="t-scroll" id="sideCommon"></div>
+      </div>
+
+      <div class="content">
+        <!-- 视图：块管理（默认） -->
+        <div class="view" id="view-blockmgr">
+          <div class="list">
+            <div class="lhead">监听点 &#183; <span id="listFromFile" style="text-transform:none;letter-spacing:0;">server</span></div>
+            <div class="list-scroll" id="listenList"></div>
+          </div>
+
+          <div class="detail">
+            <div class="dt-head">
+              <div>
+                <span class="file" id="headFile">businesscenter_nginx_CD_master.conf</span>
+                <span class="sub" id="headSub"></span>
+              </div>
+              <div style="display:flex;gap:6px;flex-wrap:wrap;"><span class="btn" id="btnRowOps" title="行级操作：测试连通 / 启停 / reload">行级操作</span><span class="btn" id="btnAddUpstream" title="新增顶级块：server / map / upstream（同一弹窗选择类型）">＋ 块</span><span class="btn" id="btnExport">导出配置</span><span class="btn">同步</span><span class="btn primary">保存</span></div>
+            </div>
+            <div class="dt-tabs">
+              <div class="dtab on" data-tab="blocktree">块树（嵌套）<span class="n" id="tabTreeN"></span></div>
+              <div class="dtab" data-tab="preview">配置预览</div>
+            </div>
+
+            <div class="dt-body">
+              <div id="blockTree" class="blocktree"></div>
+              <div id="previewPanel" hidden><div class="preview-wrap"><pre id="renderOut" class="rendered"></pre></div></div>
+              <div id="emptyHint" hidden style="color:var(--text-tertiary);padding:40px;text-align:center;">未选中块，请从左侧选择监听点或共性块。</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 视图：配置文件（列表+详情主从） -->
+        <div class="view" id="view-overview">
+          <div class="list">
+            <div class="lhead">监听点 &#183; <span id="ovListCount" style="text-transform:none;letter-spacing:0;"></span></div>
+            <div class="list-scroll" id="ovList"></div>
+          </div>
+
+          <div class="detail">
+            <div class="dt-head">
+              <div>
+                <span class="file">businesscenter_nginx_CD_master.conf</span>
+                <span class="sub" id="ovHeadSub"></span>
+              </div>
+              <div style="display:flex;gap:6px;"><span class="btn" id="btnOvExport">导出配置</span></div>
+            </div>
+            <div class="dt-tabs">
+              <div class="dtab on" data-ovtab="overview">配置总览</div>
+              <div class="dtab" data-ovtab="biz">业务端口</div>
+            </div>
+
+            <div class="dt-body">
+              <div id="ovOverview"></div>
+              <div id="ovBiz" hidden></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 视图：全局拓扑（列表+详情主从） -->
+        <div class="view" id="view-topology">
+          <div class="list">
+            <div class="lhead">upstream 组</div>
+            <div class="list-scroll" id="topoList"></div>
+          </div>
+
+          <div class="detail">
+            <div class="dt-head">
+              <div>
+                <span class="file" id="topoHead">全局拓扑</span>
+                <span class="sub" id="topoSub"></span>
+              </div>
+              <div style="display:flex;gap:6px;"><span class="btn primary" id="btnTopoReload">reload</span></div>
+            </div>
+            <div class="dt-body"><div id="topoDetail"></div></div>
+          </div>
+        </div>
+
+        <!-- 视图：业务端口（列表+详情主从） -->
+        <div class="view" id="view-bizport">
+          <div class="list">
+            <div class="lhead">监听点</div>
+            <div class="list-scroll" id="bpList"></div>
+          </div>
+
+          <div class="detail">
+            <div class="dt-head">
+              <div>
+                <span class="file" id="bpHead">业务端口</span>
+                <span class="sub" id="bpSub"></span>
+              </div>
+              <div style="display:flex;gap:6px;"><span class="btn primary" id="btnBpSave">保存</span></div>
+            </div>
+            <div class="dt-body"><div id="bpDetail"></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <div><span style="color:var(--success);">&#9679; main</span></div>
+      <div id="footerMeta"></div>
+      <div>NGINX &#183; conf.d</div>
+    </div>
+  </div>
+</div>
+
+<!-- 行级操作 toast -->
+<div id="toastBox"></div>
+
+<!-- 导出配置弹窗 -->
+<div class="modal-mask" id="exportModal" hidden>
+  <div class="modal">
+    <div class="modal-head">
+      <div style="font-size:17px;font-weight:600;">导出配置</div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div class="switch" id="sslSwitch" title="是否启用 SSL（启用=保留 SSL 指令；关闭=导出非 SSL 场景配置）"><span class="sw-on" id="sslDot"></span>启用 SSL 导出</div>
+        <span class="btn" id="exportClose">&#10005;</span>
+      </div>
+    </div>
+    <div class="modal-body">
+      <div class="modal-tip"><b>关闭「启用 SSL」</b>后，导出将移除 ssl_protocols / ssl_certificate / ssl_ciphers 等指令，并把改写 <span class="monob">listen X ssl http2</span> 为 <span class="monob">listen X http2</span>（非 SSL 场景）。导出支持两处自动替换：<b>server_name 域名</b>（→ 全局新域名）与 <b>upstream 后端整组替换</b>（见下）。</div>
+      <div class="modal-subhead" style="margin-top:8px;">域名替换（server_name → 新域名）</div>
+      <div class="sub-row-tip">导出时，配置中<b>所有 server_name</b> 的值整体替换为下方填的<b>新域名</b>；留空则不替换域名。预览命中行标黄并标注原值。</div>
+      <input type="text" id="domNew" class="up-ip" placeholder="新域名，如 af-new.ifleetvision.com" style="margin-top:0;" />
+      <div class="modal-subhead" style="margin-top:14px;">upstream 后端整组替换（默认 + 例外覆盖）</div>
+      <div class="sub-row-tip">只填<b>纯 IP</b>：导出时仅替换各组后端的 IP，端口与端口后的参数（weight 等）<b>自动沿用该组原节点对应位置</b>，无需手写。一个 IP = 一个后端节点。底部「默认 IP」应用到<b>未被任何例外覆盖</b>的全部组；下方「例外」只填需要不同的组（例：<b>C 组 1 个 IP、其它组 3 个 IP</b> —— 默认填 3 个，例外把 C 单独改为 1 个）。</div>
+      <div class="modal-subhead" style="margin-top:10px;">默认后端 IP（应用到未被例外交代的组）</div>
+      <textarea id="upDefaultIps" class="up-ip" rows="2" placeholder="每行/逗号一个 IP，如：&#10;10.9.9.11&#10;10.9.9.12&#10;10.9.9.13&#10;留空则该部分组不替换"></textarea>
+      <div class="modal-subhead" style="margin-top:14px;">例外覆盖（仅差异化的组）</div>
+      <div id="upExceptions"></div>
+      <div style="margin-top:6px;"><span class="btn" id="upAddEx">＋ 添加例外</span></div>
+      <div class="modal-subhead" style="margin-top:14px;">导出预览</div>
+      <pre id="exportOut" class="rendered export-out"></pre>
+    </div>
+    <div class="modal-foot">
+      <span class="grow-note" id="exportStatus" style="margin-right:auto;"></span>
+      <span class="btn" id="exportCopy">复制配置</span>
+      <span class="btn primary" id="exportDown">下载 .conf</span>
+    </div>
+  </div>
+</div>
+
+<!-- 新增块弹窗（server / map / upstream 顶级块） -->
+<div class="modal-mask" id="addBlockModal" hidden>
+  <div class="modal" style="max-width:560px;">
+    <div class="modal-head">
+      <div style="font-size:17px;font-weight:600;">新增块</div>
+      <span class="btn" id="addBlockClose">&#10005;</span>
+    </div>
+    <div class="modal-body">
+      <div class="modal-tip">在 http 顶级新增一个块，与其他 server / map / upstream 同级；`split_clients` / `geo` 与 map 同属「变量映射」块，渲染沿用 default 置底 + 正则键原样。生成的空块可直接在块管理用「+ KV」补内容。</div>
+      <div class="modal-subhead">块类型</div>
+      <div class="seg" id="addBlockScope">
+        <span class="seg-i on" data-scope="server">server</span>
+        <span class="seg-i" data-scope="map">map</span>
+        <span class="seg-i" data-scope="split_clients">split_clients</span>
+        <span class="seg-i" data-scope="geo">geo</span>
+        <span class="seg-i" data-scope="upstream">upstream</span>
+        <span class="seg-i" data-scope="stream">stream</span>
+        <span class="seg-i" data-scope="events">events</span>
+      </div>
+      <!-- server -->
+      <div class="fgroup" id="fServer" style="margin-top:14px;">
+        <div class="fgrid">
+          <div class="fld"><label>server_name（可选）</label><input id="ab_sname" placeholder="api.example.com"></div>
+          <div class="fld"><label>listen（可选）</label><input id="ab_listen" placeholder="80"></div>
+        </div>
+      </div>
+      <!-- map -->
+      <div class="fgroup" id="fMap" hidden style="margin-top:14px;">
+        <div class="fgrid">
+          <div class="fld"><label>源变量</label><input id="ab_map_src" placeholder="$http_cookie"></div>
+          <div class="fld"><label>结果变量</label><input id="ab_map_dst" placeholder="$cookie_value"></div>
+        </div>
+        <div style="color:var(--text-tertiary);font-size:11px;line-height:1.6;margin-top:10px;">生成 <span class="monob">map &#36;src &#36;dst &#123;&#125;</span> 空块，之后用「+ KV」填入正则匹配键与 default 行；default 会自动置底。</div>
+      </div>
+      <!-- split_clients（复用 map 语义） -->
+      <div class="fgroup" id="fSpl" hidden style="margin-top:14px;">
+        <div class="fgrid">
+          <div class="fld"><label>源变量</label><input id="ab_spl_src" placeholder="$http_user_agent"></div>
+          <div class="fld"><label>结果变量</label><input id="ab_spl_dst" placeholder="$variant"></div>
+        </div>
+        <div style="color:var(--text-tertiary);font-size:11px;line-height:1.6;margin-top:10px;">生成 <span class="monob">split_clients &#36;src &#36;dst &#123;&#125;</span>，按比例分流（A/B / 灰度）；内部行（20%… 等）在「+ KV」补。</div>
+      </div>
+      <!-- geo（单变量） -->
+      <div class="fgroup" id="fGeo" hidden style="margin-top:14px;">
+        <div class="fld"><label>变量名</label><input id="ab_geo_var" placeholder="$geoip_region"></div>
+        <div style="color:var(--text-tertiary);font-size:11px;line-height:1.6;margin-top:10px;">生成 <span class="monob">geo &#36;var &#123; default 0; 网段=值; &#125;</span>，default/网段行用「+ KV」补。</div>
+      </div>
+      <!-- upstream -->
+      <div class="fgroup" id="fUpstream" hidden style="margin-top:14px;">
+        <div class="fgrid">
+          <div class="fld"><label>组名</label><input id="ab_up_name" placeholder="api_backend"></div>
+          <div class="fld"><label>首个后端节点（可选）</label><input id="ab_up_srv" placeholder="10.0.0.97:8081 weight=3;"></div>
+        </div>
+      </div>
+      <!-- 上下文块（stream / events，无字段） -->
+      <div class="fgroup" id="fCtx" hidden style="margin-top:14px;">
+        <div style="color:var(--text-tertiary);font-size:11.5px;line-height:1.6;" id="ab_ctx_tip"></div>
+      </div>
+    </div>
+    <div class="modal-foot" style="justify-content:flex-end">
+      <span class="btn" id="addBlockCancel">取消</span>
+      <span class="btn primary" id="addBlockOK">新增块</span>
+    </div>
+  </div>
+</div>
+
+<!-- 删除确认弹窗（KV/子块删除危险操作二次确认） -->
+<div class="modal-mask" id="delConfirmModal" hidden>
+  <div class="modal" style="max-width: 440px;">
+    <div class="modal-head">
+      <h3 style="margin:0;font-size:15px;font-weight:600;color:var(--text-primary)">确认删除</h3>
+      <span class="btn" id="delConfirmClose">&#10005;</span>
+    </div>
+    <div class="modal-body" style="padding-top:8px;padding-bottom:4px;">
+      <div id="delConfirmMsg" style="color:var(--text-secondary);font-size:13.5px;line-height:1.6"></div>
+    </div>
+    <div class="modal-foot" style="justify-content:flex-end">
+      <span class="btn" id="delConfirmCancel">取消</span>
+      <span class="btn danger" id="delConfirmOK">确认删除</span>
+    </div>
+  </div>
+</div>
+
+<!-- 真实 nginx 配置原文（经方案C解析渲染） -->
+<script type="text/plain" id="nginx-src">
+# 设置header请求支持下划线
+underscores_in_headers on;
+client_max_body_size 1024m;
+proxy_read_timeout 600;
+# 开启gzip
+gzip on;
+# 启用gzip压缩的最小文件
+gzip_min_length 500;
+# gzip 压缩级别
+gzip_comp_level 5;
+gzip_types application/javascript text/css application/json image/jpeg image/gif image/png;
+gzip_vary on;
+proxy_buffering off;
+# 全局建议：将信任 IP 定义在 http 块中
+set_real_ip_from 100.64.0.0/10;
+set_real_ip_from 10.0.0.0/8;
+set_real_ip_from 172.16.0.0/12;
+set_real_ip_from 192.168.0.0/16;
+set_real_ip_from 35.191.0.0/16;
+set_real_ip_from 130.211.0.0/22;
+set_real_ip_from 168.63.129.16;
+real_ip_header X-Forwarded-For;
+real_ip_recursive on;
+server  {
+    add_header X-XSS-Protection "1; mode=block";
+    add_header X-Permitted-Cross-Domain-Policies "master-only";
+    add_header X-Download-Options "noopen";
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_certificate      /iotp/network/nginx/platform.pem;
+    ssl_certificate_key  /iotp/network/nginx/platform.key;
+    ssl_session_cache    shared:SSL:10m;
+    ssl_session_timeout  30m;
+    ssl_ciphers ECDHE-RSA-AES128-GCM-SHA256;
+    ssl_prefer_server_ciphers  on;
+    etag off;
+    add_header Last-Modified "";
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header Host $host;
+    proxy_set_header Proxy-Client-IP "";
+    proxy_set_header WL-Proxy-Client-IP "";
+    server_name af-ftcloud.ifleetvision.com;
+    listen  443 ssl http2;
+    location ^~ /gateway/innerapi { return 444; }
+    location / { proxy_pass http://saas_web; }
+    location /static-file/ { alias /iotp/static/; }
+    location /powerJob {
+        if ($request_uri ~ /powerJob/(.*)$ ){ set $clean_uri $1; proxy_pass http://power_job_web/$clean_uri; }
+    }
+    location /redirect/sso { proxy_pass http://ft_entry_web; }
+    location ~* \.pri$ {
+        proxy_pass http://wsIntercom21012;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "Upgrade";
+        proxy_intercept_errors on;
+        error_page 301 302 307 = @handle_redirects_ws;
+    }
+    location /asset-engine/ { proxy_pass http://asset_engine/; }
+    location /gateway/base-crocus-service/api/v2/file/upload { proxy_pass http://base_crocus_service/api/v2/file/upload; }
+    location /gateway/ { proxy_pass http://base_gateway_service/; }
+    location /login { proxy_pass http://base_login_web; }
+    location /app/ { proxy_pass http://ft_app_web; }
+    location /mobile/alarm-detail/ { proxy_pass http://ft_app_web; }
+    location /base-websocket-service/ { proxy_pass http://wsIntercom26010; }
+    location /send/ { proxy_pass http://wsIntercom26010; }
+    location /push/ { proxy_pass http://wsIntercom26010; }
+    location /heart/ { proxy_pass http://wsIntercom26010; }
+    location /api/v1/session/ {
+        proxy_pass http://wsIntercom26010;
+        proxy_http_version 1.1;
+        proxy_connect_timeout 60s;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 60s;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "Upgrade";
+        proxy_set_header X-real-ip $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+    }
+    location /ms/ { proxy_pass http://base_gateway_service; }
+    location /mms/ { proxy_pass http://base_gateway_service; }
+    location ~* \.(m3u8|ts)$ { proxy_pass http://wsIntercom22011; proxy_intercept_errors on; error_page 301 302 307 = @handle_redirects; }
+    location /video/ { proxy_pass http://wsIntercom22001; proxy_intercept_errors on; error_page 301 302 307 = @handle_redirects; }
+    location /audio/ { proxy_pass http://wsIntercom21012; proxy_intercept_errors on; error_page 301 302 307 = @handle_redirects; }
+    location @handle_redirects { set $saved_redirect_location '$upstream_http_location'; proxy_pass $saved_redirect_location; }
+    location @handle_redirects_ws { proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection "Upgrade"; set $saved_redirect_location '$upstream_http_location'; proxy_pass $saved_redirect_location; }
+    location /cps/ { proxy_pass http://s17_cps_service; }
+    location /entry/ { proxy_pass http://ft_entry_web; }
+    location /mobile/ { proxy_pass http://base_mobile_web; }
+    location /openapi/ { proxy_pass http://base_gateway_service; }
+    location ~ /nat.* { proxy_pass http://s17_dpcs_n9m_v1; }
+    location /HAPPLE/ { proxy_pass http://s17_dpcs_n9m_v1; proxy_set_header Referer $http_referer; }
+    location /language.rsp { proxy_pass http://s17_dpcs_n9m_v1; proxy_set_header Referer $http_referer; }
+    location /devapi/v1/basic/ { proxy_pass http://s17_dpcs_n9m_v2; }
+    location ~ /ADPLUS_* { proxy_pass http://s17_dpcs_n9m_v2; }
+    location ~ /C6DAI_* { proxy_pass http://s17_dpcs_n9m_v2; }
+    location ~ /B3.* { proxy_pass http://s17_dpcs_n9m_v2; }
+    location ~ /H5_* { proxy_pass http://s17_dpcs_n9m_v2; }
+    location ~ /Z5_* { proxy_pass http://s17_dpcs_n9m_v2; }
+    location ~ /M1N_TKH_* { proxy_pass http://s17_dpcs_n9m_v2; }
+    location ~ /M14* { proxy_pass http://s17_dpcs_n9m_v2; }
+    location ~ /V3.5.5* { proxy_pass http://s17_dpcs_n9m_v2; }
+    location ~ /X1N_AI_* { proxy_pass http://s17_dpcs_n9m_v2; }
+    location /stream/ { proxy_pass http://wsIntercom22001; proxy_intercept_errors on; error_page 301 302 307 = @handle_redirects; }
+    location /third-resource/ { proxy_pass http://s17_dpcs_n9m_v2; }
+    location /devops/ { proxy_pass http://devops_web; }
+    location /devops-backstage/ { proxy_pass http://dev-ops-backstage-web; }
+    location /ws/redirect/ { proxy_pass http://wsIntercom26010; proxy_intercept_errors on; error_page 301 302 307 = @handle_redirects_ws; }
+    error_page 404 502 /error.html;
+    location = /error.html { root  /iotp/custom_html;  internal; }
+    location /fms/v3/download/file/uuid { proxy_pass http://fms_https; }
+}
+server  {
+    add_header X-XSS-Protection "1; mode=block";
+    add_header X-Permitted-Cross-Domain-Policies "master-only";
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_certificate /iotp/network/nginx/platform.pem;
+    ssl_certificate_key /iotp/network/nginx/platform.key;
+    server_name af-ftcloud.ifleetvision.com;
+    listen  443 ssl http2;
+    location / { proxy_pass http://saas_web; }
+    location ^~ /gateway/innerapi { return 444; }
+    location /powerJob {
+        if ($request_uri ~ /powerJob/(.*)$ ){ set $clean_uri $1; proxy_pass http://power_job_web/$clean_uri; }
+    }
+    location /static-file/ { alias /iotp/static/; }
+    location /asset-engine/ { proxy_pass http://asset_engine/; }
+    location /redirect/sso { proxy_pass http://ft_entry_web; }
+    location /gateway/ { proxy_pass http://base_gateway_service/; }
+    location /login { proxy_pass http://base_login_web; }
+    location /app/ { proxy_pass http://ft_app_web; }
+    location /mobile/ { proxy_pass http://base_mobile_web; }
+    location ~* \.(m3u8|ts)$ { proxy_pass http://wsIntercom22011; proxy_intercept_errors on; error_page 301 302 307 = @handle_redirects; }
+    location /video/ { proxy_pass http://wsIntercom22001; proxy_intercept_errors on; error_page 301 302 307 = @handle_redirects; }
+    location /audio/ { proxy_pass http://wsIntercom21012; proxy_intercept_errors on; error_page 301 302 307 = @handle_redirects; }
+    location /cps/ { proxy_pass http://s17_cps_service; }
+    location /entry/ { proxy_pass http://ft_entry_web; }
+    location /openapi/ { proxy_pass http://base_gateway_service; }
+    error_page 404 502 /error.html;
+    location = /error.html { root /iotp/custom_html; internal; }
+}
+server{
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_certificate /iotp/network/nginx/platform.pem;
+    server_name af-ftcloud.ifleetvision.com;
+    listen  20606 ssl http2;
+    location / { proxy_pass http://streamax_20605; }
+}
+server{
+    ssl_protocols TLSv1.2 TLSv1.3;
+    server_name af-ftcloud.ifleetvision.com;
+    listen  20691 ssl http2;
+    location / { proxy_pass http://sub_backstage_web; }
+}
+upstream sub_backstage_web{
+    server 10.0.0.97:20690 weight=5 max_fails=2 fail_timeout=30s;
+    server 10.0.0.193:20690 weight=5 max_fails=2 fail_timeout=30s;
+    server 10.0.0.18:20690 weight=5 max_fails=2 fail_timeout=30s;
+}
+server{
+    ssl_protocols TLSv1.2 TLSv1.3;
+    server_name af-ftcloud.ifleetvision.com;
+    listen 20501 ssl http2;
+    location / { proxy_pass http://base_gateway_service/; }
+    location /innerapi { return 444; }
+    client_max_body_size 10240M;
+}
+server{
+    listen 20051;
+    location / { proxy_pass http://base_gateway_service/; }
+    location /innerapi { return 444; }
+    client_max_body_size 10240M;
+}
+server {
+    ssl_protocols TLSv1.2 TLSv1.3;
+    server_name af-ftcloud.ifleetvision.com;
+    listen 20998 ssl http2;
+    location / { proxy_pass http://wsIntercom26010; }
+    location /video/ { proxy_pass http://wsIntercom21012; }
+    location /audio/ { proxy_pass http://wsIntercom21012; }
+}
+map $http_cookie $cookie_to_delete {
+    ~*(?P<pre>.*?)uid=streamax(?P<post>.*) "$pre$post";
+    default $http_cookie;
+}
+server {
+    ssl_protocols TLSv1.2 TLSv1.3;
+    server_name af-ftcloud.ifleetvision.com;
+    listen 20035 ssl http2;
+    proxy_set_header Cookie $cookie_to_delete;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    location ~ /nat.* { proxy_pass http://s17_dpcs_n9m_v1; }
+    location /HAPPLE/ { proxy_pass http://s17_dpcs_n9m_v1; proxy_set_header Referer $http_referer; }
+}
+server {
+    ssl_protocols TLSv1.2 TLSv1.3;
+    server_name af-ftcloud.ifleetvision.com;
+    listen 20038 ssl http2;
+    proxy_set_header Cookie $cookie_to_delete;
+    location / { proxy_pass http://s17_dpcs; }
+    error_page 497 https://$host:$server_port$uri?$args;
+}
+server {
+    ssl_protocols TLSv1.2 TLSv1.3;
+    server_name af-ftcloud.ifleetvision.com;
+    listen 22211 ssl http2;
+    location /asset-engine/ { proxy_pass http://asset_engine/; }
+    location / { proxy_pass http://devops_web; }
+    location /gateway/ { proxy_pass http://base_gateway_service/; }
+}
+upstream saas_web{ server 10.0.0.97:20550 weight=5; server 10.0.0.193:20550 weight=5; server 10.0.0.18:20550 weight=5; }
+upstream base_mobile_web{ server 10.0.0.97:20607 weight=5; server 10.0.0.193:20607 weight=5; server 10.0.0.18:20607 weight=5; }
+upstream base_login_web{ server 10.0.0.97:20603 weight=5; server 10.0.0.193:20603 weight=5; server 10.0.0.18:20603 weight=5; }
+upstream asset_engine{ server 10.0.0.97:20600 weight=5; server 10.0.0.193:20600 weight=5; server 10.0.0.18:20600 weight=5; }
+upstream streamax_20605{ server 10.0.0.97:20605 weight=5; server 10.0.0.193:20605 weight=5; server 10.0.0.18:20605 weight=5; }
+upstream base_gateway_service{ server 10.0.0.97:20500 weight=5; server 10.0.0.193:20500 weight=5; server 10.0.0.18:20500 weight=5; }
+upstream wsIntercom26010 { server 10.0.0.97:26010 weight=5; server 10.0.0.193:26010 weight=5; server 10.0.0.18:26010 weight=5; }
+upstream s17_dpcs_n9m_v1  { server 10.0.0.97:21935 weight=5; server 10.0.0.193:21935 weight=5; server 10.0.0.18:21935 weight=5; }
+upstream s17_dpcs { server 10.0.0.97:21938; server 10.0.0.193:21938; server 10.0.0.18:21938; }
+upstream s17_dpcs_n9m_v2{ server 10.0.0.97:21938; server 10.0.0.193:21938; server 10.0.0.18:21938; }
+upstream s17_mdgw_service { server 10.0.0.97:21740 weight=5; server 10.0.0.193:21740 weight=5; server 10.0.0.18:21740 weight=5; }
+upstream s17_cps_service { server 10.0.0.97:21632 weight=5; server 10.0.0.193:21632 weight=5; server 10.0.0.18:21632 weight=5; }
+server{ ssl_protocols TLSv1.2 TLSv1.3; server_name af-ftcloud.ifleetvision.com; listen 22001 ssl http2;
+    location /video/ { proxy_pass http://wsIntercom22001; proxy_intercept_errors on; error_page 301 302 307 = @handle_redirects; }
+}
+server{ server_name af-ftcloud.ifleetvision.com; listen 22002 ssl http2;
+    location /video/ { proxy_pass http://wsIntercom22002; }
+}
+server{ server_name af-ftcloud.ifleetvision.com; listen 22003 ssl http2;
+    location /video/ { proxy_pass http://wsIntercom22003; }
+}
+server{ server_name af-ftcloud.ifleetvision.com; listen 22004 ssl http2;
+    location /video/ { proxy_pass http://wsIntercom22004; }
+}
+server{ server_name af-ftcloud.ifleetvision.com; listen 22005 ssl http2;
+    location /video/ { proxy_pass http://wsIntercom22005; }
+}
+server{ server_name af-ftcloud.ifleetvision.com; listen 22006 ssl http2;
+    location /video/ { proxy_pass http://wsIntercom22006; }
+}
+server{ server_name af-ftcloud.ifleetvision.com; listen 22011 ssl http2;
+    location / { proxy_pass http://wsIntercom22011; }
+}
+server { server_name af-ftcloud.ifleetvision.com; listen 22012 ssl http2;
+    location / { proxy_pass http://wsIntercom21012; }
+}
+upstream wsIntercom22001 { server 10.0.0.97:21701; server 10.0.0.193:21701; server 10.0.0.18:21701; }
+upstream wsIntercom22002 { server 10.0.0.97:21702; server 10.0.0.193:21702; server 10.0.0.18:21702; }
+upstream wsIntercom22003 { server 10.0.0.97:21703; server 10.0.0.193:21703; server 10.0.0.18:21703; }
+upstream wsIntercom22004 { server 10.0.0.97:21704; server 10.0.0.193:21704; server 10.0.0.18:21704; }
+upstream wsIntercom22005 { server 10.0.0.97:21705; server 10.0.0.193:21705; server 10.0.0.18:21705; }
+upstream wsIntercom22006 { server 10.0.0.97:21706; server 10.0.0.193:21706; server 10.0.0.18:21706; }
+upstream wsIntercom22011 { server 10.0.0.97:21711; server 10.0.0.193:21711; server 10.0.0.18:21711; }
+upstream wsIntercom21012 { server 10.0.0.97:21712; server 10.0.0.193:21712; server 10.0.0.18:21712; }
+server { ssl_protocols TLSv1.2 TLSv1.3; server_name af-ftcloud.ifleetvision.com; listen 20091 ssl http2;
+    location /static-file/ { alias /iotp/static/; }
+    location /asset-engine/ { proxy_pass http://asset_engine/; }
+    location / { proxy_pass http://ft-geotab-web; }
+    location /login/ { proxy_pass http://base_login_web/; }
+    location /mobile/ { proxy_pass http://base_mobile_web/; }
+    location /gateway/ { proxy_pass http://base_gateway_service/; }
+    location /app/ { proxy_pass http://ft_app_web; }
+}
+upstream ft-geotab-web{ server 10.0.0.97:20090 weight=5; server 10.0.0.193:20090 weight=5; server 10.0.0.18:20090 weight=5; }
+server { ssl_protocols TLSv1.2 TLSv1.3; server_name af-ftcloud.ifleetvision.com; listen 20101 ssl http2;
+    location / { proxy_pass http://saas_web; }
+    location /login/ { proxy_pass http://base_login_web/; }
+    location /gateway/ { proxy_pass http://base_gateway_service/; }
+    location /app/ { proxy_pass http://ft_app_web; }
+}
+upstream ft-wialon-web{ server 10.0.0.97:20100 weight=5; server 10.0.0.193:20100 weight=5; server 10.0.0.18:20100 weight=5; }
+server { ssl_protocols TLSv1.2 TLSv1.3; server_name af-ftcloud.ifleetvision.com; listen 20111 ssl http2;
+    location / { proxy_pass http://ft_app_web; }
+    location /login/ { proxy_pass http://base_login_web/; }
+    location /gateway/ { proxy_pass http://base_gateway_service/; }
+}
+upstream ft_app_web{ server 10.0.0.97:20110 weight=5; server 10.0.0.193:20110 weight=5; server 10.0.0.18:20110 weight=5; }
+server { ssl_protocols TLSv1.2 TLSv1.3; server_name af-ftcloud.ifleetvision.com; listen 20141 ssl http2;
+    location / { proxy_pass http://ft_entry_web; }
+    location /gateway/ { proxy_pass http://base_gateway_service/; }
+    location /app/share/ { proxy_pass http://ft_app_web/; }
+}
+upstream ft_entry_web{ server 10.0.0.97:20140 weight=5; server 10.0.0.193:20140 weight=5; server 10.0.0.18:20140 weight=5; }
+upstream base_crocus_service { ip_hash; server 10.0.0.97:22200 weight=5; server 10.0.0.193:22200 weight=5; server 10.0.0.18:22200 weight=5; }
+upstream devops_web{ ip_hash; server 10.0.0.97:22210 weight=5; server 10.0.0.193:22210 weight=5; server 10.0.0.18:22210 weight=5; }
+upstream dev-ops-backstage-web{ server 10.0.0.97:22212 weight=5; server 10.0.0.193:22212 weight=5; server 10.0.0.18:22212 weight=5; }
+upstream base_devops_service{ server 10.0.0.97:22200 weight=5; server 10.0.0.193:22200 weight=5; server 10.0.0.18:22200 weight=5; }
+upstream power_job_web { server 127.0.0.1:23160; }
+upstream fms_https{ server 10.0.0.97:21010 weight=5; server 10.0.0.193:21010 weight=5; server 10.0.0.18:21010 weight=5; }
+</script>
+
+<!-- stream(TCP/UDP) 独立文件：nginx 中 stream 与 http 是同级顶层模块，内容放在 xxx.stream，不放入 .conf 的 location 等 http 语义 -->
+<script type="text/plain" id="nginx-stream-src">
+# TCP/UDP 四层转发（stream 上下文，独立 .stream 文件；由 nginx.conf 顶层 stream { include …; } 引用）
+log_format stream_basic '$remote_addr [$time_local] $protocol $status $bytes_sent bytes_received=$bytes_received $session_time';
+access_log logs/stream_access.log stream_basic;
+proxy_timeout 1h;
+proxy_connect_timeout 1s;
+upstream db_backend_3306 { server 10.0.0.97:3306; server 10.0.0.193:3306; }
+server { listen 3306; proxy_pass db_backend_3306; proxy_timeout 1h; proxy_connect_timeout 1s; }
+upstream redis_backend_6379 { server 10.0.0.97:6379 weight=2; server 10.0.0.193:6379; }
+server { listen 6379; proxy_pass redis_backend_6379; }
+server { listen 10050; proxy_pass 10.0.0.97:10050; }
+server { listen 127.0.0.1:10051; proxy_pass 10.0.0.193:10051; }
+server { listen unix:/tmp/nginx_redis.sock; proxy_pass redis_backend_6379; }
+server { listen 5432; proxy_pass 10.0.0.18:5432; }
+upstream kafka_brokers_9092 { server 10.0.0.97:9092; server 10.0.0.193:9092; server 10.0.0.18:9092; }
+server { listen 9092; proxy_pass kafka_brokers_9092; }
+</script>
+
+<script>
+(function(){
+"use strict";
+var SRC = document.getElementById("nginx-src").textContent;
+var INDENT="    ";
+
+/* ---------- 方案C nginx 解析器：原文 -> 泛化块树(config_blocks/config_options) ---------- */
+function scopeOf(header){
+  var w=(header||"").trim().split(/\s+/)[0];
+  var map={server:"server",location:"location",upstream:"upstream",map:"map",geo:"geo",if:"if",
+    stream:"stream",events:"events",http:"http",
+    log_format:"log_format",split_clients:"split_clients",limit_req:"limit_req",limit_conn:"limit_conn",
+    limit_except:"limit_except",types:"types",include:"include"};
+  return map[w]||null;
+}
+function kvify(s){
+  var t=s.trim().replace(/;\s*$/,"");
+  var i=t.indexOf(" ");
+  if(i===-1) return {directive:t,value:"",raw:t};
+  return {directive:t.slice(0,i).trim(),value:t.slice(i+1).trim(),raw:t.trim()};
+}
+function parse(src, rootScope){
+  /* 通用虚拟根：http / stream / events 等顶层块成为并列 children（stream 不再嵌套进 http，语法合法） */
+  var root={scope:rootScope||"http",header:(rootScope==="stream"?"stream":"http"),children:[],options:[],parent:null,level:-1};
+  var stack=[root];
+  var lines=src.split(/\r?\n/);
+  for(var i=0;i<lines.length;i++){
+    var trimmed=lines[i].trim();
+    if(!trimmed) continue;
+    var cur=stack[stack.length-1];
+    var opens=(trimmed.match(/{/g)||[]).length;
+    var closes=(trimmed.match(/}/g)||[]).length;
+    if(opens===0&&closes===0&&cur){
+      if(/^#/.test(trimmed)) cur.children.push({scope:"comment",header:trimmed.replace(/^#\s?/,""),children:[],options:[],parent:cur});
+      else cur.options.push(kvify(trimmed));
+      continue;
+    }
+    if(opens===0&&closes>0){ var pops=closes; while(pops>0&&stack.length>1){stack.pop();pops--;} continue; }
+    if(opens>0){
+      var col=trimmed.indexOf("{");
+      var head=(trimmed.slice(0,col)||"").trim();
+      var after=trimmed.slice(col+1).replace(/}$/,"").trim();
+      var sc=scopeOf(head);
+      var child={scope:sc||"raw",header:head,children:[],options:[],parent:cur};
+      cur.children.push(child);
+      if(after){ after.split(";").map(function(s){return s.trim();}).filter(Boolean).forEach(function(s){ child.options.push(kvify(s)); }); }
+      if(closes<opens) stack.push(child);
+      continue;
+    }
+  }
+  return [root];
+}
+
+/* ---------- 遍历（双文件树：.conf 与 .stream 各自独立顶层，stream 不再挂进 http） ---------- */
+var allNodes=[]; var seq=0;
+function walk(n,depth){ n._id=++seq; n._depth=depth; allNodes.push(n); (n.children||[]).forEach(function(c){walk(c,depth+1);}); }
+var SRC_STREAM=document.getElementById("nginx-stream-src").textContent;
+var CONF_TREE=parse(SRC,"http");            // .conf 配置文件树（根 scope http）
+var STREAM_TREE=parse(SRC_STREAM,"stream"); // .stream 文件树（根 scope stream，与 http 同级顶层）
+var TREE=CONF_TREE;                          // 当前活动文件树
+var CTX="conf";                              // 当前文件上下文: conf(http) / stream(tcp)
+var FILE_NAME={conf:"businesscenter_nginx_CD_master.conf",stream:"businesscenter_nginx_CD_master.stream"};
+CONF_TREE.forEach(function(n){walk(n,0);});
+STREAM_TREE.forEach(function(n){walk(n,0);});
+/* 上下文判定：沿 parent 上溯到树根，根 scope stream → stream 上下文，否则 conf */
+function rootOf(n){ while(n&&n.parent) n=n.parent; return n; }
+function ctxOf(n){ return (rootOf(n)||{}).scope==="stream"?"stream":"conf"; }
+function nodesInCtx(scopes){ return allNodes.filter(function(n){ return scopes.indexOf(n.scope)>=0 && ctxOf(n)===CTX; }); }
+/* 当前上下文可见的监听点(server) 与共性块(map/upstream/split_clients/geo)——随上下文联动，不混入另一文件的 server */
+var servers=[], commons=[];
+function refreshCtxLists(){ servers=nodesInCtx(["server"]); commons=nodesInCtx(["map","upstream","split_clients","geo"]); }
+refreshCtxLists();
+
+var nServer=0,nLoc=0,nUp=0,nMap=0,nIf=0,nSpl=0,nGeo=0,nStm=0,nEvt=0,nHttp=0;
+function countAll(){
+  /* 统计当前活动文件树的块数（http / stream 各自计数，互不混合） */
+  nServer=nLoc=nUp=nMap=nIf=nSpl=nGeo=nStm=nEvt=nHttp=0;
+  (function r(n){
+    if(n.scope==="server")nServer++; else if(n.scope==="location")nLoc++; else if(n.scope==="upstream")nUp++;
+    else if(n.scope==="map")nMap++; else if(n.scope==="if")nIf++; else if(n.scope==="split_clients")nSpl++;
+    else if(n.scope==="geo")nGeo++; else if(n.scope==="stream")nStm++; else if(n.scope==="events")nEvt++;
+    else if(n.scope==="http")nHttp++;
+    (n.children||[]).forEach(r);
+  })(TREE[0]);
+}
+function treeNodeCount(){ var c=0; (function r(n){ c++; (n.children||[]).forEach(r); })(TREE[0]); return c; }
+function footerText(){
+  var parts=[];
+  [["server",nServer],["location",nLoc],["upstream",nUp],["map",nMap],["split_clients",nSpl],["geo",nGeo],
+   ["stream",nStm],["events",nEvt],["http",nHttp],["if",nIf]].forEach(function(p){ if(p[1]) parts.push(p[1]+" "+p[0]); });
+  return parts.join(" · ");
+}
+function esc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
+function qq(s){return esc(s).replace(/"/g,"&quot;");}
+
+var MIRRORS={"443":"20551"}; // 源监听端口 : 镜像监听端口；任一方被修改都将同步给对方（声明须在 initMirrors() 之前）
+initMirrors(); // 镜像 server（如 20551）首次加载由源 server 深克隆生成，进入计数/侧栏
+countAll();
+document.getElementById("metaBlocks").textContent=" · "+treeNodeCount()+" blocks";
+document.getElementById("srvCount").textContent="("+nServer+")";
+document.getElementById("footerMeta").textContent=footerText();
+
+/* ---------- 辅助 ---------- */
+function listenOf(b){
+  var vals=b.options.filter(function(o){return o.directive==="listen";}).map(function(o){return o.value;});
+  return vals.length?vals[0].replace(/;$/,""):"-";
+}
+function snameOf(b){ var o=b.options.filter(function(o){return o.directive==="server_name";}); return o.length?o[0].value.replace(/;$/,""):"-"; }
+/* —— 镜像同步：.conf 内两台 server 持久保持配置一致（除各自 listen 端口外）。
+      编辑 443 与 20551 任一方，另一方自动镜像相同内容；export 与块树始终一致。 —— */
+function mirrorPortOf(srv){ var o=(srv.options||[]).filter(function(x){return x.directive==="listen";})[0]; return o?String(o.value||"").replace(/;$/,"").split(/\s+/)[0]:null; }
+function findServerByListen(port){ var a=TREE[0].children; for(var i=0;i<a.length;i++){ if(a[i].scope==="server"&&mirrorPortOf(a[i])===port) return a[i]; } return null; }
+function hasPendingSub(n){ if(n&&n._new) return true; return (n.children||[]).some(hasPendingSub)||(n.options||[]).some(function(o){return !!o._new;}); }
+function cloneOpt(o){ return {directive:o.directive,value:o.value,raw:o.raw,row_type:o.row_type,is_free_text:o.is_free_text,_new:!!o._new}; }
+function cloneSub(n,parentFix){
+  var c={scope:n.scope,header:n.header,header_src:n.header_src,_depth:n._depth,_new:!!n._new,
+    options:(n.options||[]).map(cloneOpt),children:[]};
+  c._id=++seq; c.parent=parentFix||null; allNodes.push(c);
+  c.children=(n.children||[]).map(function(k){ return cloneSub(k,c); });
+  return c;
+}
+/* 把 src（listen 端口为 srcPort 的 server）深克隆为 dstPort 的镜像 server，listen 端口改为 dstPort，其余完全一致 */
+function buildMirrorServer(src,dstPort){
+  var srv={scope:"server",header:src.header,header_src:src.header_src,_depth:0,_new:false,
+    options:(src.options||[]).map(cloneOpt),children:[]};
+  srv._id=++seq; srv.parent=TREE[0]; allNodes.push(srv);
+  srv.children=(src.children||[]).map(function(k){ return cloneSub(k,srv); });
+  (srv.options||[]).forEach(function(o){ if(o.directive==="listen"){ var base=String(o.value||"").replace(/^\d{1,5}(:\d{1,5})?/,"").trim(); o.value=dstPort+(base?" "+base:""); o.raw=o.directive+" "+o.value; } });
+  return srv;
+}
+/* 初始：确保每对镜像的目标端口 server 存在（首次加载用源 server 深克隆生成，含全部子块/KV） */
+function initMirrors(){
+  Object.keys(MIRRORS).forEach(function(srcPort){
+    var dstPort=MIRRORS[srcPort];
+    if(findServerByListen(dstPort)) return;
+    var src=findServerByListen(srcPort); if(!src) return;
+    TREE[0].children.push(buildMirrorServer(src,dstPort));
+  });
+}
+/* 渲染/导出前调用：把 srv 深拷贝给镜像 dst，但保留 dst 自己的 listen 端口 */
+function applyMirror(dst,srv){
+  var keepPort=mirrorPortOf(dst);
+  dst.header=srv.header; dst.header_src=srv.header_src;
+  dst.options=(srv.options||[]).map(cloneOpt);
+  dst.children=(srv.children||[]).map(function(k){ return cloneSub(k,dst); });
+  if(keepPort) (dst.options||[]).forEach(function(o){ if(o.directive==="listen"){ var base=String(o.value||"").replace(/^\d{1,5}(:\d{1,5})?/,"").trim(); o.value=keepPort+(base?" "+base:""); o.raw=o.directive+" "+o.value; } });
+}
+/* 某次块树变更提交后调用：若 edited 属于某镜像 server，把其镜像同步为一致（非 .conf 上下文或含待编辑 _new 时跳过） */
+function syncMirrors(edited){
+  if(CTX!=="conf"||!edited) return;
+  var srv=edited; while(srv&&srv.parent&&srv.parent.parent) srv=srv.parent;
+  if(!srv||srv.scope!=="server"||srv===TREE[0]) return;
+  if(hasPendingSub(srv)) return;
+  var port=mirrorPortOf(srv); if(port==null) return;
+  var dstPort=null;
+  if(MIRRORS[port]) dstPort=MIRRORS[port];
+  else Object.keys(MIRRORS).forEach(function(k){ if(MIRRORS[k]===port) dstPort=k; });
+  if(dstPort==null) return;
+  var dst=findServerByListen(dstPort); if(!dst||dst===srv) return;
+  if(hasPendingSub(dst)) return;
+  applyMirror(dst,srv);
+  refreshPane(); refreshCounts(); // 刷新侧栏（location 计数等）与统计保持一致
+  if(selected===dst){ buildTree(document.getElementById("blockTree"),dst); renderPreview(dst); document.getElementById("tabTreeN").textContent=dst.children.length?(""+dst.children.length+" 子块"):""; document.getElementById("headSub").textContent=dst.scope+" · "+(dst.header||"").replace(/\s{2,}/g," "); }
+}
+/* stream 上下文：server 级 proxy_pass 目标（四层 TCP 直连/upstream 组），与 http 的 location 级无关 */
+function proxyTargetsOf(b){
+  var o=b.options.filter(function(o){return o.directive==="proxy_pass";})[0];
+  return o?String(o.value).replace(/;$/,""):"";
+}
+function proxyTargets(b){
+  var set={}, arr=[];
+  (b.children||[]).forEach(function(c){ if(c.scope==="location") c.options.forEach(function(o){ if(o.directive==="proxy_pass"){ var h=proxyHostOf(o.value); if(h&&h.kind==="name"&&!set[h.host]){set[h.host]=1;arr.push(h.host);} } }); });
+  return arr;
+}
+/* R2: 取 proxy_pass 的目标主机，区分 IP 直连 / 域名直连 / upstream 组名引用 */
+function proxyHostOf(pv){
+  var m=String(pv||"").match(/\/\/([^\/:$]+)/);
+  if(!m) return null;
+  var h=m[1];
+  if(/^\d{1,3}(\.\d{1,3}){3}$/.test(h)) return {host:h,kind:"ip"};
+  if(/[.\/]/.test(h)) return {host:h,kind:"domain"};
+  return {host:h,kind:"name"};
+}
+/* R3: 稳健 KV 分类。每条 option 判定为「普通 指令=值」还是「引号包裹/正则键/原样行」。
+   命中引号（map 的 ~* 键 + "$pre$post" 替换值）或正则键（~ / ~* / 首字符）或自由文本注释 → 整行原样回显 */
+function isRawKV(o){ return o.is_free_text===true || (o.raw!=null&&o.raw.indexOf("\"")>-1) || (o.directive!=null&&/^[~*]/.test(o.directive)); }
+function rawText(o){ return String(o.raw!=null?o.raw:(o.directive+(o.value?(" "+o.value):""))); }
+function orderedOptions(n){
+  var norm=[],def=[];
+  (n.options||[]).forEach(function(o){ if(o.directive==="default") def.push(o); else norm.push(o); });
+  return norm.concat(def); // map default 恒置底；其余按书写/重排顺序
+}
+function totalOpts(n){ var c=0; (function r(x){ c+=x.options.length; x.children.forEach(r); })(n); return c; }
+/* R1: listen 展示剥离 ssl/http2 等修饰词——ssl 与否在「导出」时才决定，监听端口本身只显示 地址:端口 */
+function listenPlain(b){
+  var t=String(listenOf(b)).trim();
+  if(/^unix:/i.test(t)) return t;                 // unix socket 原样保留
+  if(/\s/.test(t)) return t.split(/\s+/)[0];      // "443 ssl http2" -> "443"；"0.0.0.0:443 http2" -> "0.0.0.0:443"
+  return t;
+}
+/* R2: 全量 upstream 组名集合，用于校验 proxy_pass 是否有对应 upstream 组 */
+var UPSTREAM_SET={};
+allNodes.forEach(function(n){ if(n.scope==="upstream"){ UPSTREAM_SET[(n.header||"").replace(/^upstream\s+/,"").trim()]=1; } });
+
+var selected=null;
+
+/* ---------- 监听点侧栏 + 列表 ---------- */
+var sideL=document.getElementById("sideListen");
+var listL=document.getElementById("listenList");
+var sideC=document.getElementById("sideCommon");
+/* 重渲染监听点侧栏 + 列表 + 共性块侧栏（新增顶级块/切换上下文后调用，保持数据一致） */
+function refreshPane(){
+  refreshCtxLists(); // servers/commons 按当前上下文过滤：conf→http server，stream→TCP server，互不混入
+  sideL.innerHTML=""; listL.innerHTML=""; sideC.innerHTML="";
+  var isStm=CTX==="stream";
+  servers.forEach(function(b){
+    var port=listenPlain(b), sn=snameOf(b), locs=b.children.filter(function(c){return c.scope==="location";}).length;
+    var target=proxyTargetsOf(b); // stream 上下文：server 级 proxy_pass 目标（首个）
+    // side t-item
+    var ti=document.createElement("div"); ti.className="t-item"; ti.setAttribute("data-id",b._id); ti.setAttribute("draggable","true");
+    ti.innerHTML="<span class='tt'>"+esc(port)+"</span><span style='margin-left:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'>"+esc(isStm?(target?("→ "+target):""):(locs+" loc"))+"</span>";
+    ti.addEventListener("click",function(){ selectNode(b); });
+    sideL.appendChild(ti);
+    // list row
+    var row=document.createElement("div"); row.className="row"; row.setAttribute("data-id",b._id);
+    if(isStm){
+      row.innerHTML="<span class='port'>"+esc(port)+"</span><span class='nm'>"+esc(target||"-")+"</span>"+
+        "<span style='margin-left:auto;display:flex;align-items:center;gap:6px;'><span class='tag pub' style='background:var(--info-bg);border-color:var(--info-border);color:var(--info);'>TCP</span></span>";
+    } else {
+      row.innerHTML="<span class='port'>"+esc(port)+"</span><span class='nm'>"+esc(sn)+"</span>"+
+        "<span style='margin-left:auto;display:flex;align-items:center;gap:6px;'><span class='cnt'>"+locs+"</span><span class='tag pub'>公网</span></span>";
+    }
+    row.addEventListener("click",function(){ selectNode(b); });
+    listL.appendChild(row);
+  });
+  document.getElementById("listFromFile").textContent=(isStm?"TCP 监听":"server")+" ("+servers.length+")";
+  commons.forEach(function(b){
+    var ti=document.createElement("div"); ti.className="t-item"; ti.setAttribute("data-id",b._id); ti.setAttribute("draggable","true");
+    var head=["map","split_clients","geo"].indexOf(b.scope)>=0 ? b.scope+" "+b.header.split(/\s+/).slice(1,3).join(" ") : b.header;
+    var scTag={map:"MAP",upstream:"UP",split_clients:"SPLIT",geo:"GEO"}[b.scope]||b.scope.toUpperCase();
+    ti.innerHTML="<span style='flex:0 0 auto;font-size:9px;color:var(--text-tertiary)'>"+esc(scTag)+"</span>"+
+      "<span class='tt'>"+esc((b.header||head).replace(/\s{2,}/g," "))+"</span>";
+    ti.addEventListener("click",function(){ selectNode(b); });
+    sideC.appendChild(ti);
+  });
+}
+/* 重算各级块数量 + 顶栏/页脚/统计（新增块后调用） */
+function refreshCounts(){
+  countAll();
+  document.getElementById("metaBlocks").textContent=" · "+treeNodeCount()+" blocks";
+  document.getElementById("srvCount").textContent="("+nServer+")";
+  document.getElementById("footerMeta").textContent=footerText();
+}
+/* 切换文件上下文：.conf(HTTP) ⇄ .stream(TCP)。stream 内容独立成文件管理，不混入 http 的 location 语义 */
+function setCtx(ctx){
+  CTX=ctx;
+  TREE=(ctx==="stream"?STREAM_TREE:CONF_TREE);
+  refreshCtxLists(); refreshPane(); refreshCounts(); abRefreshSegs();
+  document.querySelectorAll("#ctxSeg .ctx-i").forEach(function(e){ e.classList.toggle("on", e.getAttribute("data-ctx")===ctx); });
+  var mid=document.querySelector(".titlebar .mid"); if(mid) mid.textContent=FILE_NAME[ctx]+" · 方案C 泛化块主从";
+  if(servers.length){ selectNode(servers[0]); }
+  else { selected=null; document.getElementById("blockTree").innerHTML=""; document.getElementById("emptyHint").hidden=false; document.getElementById("headSub").textContent=""; document.getElementById("tabTreeN").textContent=""; document.getElementById("previewPanel").hidden=true; document.getElementById("blockTree").hidden=false; }
+}
+document.querySelectorAll("#ctxSeg .ctx-i").forEach(function(e){ e.addEventListener("click",function(){ setCtx(e.getAttribute("data-ctx")); }); });
+refreshPane();
+
+/* ---------- 左侧资源树拖拽排序（影响导出顺序：TREE[0].children） ---------- */
+function flushListOrder(container){
+  var byId={}; allNodes.forEach(function(n){ if(n._id!=null) byId[n._id]=n; });
+  var ordered=[]; container.querySelectorAll(".t-item").forEach(function(it){ var n=byId[it.getAttribute("data-id")]; if(n) ordered.push(n); });
+  // 该类节点在 TREE[0].children 里现有的槽位保持，只重排它们彼此顺序（config的全局槽位不动）
+  var idx=[];
+  TREE[0].children.forEach(function(c,i){ if(ordered.indexOf(c)>=0) idx.push(i); });
+  ordered.forEach(function(o,i){ if(idx[i]!=null) TREE[0].children[idx[i]]=o; });
+}
+function initDragSort(container){
+  var dragEl=null;
+  container.addEventListener("dragstart",function(e){
+    var t=e.target.closest(".t-item"); if(!t) return;
+    dragEl=t; t.classList.add("dragging");
+    try{ e.dataTransfer.effectAllowed="move"; e.dataTransfer.setData("text/plain", t.getAttribute("data-id")); }catch(_){}
+  });
+  container.addEventListener("dragover",function(e){
+    e.preventDefault(); if(!dragEl) return;
+    var t=e.target.closest(".t-item"); if(!t || t===dragEl) return;
+    var after = (e.clientY||0) > (t.offsetTop + t.offsetHeight/2);
+    // 实时视觉上移/下移
+    var ref = after ? t.nextSibling : t;
+    if(dragEl.parentNode===container && ref!==dragEl) container.insertBefore(dragEl, ref);
+  });
+  container.addEventListener("drop",function(e){
+    e.preventDefault();
+    if(dragEl){ dragEl.classList.remove("dragging"); flushListOrder(container); toast("已调整顶级块顺序（影响导出顺序）",""); dragEl=null; }
+  });
+  container.addEventListener("dragend",function(){ if(dragEl){ dragEl.classList.remove("dragging"); dragEl=null; } });
+}
+initDragSort(sideL);
+initDragSort(sideC);
+
+/* ---------- bkind 标签 ---------- */
+function bkindCls(scope){
+  if(scope==="server")return "srv"; if(scope==="location")return "loc"; if(scope==="map")return "map";
+  if(scope==="upstream")return "up"; if(scope==="if")return "if"; if(scope==="include")return "inc";
+  if(scope==="limit_except")return "lxc";
+  if(scope==="split_clients")return "spl"; if(scope==="geo")return "geo"; if(scope==="stream")return "stm";
+  if(scope==="events")return "evt"; if(scope==="http")return "htp"; if(scope==="log_format")return "lf";
+  return "x";
+}
+var BADD='<div class="badd"><span class="btn">+ 子块</span><span class="btn">+ KV</span><span class="btn">+ 注释</span><span class="btn">&#10005;</span></div>';
+var BADD_KV='<div class="badd"><span class="btn">+ KV</span><span class="btn">&#10005;</span></div>';
+
+/* 块树：以选中节点为树根，递归嵌套卡片（缩进线表达 parent_id 层级） */
+function buildTree(tree, sel){
+  tree.innerHTML="";
+  (function add(parentEl,node,depth,parentNode){
+    var wrap=document.createElement("div"); wrap.className="brow"; wrap.setAttribute("data-depth",depth);
+    var blk=document.createElement("div"); blk.className="block";
+    var hd=document.createElement("div"); hd.className="block-head";
+    var kind=document.createElement("span"); kind.className="bkind "+bkindCls(node.scope); kind.textContent=node.scope==="comment"?"#":node.scope;
+    var headE=document.createElement("span"); headE.className="bhead"; headE.innerHTML=esc(node.header||"");
+    if(node._new){ // 新增子块：行内编辑其 header
+      headE.innerHTML="";
+      var __hf={location:"location /path…",if:"if (条件) {",limit_except:"limit_except METHOD…",server:"server {（listen / proxy_pass 用 + KV 补）"};
+      var __pfx={location:"location ",if:"if ",limit_except:"limit_except ",server:"server "};
+      var hpi=document.createElement("input"); hpi.className="bkhead-edi"; hpi.placeholder=__hf[node.scope]||"new "+node.scope;
+      var edInit=function(h,sc){ h=h||""; if(sc==="if"){ var m=h.match(/^if\s*\(([\s\S]*?)\)\s*\{\s*$/); return m?m[1]:h.replace(/\s*\{\s*$/,""); } return h.replace(/^location\s+|^limit_except\s+|^server\s+/,"").replace(/\s*\{\s*$/,""); };
+      hpi.value=edInit(node.header||"",node.scope);
+      hpi.addEventListener("change",function(){ var v=hpi.value.trim(); node.header=node.scope==="if"?("if ("+v+") {") : ((__pfx[node.scope]||"")+v+" {"); node._new=false; rebuildSelected(); });
+      hpi.addEventListener("keydown",function(e){ if(e.key==="Enter") hpi.blur(); });
+      hpi.setAttribute("autofocus",""); headE.appendChild(hpi);
+    }
+    hd.appendChild(kind); hd.appendChild(headE);
+    // 折叠箭头：块头点击展开/折叠子块
+    if(node.children.length){ var ch=document.createElement("span"); ch.className="bchev"; ch.textContent="▼"; hd.insertBefore(ch,kind); }
+    // location 行级操作
+    if(node.scope==="location") hd.insertAdjacentHTML("beforeend", locationOps(node));
+    // 动作条：+ 子块 / + KV / + 注释（关闭按钮由子块自带的 blk-del 承担，根块不可删）
+    var bar=document.createElement("div"); bar.className="badd";
+    var mkBtn=function(label,title,cb){ var b=document.createElement("span"); b.className="btn"; b.textContent=label; b.title=title; b.addEventListener("click",function(ev){ ev.stopPropagation(); cb(ev,b); }); bar.appendChild(b); };
+    /* 子块类型按上下文：stream 根 → TCP server；http 上下文 → location/if/limit_except；stream server 无子块 */
+    var addTypes = (CTX==="stream")
+      ? (node.scope==="stream" ? ["server"] : [])
+      : ["location","if","limit_except"];
+    if(addTypes.length) mkBtn("+ 子块","新增子块：location / if / limit_except",function(ev,b){
+      bar.querySelectorAll(".addsub").forEach(function(e){e.remove();});
+      var grp=document.createElement("span"); grp.className="addsub";
+      addTypes.forEach(function(t){
+        var cb2=document.createElement("span"); cb2.className="btn"; cb2.textContent=t; cb2.title="新增子块("+t+")";
+        cb2.addEventListener("click",function(ev2){ ev2.stopPropagation(); addChildOfType(node,t); });
+        grp.appendChild(cb2);
+      });
+      bar.insertBefore(grp, b.nextSibling);
+    });
+    mkBtn("+ KV","新增键值对", function(){ addKvEdit(node); });
+    mkBtn("+ 注释","新增注释行", function(){ addCommentEdit(node); });
+    hd.appendChild(bar);
+    // 子块折叠交互（点击 bhead/chev/kind 折叠，按钮不折叠）
+    hd.addEventListener("click",function(e){ if(e.target.closest("button,.btn,[data-op]")) return; wrap.classList.toggle("collapsed"); ch&&!(ch.classList.contains("rot"))&&void 0; if(ch) ch.classList.toggle("rot"); });
+    // 删除该子块（根节点不提供删除；location 等随需求移除）——二次确认
+    if(parentNode){
+      // 位置敏感块的上移/下移（location 匹配次序 / 子块顺序）
+      var mkMv=function(dir){ var m=document.createElement("button"); m.className="blk-mv"; m.title=dir<0?"上移该块":"下移该块"; m.textContent=dir<0?"▲":"▼"; m.addEventListener("click",function(ev){ ev.stopPropagation(); moveChild(parentNode,node,dir)&&rebuildSelected(); }); return m; };
+      hd.appendChild(mkMv(-1)); hd.appendChild(mkMv(1));
+      var blkDel=document.createElement("button"); blkDel.className="blk-del"; blkDel.title="删除该 "+node.scope+" 块"+(node.children.length?("（含 "+node.children.length+" 子块）"):""); blkDel.textContent="×";
+      blkDel.addEventListener("click",function(ev){ ev.stopPropagation();
+        var isTop=(parentNode===TREE[0]); // 顶层块（server/map/upstream 等整块）——删后清理选中并刷新
+        confirmDialog("删除该 <span class='mono'>"+esc(node.scope)+"</span> 块：<span class='mono'>"+esc(node.header||"")+"</span>"+(node.children.length?("，连同其 <b>"+node.children.length+"</b> 个子块"):"")+"？此操作不可撤销。",function(){
+          var i=parentNode.children.indexOf(node); if(i<0) return;
+          parentNode.children.splice(i,1);
+          pruneAllNodes(node); // 从 allNodes 剪除，避免残留在侧栏/统计
+          if(node.scope==="upstream"){ var g=(node.header||"").replace(/^upstream\s+/,"").trim(); if(g) delete UPSTREAM_SET[g]; }
+          if(isTop){
+            if(selected===node) selected=null;
+            refreshPane(); refreshCounts();
+            if(servers.length) selectNode(servers[0]); // 落到列表首个，避免空态
+            else { // 删空：清块树 + 空提示
+              document.getElementById("blockTree").innerHTML="";
+              document.getElementById("emptyHint").hidden=false;
+              document.getElementById("previewPanel").hidden=true;
+              document.getElementById("blockTree").hidden=false;
+              document.getElementById("headSub").textContent=""; document.getElementById("tabTreeN").textContent="";
+            }
+          } else {
+            rebuildSelected();
+          }
+          toast("已删除 "+node.scope+" 块："+(node.header||""),"");
+        });
+      });
+      hd.appendChild(blkDel);
+    }
+    blk.appendChild(hd);
+    if(node.scope==="if"){ var hm=document.createElement("div"); hm.className="cm-line"; hm.textContent="# 建议少用 if"; blk.appendChild(hm); }
+    orderedOptions(node).forEach(function(o){
+      var k=document.createElement("div"); k.className="kv";
+      // 新增的 KV：行内可编辑，回车/失焦提交写入
+      if(o._new){
+        k.className+=" kv-new";
+        var i1=document.createElement("input"); i1.className="kv-edi"; i1.placeholder="指令名"; i1.value=o.directive||"";
+        var i2=document.createElement("input"); i2.className="kv-edi kv-v"; i2.placeholder="值（可含参数，如 /api/ 或 http://…）"; i2.value=o.value||"";
+        var commit=function(){ o.directive=i1.value.trim(); o.value=i2.value.trim(); o._new=false; rebuildSelected(); };
+        i1.addEventListener("change",commit); i2.addEventListener("change",commit);
+        i1.addEventListener("keydown",function(ev){ if(ev.key==="Enter"){ i1.blur(); } });
+        i2.addEventListener("keydown",function(ev){ if(ev.key==="Enter"){ i2.blur(); } });
+        k.appendChild(i1); k.appendChild(i2);
+      } else {
+      // R3: 引号包裹 / 正则键 / default：整行原样回显（map 正则键 → "$pre$post" 与 default 保持配置原文）
+      if(o.directive==="default" || isRawKV(o)){
+        k.className+= (o.directive==="default")?" kv-def":" kv-raw";
+        k.innerHTML="<span class='d"+(isRawKV(o)?" raw":"")+"'>"+esc(rawText(o))+"</span>"+
+          (o.directive==="default"?"<span class='kv-mini'>default 置底</span>":"");
+      } else {
+      var val=o.value;
+      if(o.directive==="listen"){ var _pl=val.trim(); if(!/^unix:/i.test(_pl)) val=_pl.split(/\s+/)[0]; } // R1: 监听端口展示剥离 ssl/http2
+      // R2: proxy_pass 末标注 upstream 关联（命中/未命中/直连地址）
+      var mini="";
+      if(o.directive==="proxy_pass"){
+        var _h=proxyHostOf(o.value);
+        if(_h&&_h.kind==="name") mini="<span class='kv-mini "+(UPSTREAM_SET[_h.host]?"ok":"warn")+"'>"+(UPSTREAM_SET[_h.host]?"已匹配":"未匹配组")+"</span>";
+        else mini="<span class='kv-mini'>直连</span>";
+      }
+      k.innerHTML="<span class='d'><span class='kd'>"+esc(o.directive)+"</span> = "+esc(val)+"</span>"+mini;
+      }
+      // 位置敏感 KV 的上移/下移（map 正则键匹配顺序 / directives 书写顺序）。default 永置底，不可移动
+      if(o.directive!=="default"){
+        var mkv=function(dir){ var m=document.createElement("button"); m.className="kv-mv"; m.title=dir<0?"上移该 KV":"下移该 KV"; m.textContent=dir<0?"▲":"▼"; m.addEventListener("click",function(ev){ ev.stopPropagation(); moveOption(node,o,dir)&&rebuildSelected(); }); return m; };
+        k.appendChild(mkv(-1)); k.appendChild(mkv(1));
+      }
+      // 编辑该 KV：点击后行内切换为指令名/值输入框，回车保存，Esc 取消
+      var kvEd=document.createElement("button"); kvEd.className="kv-ed"; kvEd.title="编辑该 KV"; kvEd.textContent="edit";
+      kvEd.addEventListener("click",function(ev){ ev.stopPropagation();
+        k.className="kv kv-editing"; k.innerHTML="";
+        var i1=document.createElement("input"); i1.className="kv-edi"; i1.value=o.directive||"";
+        var i2=document.createElement("input"); i2.className="kv-edi kv-v"; i2.value=o.value||"";
+        var done=function(){ var d=i1.value.trim(),v=i2.value.trim(); if(d){ o.directive=d; o.value=v; } rebuildSelected(); };
+        i1.addEventListener("keydown",function(ev2){ if(ev2.key==="Enter") i1.blur(); else if(ev2.key==="Escape") rebuildSelected(); });
+        i2.addEventListener("keydown",function(ev2){ if(ev2.key==="Enter") i2.blur(); else if(ev2.key==="Escape") rebuildSelected(); });
+        i1.addEventListener("change",done); i2.addEventListener("change",done);
+        k.appendChild(i1); k.appendChild(i2); i1.focus();
+      });
+      k.appendChild(kvEd);
+      // 删除该 KV（map 正则键 / default / 普通指令均可删）——二次确认
+      var kvDel=document.createElement("button"); kvDel.className="kv-del"; kvDel.title="删除该 KV"; kvDel.textContent="×";
+      kvDel.addEventListener("click",function(ev){ ev.stopPropagation();
+        confirmDialog("删除键值对 <span class='mono'>"+esc(o.directive||"")+"</span> = <span class='mono'>"+esc(rawText(o))+"</span>？此操作不可撤销。",function(){
+          var i=node.options.indexOf(o); if(i>=0) node.options.splice(i,1);
+          rebuildSelected(); toast("已删除 KV："+(o.directive||"")+"="+(o.value||""),"");
+        });
+      });
+      k.appendChild(kvDel);
+      }
+      blk.appendChild(k);
+    });
+    wrap.appendChild(blk);
+    parentEl.appendChild(wrap);
+
+    // 子块：平铺在父母 block 内部，靠 data-depth + CSS margin-left 表达缩进
+    if(node.children.length){
+      var nested=document.createElement("div"); nested.className="brow-children";
+      node.children.forEach(function(c){ add(nested,c,depth+1,node); });
+      blk.appendChild(nested);
+    }
+  })(tree,sel,0,TREE[0]); // 根块 parent=TREE[0]，使其顶级块也能 ▲▼ 重排与 × 整块删除
+  // 深度超过 5 的子树走通配递进（PK 时用最小递增保证不溢出）
+  var kids=tree.querySelectorAll('.brow-children .brow[data-depth="6"], .brow-children .brow[data-depth="7"]');
+  for(var i=0;i<kids.length;i++){ var d=+kids[i].getAttribute("data-depth"); kids[i].style.marginLeft=(8+d*12)+"px"; }
+}
+/* 删除后重渲染当前选中的块树 + 配置预览 */
+function rebuildSelected(){
+  if(!selected) return;
+  syncMirrors(selected); // 镜像持久同步：编辑 443/20551 任一方，其镜像自动保持一致
+  buildTree(document.getElementById("blockTree"), selected);
+  renderPreview(selected);
+  document.getElementById("tabTreeN").textContent=selected.children.length?(""+selected.children.length+" 子块"):"";
+  document.getElementById("headSub").textContent=selected.scope+" · "+(selected.header||"").replace(/\s{2,}/g," ");
+}
+
+/* —— 删除二次确认（居中弹窗） + 位置敏感重排（map 键序 / directives 序 / location 序） —— */
+/* 从 allNodes 中剪除已删除节点及其整棵子树，避免被删块仍残留在 servers/commons → 侧栏/统计误列 */
+function pruneAllNodes(n){
+  for(var i=allNodes.length-1;i>=0;i--){ if(allNodes[i]===n) allNodes.splice(i,1); }
+  (n.children||[]).forEach(pruneAllNodes);
+}
+var __confirmCB=null;
+function confirmDialog(html,onOk){
+  __confirmCB=onOk;
+  document.getElementById("delConfirmMsg").innerHTML=html;
+  document.getElementById("delConfirmModal").hidden=false;
+}
+function closeConfirm(){ document.getElementById("delConfirmModal").hidden=true; __confirmCB=null; }
+document.getElementById("delConfirmOK").addEventListener("click",function(){ var cb=__confirmCB; closeConfirm(); cb&&cb(); });
+document.getElementById("delConfirmCancel").addEventListener("click",closeConfirm);
+document.getElementById("delConfirmClose").addEventListener("click",closeConfirm);
+document.getElementById("delConfirmModal").addEventListener("click",function(e){ if(e.target===this) closeConfirm(); });
+/* 移动某一 KV ∈ node.options：dir=-1 上移 / +1 下移；default 恒置底，禁止跨过它 */
+function moveOption(node,o,dir){
+  var a=node.options,i=a.indexOf(o),j=i+dir;
+  if(j<0||j>=a.length)return false;
+  if(a[i].directive==="default"||a[j].directive==="default")return false; // map default 不可移动/不可被越过
+  a.splice(j,0,a.splice(i,1)[0]); return true;
+}
+/* 移动某子块 ∈ parentNode.children：location 匹配次序敏感 */
+function moveChild(parentNode,c,dir){
+  var a=parentNode.children,i=a.indexOf(c),j=i+dir;
+  if(j<0||j>=a.length)return false;
+  a.splice(j,0,a.splice(i,1)[0]); return true;
+}
+
+/* —— 块树 新增：子块 / KV / 注释（随需求增加），带行内编辑 —— */
+var __BID=9000;
+function addChildOfType(node,type){
+  var hdr=type==="location"?"location /":(type==="if"?"if ($cond) {":(type==="limit_except"?"limit_except GET {":"server {"));
+  var nb={_id:"n"+(++__BID), scope:type,
+    header:hdr,
+    options:[], children:[], _new:true};
+  node.children.push(nb); rebuildSelected();
+  toast("已新增子块("+type+")，编辑其 header 后回车生效","");
+}
+function addKvEdit(node){
+  node.options.push({directive:"", value:"", _new:true}); rebuildSelected(); toast("已新增 KV，编辑指令名与值后回车生效","");
+}
+function addCommentEdit(node){
+  node.options.push({directive:"#", value:"", row_type:"raw", is_free_text:true, _new:true}); rebuildSelected(); toast("已新增注释行","");
+}
+function optKV(d,v){ return {directive:d, value:v, raw:d+" "+v}; }
+function addNodeToTreeFields(node, afterNode){
+  node._id=++seq; node._depth=0; node.parent=TREE[0]; node.children=node.children||[]; node.options=node.options||[];
+  if(afterNode){
+    var gi=TREE[0].children.indexOf(afterNode);
+    TREE[0].children.splice(gi>=0?(gi+1):TREE[0].children.length,0,node);
+  } else TREE[0].children.push(node); // 固定追加末尾
+  allNodes.push(node);
+  if(node.scope==="upstream") UPSTREAM_SET[node.header.replace(/^upstream\s+/,"").trim()]=1;
+  refreshCounts(); refreshPane(); return node;
+}
+/* 新增块插入位置：若当前选中了某个顶级块，则插入到它后面（"插入到当前选中块附近"） */
+function topToInsertAfter(){ return (selected && TREE[0].children.indexOf(selected)>=0) ? selected : null; }
+/* —— 新增顶级块弹窗（按文件上下文提供类型） —— */
+var addABScope="server";
+function abSetScope(s){
+  addABScope=s;
+  document.querySelectorAll("#addBlockScope .seg-i").forEach(function(e){ e.classList.toggle("on", e.getAttribute("data-scope")===s); });
+  var isStm=CTX==="stream";
+  document.getElementById("fServer").hidden=     s!=="server";
+  document.getElementById("fMap").hidden=        s!=="map";
+  document.getElementById("fSpl").hidden=        s!=="split_clients";
+  document.getElementById("fGeo").hidden=        s!=="geo";
+  document.getElementById("fUpstream").hidden=   s!=="upstream";
+  document.getElementById("fCtx").hidden=        !(s==="stream"||s==="events");
+  if(s==="server"){
+    var i1=document.getElementById("ab_sname"), i2=document.getElementById("ab_listen");
+    if(isStm){ // stream 上下文：server = TCP 监听 + proxy_pass 四层转发，无 server_name/location 语义
+      i1.placeholder="10.0.0.97:3306 或 upstream 组名"; i1.title="proxy_pass 四层转发目标";
+      if(i1.previousElementSibling) i1.previousElementSibling.textContent="proxy_pass 目标（可选）";
+      if(i2.previousElementSibling) i2.previousElementSibling.textContent="listen（可选）";
+    } else {
+      i1.placeholder="api.example.com"; i1.title="";
+      if(i1.previousElementSibling) i1.previousElementSibling.textContent="server_name（可选）";
+      if(i2.previousElementSibling) i2.previousElementSibling.textContent="listen（可选）";
+    }
+  }
+  document.getElementById("ab_ctx_tip").textContent = s==="stream"
+    ? "生成顶层 stream { } 块（四层 TCP/UDP 上下文）。注：stream 内容已独立成 .stream 文件管理，此类型在弹窗中不再提供。"
+    : (s==="events" ? "生成顶层 events { } 块（连接处理上下文），一般写入 worker_connections 等指令。" : "");
+  var tip=document.querySelector("#addBlockModal .modal-tip");
+  if(tip) tip.innerHTML = isStm
+    ? "当前为 <span class='monob'>.stream</span> 文件（TCP/UDP 四层上下文）：新增块直接进入 stream 顶层，与 http 的 location / server_name 等语义完全隔离。stream 与 http 是 nginx 同级顶层模块，互不嵌套。"
+    : "在 <span class='monob'>.conf</span> 配置文件（http 上下文）新增顶级块，与其他 server / map / upstream 同级；stream(TCP) 内容请切换到 .stream 上下文管理。`split_clients` / `geo` 与 map 同属「变量映射」块，渲染沿用 default 置底 + 正则键原样。生成的空块可直接在块管理用「+ KV」补内容。";
+}
+/* 按当前上下文收敛弹窗类型：conf → server/map/split_clients/geo/upstream/events；stream → server/upstream；stream 块本体不再提供（.stream 文件即 stream 上下文） */
+function abRefreshSegs(){
+  var valid=(CTX==="stream")?["server","upstream"]:["server","map","split_clients","geo","upstream","events"];
+  document.querySelectorAll("#addBlockScope .seg-i").forEach(function(e){
+    // 用内联 display 而非 hidden 属性：.seg-i 的 CSS 显式 display:flex 会覆盖 hidden
+    e.style.display = valid.indexOf(e.getAttribute("data-scope"))<0 ? "none" : "";
+  });
+  if(valid.indexOf(addABScope)<0) addABScope=valid[0];
+  abSetScope(addABScope);
+}
+function abOpen(){ document.getElementById("addBlockModal").hidden=false; abRefreshSegs(); var f=document.querySelector("#addBlockModal .fgroup:not([hidden]) input"); if(f) f.focus(); }
+function abClose(){ document.getElementById("addBlockModal").hidden=true; }
+function abOK(){
+  if(addABScope==="server"){
+    var sn=document.getElementById("ab_sname").value.trim(), li=document.getElementById("ab_listen").value.trim();
+    var opts=[]; if(li) opts.push(optKV("listen",li));
+    if(CTX==="stream"){ // TCP server：proxy_pass 四层转发目标
+      if(sn) opts.push(optKV("proxy_pass",sn));
+      var n=addNodeToTreeFields({scope:"server", header:"server {", options:opts, children:[]}, topToInsertAfter());
+      selectNode(n); toast("已新增 TCP server 块"+(li?("："+li):""),"ok");
+    } else {
+      if(sn) opts.push(optKV("server_name",sn));
+      var n=addNodeToTreeFields({scope:"server", header:"server {", options:opts, children:[]}, topToInsertAfter());
+      selectNode(n); toast("已新增 server 块"+(sn?("："+sn):""),"ok");
+    }
+  } else if(addABScope==="map"){
+    var src=document.getElementById("ab_map_src").value.trim(), dst=document.getElementById("ab_map_dst").value.trim();
+    if(!src||!dst){ toast("请填写 map 的源变量与结果变量","warn"); return; }
+    var n=addNodeToTreeFields({scope:"map", header:"map "+src+" "+dst+" {", options:[], children:[]}, topToInsertAfter());
+    selectNode(n); toast("已新增 map 块：map "+src+" "+dst,"ok");
+  } else if(addABScope==="split_clients"){
+    var sr=document.getElementById("ab_spl_src").value.trim(), ds=document.getElementById("ab_spl_dst").value.trim();
+    if(!sr||!ds){ toast("请填写 split_clients 的源变量与结果变量","warn"); return; }
+    var n=addNodeToTreeFields({scope:"split_clients", header:"split_clients "+sr+" "+ds+" {", options:[], children:[]}, topToInsertAfter());
+    selectNode(n); toast("已新增 split_clients 块：split_clients "+sr+" "+ds,"ok");
+  } else if(addABScope==="geo"){
+    var gv=document.getElementById("ab_geo_var").value.trim();
+    if(!gv){ toast("请填写 geo 的变量名","warn"); return; }
+    var n=addNodeToTreeFields({scope:"geo", header:"geo "+gv+" {", options:[], children:[]}, topToInsertAfter());
+    selectNode(n); toast("已新增 geo 块：geo "+gv,"ok");
+  } else if(addABScope==="upstream"){
+    var nm=document.getElementById("ab_up_name").value.trim().replace(/\s+/g,"_");
+    var bk=document.getElementById("ab_up_srv").value.trim();
+    if(!nm){ toast("请输入 upstream 组名","warn"); return; }
+    if(UPSTREAM_SET[nm]){ toast("upstream 组已存在："+nm,"warn"); return; }
+    var opts=[]; if(bk) opts.push(optKV("server",bk));
+    var n=addNodeToTreeFields({scope:"upstream", header:"upstream "+nm+" {", options:opts, children:[]}, topToInsertAfter());
+    selectNode(n); toast("已新增 upstream 组："+nm,"ok");
+  } else if(addABScope==="stream"){
+    var n=addNodeToTreeFields({scope:"stream", header:"stream {", options:[], children:[]}, topToInsertAfter());
+    selectNode(n); toast("已新增 stream 全局块","ok");
+  } else if(addABScope==="events"){
+    var n=addNodeToTreeFields({scope:"events", header:"events {", options:[], children:[]}, topToInsertAfter());
+    selectNode(n); toast("已新增 events 全局块","ok");
+  }
+  abClose();
+}
+document.querySelectorAll("#addBlockScope .seg-i").forEach(function(e){ e.addEventListener("click",function(){ abSetScope(e.getAttribute("data-scope")); }); });
+document.getElementById("addBlockOK").addEventListener("click",abOK);
+document.getElementById("addBlockClose").addEventListener("click",abClose);
+document.getElementById("addBlockCancel").addEventListener("click",abClose);
+document.getElementById("addBlockModal").addEventListener("click",function(e){ if(e.target===this) abClose(); });
+
+function renderPreview(node){
+  var lines=[];
+  (function rb(n,depth){
+    var ind=INDENT.repeat(depth);
+    if(n.scope==="comment"){ lines.push("# "+n.header); return; }
+    if(n.scope==="if") lines.push(ind+"# 建议少用 if");
+    lines.push(ind+(n.header||"")+" {");
+    var norm=[],def=[];
+    n.options.forEach(function(o){ if(o.directive==="default")def.push(o); else norm.push(o); });
+    norm.concat(def).forEach(function(o){ lines.push(ind+INDENT+String(o.raw!=null?o.raw:(o.directive+(o.value?(" "+o.value):""))).replace(/;\s*$/,"")+";"); });
+    n.children.forEach(function(c){ rb(c,depth+1); });
+    lines.push(ind+"}");
+  })(node,0);
+  var out=document.getElementById("renderOut");
+  var html="";
+  lines.forEach(function(l){
+    if(l.indexOf("default")>-1&&/-default|default /.test(l)) html+="<span class='hl-default'>"+esc(l)+"</span>\n";
+    else if(l.indexOf("建议少用")>-1) html+="<span class='hl-if'>"+esc(l)+"</span>\n";
+    else if(/^\s*#/.test(l)) html+="<span class='cm'>"+esc(l)+"</span>\n";
+    else html+=esc(l)+"\n";
+  });
+  out.innerHTML=html;
+}
+
+function selectNode(node){
+  switchView("blockmgr");
+  selected=node;
+  // 高亮：side + list
+  var all=[].slice.call(document.querySelectorAll(".t-item,.row")).forEach(function(el){ el.classList.toggle("on", el.getAttribute("data-id")==String(node._id)); });
+  var headFile=document.getElementById("headFile").textContent=FILE_NAME[CTX];
+  var sub=node.scope+" · "+(node.header||"").replace(/\s{2,}/g," ");
+  document.getElementById("headSub").textContent=sub;
+  document.getElementById("tabTreeN").textContent=node.children.length?(""+node.children.length+" 子块"):"";
+  // 渲染块树（默认 tab）
+  document.getElementById("blockTree").innerHTML="";
+  document.getElementById("previewPanel").hidden=true;
+  document.getElementById("blockTree").hidden=false;
+  buildTree(document.getElementById("blockTree"), node);
+  document.getElementById("emptyHint").hidden=true;
+  renderPreview(node);
+}
+
+/* ---------- Tab 切换 ---------- */
+function showTab(name){
+  var isTree=name==="blocktree";
+  document.getElementById("blockTree").hidden=!isTree;
+  document.getElementById("previewPanel").hidden=isTree;
+  document.querySelectorAll(".dtab").forEach(function(t){ t.classList.toggle("on",t.getAttribute("data-tab")===name); });
+}
+document.querySelectorAll(".dtab").forEach(function(t){ t.addEventListener("click",function(){ showTab(t.getAttribute("data-tab")); }); });
+
+/* ================= 行级操作（location 卡片） ================= */
+function locationOps(n){
+  var pp=n.options.filter(function(o){return o.directive==="proxy_pass";});
+  var host=pp.length?(pp[0].value.split("/")[2]||pp[0].value.split("/").pop()):"";
+  return "<button class='op ping' data-op='ping' data-host='"+qq(host)+"' title='连通性测试'>测连</button>"+
+    "<button class='op' data-op='toggle' title='启用/停用'>启停</button>"+
+    "<button class='op tok' data-op='reload' title='reload'>重载</button>";
+}
+document.addEventListener("click",function(e){
+  var op=e.target.closest("[data-op]");
+  if(!op) return; e.stopPropagation();
+  var t=op.getAttribute("data-op");
+  if(t==="ping"){ toast("连通性测试 "+(op.getAttribute("data-host")||"upstream")+"…",""); setTimeout(function(){toast("连通正常 / "+(op.getAttribute("data-host")||"")+" 200 OK","ok");},700); }
+  else if(t==="toggle"){ var off=op.closest(".block").classList.toggle("t-off"); toast(off?"已停用该转发规则":"已启用该转发规则",off?"warn":"ok"); }
+  else if(t==="reload"){ toast("正在 reload nginx…",""); setTimeout(function(){toast("reload 成功，配置已热载","ok");},900); }
+});
+function toast(msg,type){
+  var box=document.getElementById("toastBox");
+  var t=document.createElement("div"); t.className="toast"+(type?" "+type:""); t.textContent=msg;
+  box.appendChild(t);
+  setTimeout(function(){t.style.opacity=0;t.style.transition="opacity .3s";setTimeout(function(){t.remove();},320);},2600);
+}
+document.getElementById("btnRowOps").addEventListener("click",function(){
+  var locs=allNodes.filter(function(n){return n.scope==="location";});
+  toast("已对 "+locs.length+" 个转发规则批量发起连通性检测…","");
+  setTimeout(function(){toast("批量连通性检测完成："+locs.length+" 正常","ok");},1100);
+});
+document.getElementById("btnAddUpstream").addEventListener("click",function(){ abSetScope("upstream"); abOpen(); });
+
+/* ================= 视图切换（配置文件 / 块管理 / 全局拓扑 / 业务端口） ================= */
+var viewNames=["overview","blockmgr","topology","bizport"];
+function refreshView(name){
+  if(name==="overview"){ buildOvList(); }
+  else if(name==="topology"){ buildTopoList(); }
+  else if(name==="bizport"){ buildBpList(); }
+}
+function switchView(name){
+  viewNames.forEach(function(v){
+    var el=document.getElementById("view-"+v);
+    var nav=document.querySelector('.navi[data-view="'+v+'"]');
+    var active=(v===name);
+    el.hidden=!active;
+    if(active) nav.classList.add("on"); else nav.classList.remove("on");
+    if(active) refreshView(v);
+  });
+}
+document.querySelectorAll(".navi[data-view]").forEach(function(n){
+  n.addEventListener("click",function(){ switchView(n.getAttribute("data-view")); });
+});
+
+/* ---------- 配置文件：监听点列表 + 总览/业务端口 详情（主从联动） ---------- */
+var ovSel=null;
+function buildOvList(){
+  var box=document.getElementById("ovList"); box.innerHTML="";
+  var isStm=CTX==="stream";
+  servers.forEach(function(b){
+    var port=listenOf(b), sn=snameOf(b), locs=b.children.filter(function(c){return c.scope==="location";}).length;
+    var row=document.createElement("div"); row.className="row"; row.setAttribute("data-id",b._id);
+    row.innerHTML="<span class='port'>"+esc(port)+"</span><span class='nm'>"+esc(isStm?(proxyTargetsOf(b)||"-"):sn)+"</span>"+
+      "<span style='margin-left:auto;display:flex;align-items:center;gap:6px;'><span class='cnt'>"+esc(isStm?"TCP":(locs+" loc"))+"</span></span>";
+    row.addEventListener("click",function(){ selectOv(b); });
+    box.appendChild(row);
+  });
+  document.getElementById("ovListCount").textContent="("+servers.length+")";
+  selectOv(servers[0]);
+}
+function selectOv(b){
+  ovSel=b;
+  [].slice.call(document.querySelectorAll("#ovList .row")).forEach(function(r){ r.classList.toggle("on", r.getAttribute("data-id")==String(b._id)); });
+  renderOvOverview();
+  renderOvBiz();
+}
+/* 增强2 StatBanner四卡 + 增强1 GlobalChain 全局链路：基于选中监听点渲染真实链路 */
+function upstreamBlock(name){
+  for(var i=0;i<commons.length;i++){ if(commons[i].scope==="upstream" && (commons[i].header||"").replace(/^upstream\s+/,"").trim()===name) return commons[i]; }
+  return null;
+}
+function chainForServer(b){
+  // 主上游 + 首条 /path
+  var ports=listenPlain(b);
+  var targets=proxyTargets(b);
+  var upName=targets[0];
+  var up=upstreamBlock(upName);
+  var upMatched=!!(upName && UPSTREAM_SET[upName]);
+  var firstLoc=b.children.filter(function(c){return c.scope==="location";})[0];
+  var path=firstLoc ? (firstLoc.header||"/") : "/";
+  // 后端节点（保留真实 weight；极限折叠到 +3）
+  var backends=[]; if(up){ backends=up.options.filter(function(o){return o.directive==="server";}); }
+  var html="<div class='chain-box'><div class='chain-label'>全局链路 · <span style='font-family:var(--font-mono);color:var(--warning);text-transform:none;'>"+esc(upName||("-") )+"</span>"+
+    "<span class='tap'>点击节点可跳转</span><span class='cplus-tag'>GlobalChain · 方案C+</span></div><div class='oc-chain'>";
+  // 域名 → 监听点(端口) → path → upstream → 后端...
+  html+="<span class='oc-node is-domain'>"+esc(snameOf(b))+"</span><span class='oc-arrow'>→</span>";
+  html+="<span class='oc-node'>"+esc(ports)+"</span><span class='oc-arrow'>→</span>";
+  html+="<span class='oc-node'>"+esc(path)+"</span><span class='oc-arrow'>→</span>";
+  // R2: upstream 节点按是否命中对应组标注（命中绿 / 未命中红警示）
+  html+="<span class='oc-node is-upstream "+(upName?(upMatched?"matchok":"unmatched"):"")+"'>"+esc(upName||"-")+"</span>";
+  var MAX=4;
+  var shown=backends.slice(0,MAX);
+  shown.forEach(function(sv){
+    var m=sv.value.match(/^([^ ]+)/); var label=m?m[1].replace(/\/\/|https?:/,""):sv.value;
+    html+="<span class='oc-arrow'>→</span><span class='oc-node is-backend' data-node='"+esc(label)+"'>"+esc(label)+"</span>";
+  });
+  if(backends.length>MAX) html+="<span class='oc-arrow'>→</span><span class='oc-node is-backend'>+"+(backends.length-MAX)+"</span>";
+  html+="</div></div>";
+  return html;
+}
+/* stream 上下文 TCP 链路：监听端口 → proxy_pass 目标（upstream 校验/直连）→ 后端节点，无 location 语义 */
+function chainForStreamServer(b){
+  var ports=listenPlain(b);
+  var target=proxyTargetsOf(b);
+  var host=proxyHostOf(target);
+  var isUp=!!(host&&host.kind==="name");
+  var upMatched=isUp&&!!UPSTREAM_SET[host.host];
+  var up=isUp?upstreamBlock(host.host):null;
+  var backends=up?up.options.filter(function(o){return o.directive==="server";}):[];
+  var html="<div class='chain-box'><div class='chain-label'>TCP 转发链路 · <span style='font-family:var(--font-mono);color:var(--warning);text-transform:none;'>"+esc(target||"-")+"</span>"+
+    "<span class='tap'>四层转发</span><span class='cplus-tag'>StreamChain · 方案C+</span></div><div class='oc-chain'>";
+  html+="<span class='oc-node'>"+esc(ports)+"</span><span class='oc-arrow'>→</span>";
+  html+="<span class='oc-node is-upstream "+(isUp?(upMatched?"matchok":"unmatched"):"")+"'>"+esc(target||"-")+"</span>";
+  var MAX=4;
+  backends.slice(0,MAX).forEach(function(sv){
+    var m=sv.value.match(/^([^ ]+)/); var label=m?m[1]:sv.value;
+    html+="<span class='oc-arrow'>→</span><span class='oc-node is-backend'>"+esc(label)+"</span>";
+  });
+  if(backends.length>MAX) html+="<span class='oc-arrow'>→</span><span class='oc-node is-backend'>+"+(backends.length-MAX)+"</span>";
+  html+="</div></div>";
+  return html;
+}
+function renderOvOverview(){
+  if(CTX==="stream"){ renderOvOverviewStream(); return; }
+  var cards="<div class='cards'>"+
+    "<div class='card blue'><b>"+nServer+"</b><small>server 监听块</small></div>"+
+    "<div class='card green'><b>"+nLoc+"</b><small>location 转发</small></div>"+
+    "<div class='card yellow'><b>"+nUp+"</b><small>upstream 组</small></div>"+
+    "<div class='card red'><b>"+nIf+"</b><small>if 弱提示<span class='warn-flag'>ⓘ建议收敛</span></small></div></div>";
+  var rows="";
+  servers.forEach(function(b){
+    var port=listenPlain(b);
+    // 主要上游：聚合 location 引用的 upstream 组名，标注是否有对应组
+    var ups=proxyTargets(b);
+    var upChips=ups.map(function(u){
+      var ok=UPSTREAM_SET[u];
+      return "<span class='tag "+(ok?"ok":"none")+"' title='"+(ok?"已匹配 upstream 组":"未找到对应 upstream 组")+"'>"+esc(u)+(ok?"✓":"✗ 未匹配")+"</span>";
+    }).join("");
+    if(!upChips) upChips="<span style='color:var(--text-tertiary)'>—</span>";
+    rows+="<tr><td style='color:#6ba8fa'>"+esc(port)+"</td>"+
+      "<td style='color:var(--text-secondary)'>"+esc(snameOf(b))+"</td>"+
+      "<td>"+b.children.filter(function(c){return c.scope==="location";}).length+"</td>"+
+      "<td style='white-space:nowrap'>"+upChips+"</td></tr>";
+  });
+  var chainHtml=(ovSel&&ovSel.scope==="server")?chainForServer(ovSel):"";
+  document.getElementById("ovOverview").innerHTML=
+    "<div class='chain-label' style='margin-bottom:10px;'>配置文件统计 <span class='cplus-tag'>StatBanner · 方案C+</span></div>"+cards+
+    chainHtml+
+    "<h4 class='ov-h'>监听点（server listen 端口 · SSL 由导出时决定）</h4><table><thead><tr><th>端口</th><th>server_name</th><th>location 数</th><th>主要上游（proxy_pass 关联）</th></tr></thead><tbody>"+rows+"</tbody></table>";
+}
+/* stream 上下文配置文件统计：TCP 监听 → proxy_pass 目标，无 location/server_name 语义 */
+function renderOvOverviewStream(){
+  var cards="<div class='cards'>"+
+    "<div class='card blue'><b>"+nServer+"</b><small>TCP 监听块</small></div>"+
+    "<div class='card yellow'><b>"+nUp+"</b><small>upstream 组</small></div>"+
+    "<div class='card green'><b>"+nStm+"</b><small>stream 顶层</small></div>"+
+    "<div class='card red'><b>"+nEvt+"</b><small>events 块</small></div></div>";
+  var rows="";
+  servers.forEach(function(b){
+    var port=listenPlain(b);
+    var tgt=proxyTargetsOf(b);
+    var host=proxyHostOf(tgt);
+    var isUp=!!(host&&host.kind==="name");
+    var ok=isUp&&!!UPSTREAM_SET[host.host];
+    var chip=isUp
+      ? "<span class='tag "+(ok?"ok":"none")+"' title='"+(ok?"已匹配 upstream 组":"未找到对应 upstream 组")+"'>"+esc(tgt)+(ok?"✓":"✗ 未匹配")+"</span>"
+      : "<span class='tag pub' style='background:var(--info-bg);border-color:var(--info-border);color:var(--info);'>直连</span>";
+    rows+="<tr><td style='color:#6ba8fa'>"+esc(port)+"</td><td style='white-space:nowrap'>"+chip+"</td></tr>";
+  });
+  var chainHtml=(ovSel&&ovSel.scope==="server")?chainForStreamServer(ovSel):"";
+  document.getElementById("ovOverview").innerHTML=
+    "<div class='chain-label' style='margin-bottom:10px;'>stream 文件统计 <span class='cplus-tag'>StatBanner · 方案C+</span></div>"+cards+
+    chainHtml+
+    "<h4 class='ov-h'>TCP 监听（listen 端口 → proxy_pass 目标）</h4><table><thead><tr><th>端口</th><th>proxy_pass 目标（关联校验）</th></tr></thead><tbody>"+rows+"</tbody></table>";
+}
+/* 增强3 PathChain：监听点内每条 location 渲染为访问路径链路（公网/内网→域名:端口→/path→目标） */
+function pathChainForLocation(b,l){
+  var pp=l.options.filter(function(o){return o.directive==="proxy_pass";});
+  var pv=pp.length?pp[0].value:"-";
+  var listen=listenPlain(b);
+  // R2: 目标引用 upstream 组名则校验是否有对应组（命中绿 / 未命中红警示；IP/域名直连橙色）
+  var host=proxyHostOf(pv);
+  var isUp=!!(host&&host.kind==="name");
+  var upMatched=isUp&&!!UPSTREAM_SET[host.host];
+  var method=(l.options.filter(function(o){return o.directive==="limit_except";})[0]) ? "" : "";
+  return "<div class='rule-row'><div class='rule-meta'><span>"+esc((method||"ANY"))+"</span><span class='uuid'>"+esc(l.header||"/")+"</span>"+
+    "<span class='oc-pill pub'>公网</span>"+
+    "<span class='cplus-tag' style='margin-left:auto;'>PathChain · 方案C+</span></div>"+
+    "<div class='oc-chain compact'>"+"<span class='oc-pill pub'>公网</span><span class='oc-arrow'>→</span>"+
+    "<span class='oc-node is-domain'>"+esc(snameOf(b))+"</span><span class='oc-arrow'>→</span>"+
+    "<span class='oc-node'>"+esc(listen)+"</span><span class='oc-arrow'>→</span>"+
+    "<span class='oc-node'>"+esc(l.header||"/")+"</span><span class='oc-arrow'>→</span>"+
+    (isUp
+      ? "<span class='oc-node is-target-up "+(upMatched?"matchok":"unmatched")+"'>"+esc(pv)+"</span>"
+      : "<span class='oc-node is-upstream'>"+esc(pv)+"</span>")+
+    "</div></div>";
+}
+function renderOvBiz(){
+  if(!ovSel){ document.getElementById("ovBiz").innerHTML=""; document.getElementById("ovHeadSub").textContent=""; return; }
+  var port=listenPlain(ovSel);
+  if(CTX==="stream"){ // TCP 转发规则：单条链路（监听 → proxy_pass 目标）
+    var tgt=proxyTargetsOf(ovSel);
+    var host=proxyHostOf(tgt);
+    var isUp=!!(host&&host.kind==="name");
+    var upMatched=isUp&&!!UPSTREAM_SET[host.host];
+    var html="<div class='chain-label' style='margin-bottom:10px;'><span style='text-transform:none;font-family:var(--font-mono);font-weight:600;color:var(--text-primary);'>"+esc(port)+"</span> · TCP 转发规则 <span class='cplus-tag'>StreamPath · 方案C+</span></div>"+
+      "<div class='rule-row'><div class='rule-meta'><span>TCP</span><span class='uuid'>"+esc(port)+"</span><span class='oc-pill pub'>四层</span><span class='cplus-tag' style='margin-left:auto;'>PathChain · 方案C+</span></div>"+
+      "<div class='oc-chain compact'><span class='oc-node'>"+esc(port)+"</span><span class='oc-arrow'>→</span>"+
+      (isUp
+        ? "<span class='oc-node is-target-up "+(upMatched?"matchok":"unmatched")+"'>"+esc(tgt)+"</span>"
+        : "<span class='oc-node is-upstream'>"+esc(tgt)+"</span>")+
+      "</div></div>";
+    document.getElementById("ovBiz").innerHTML=html;
+    document.getElementById("ovHeadSub").textContent="选中 "+port;
+    return;
+  }
+  var locs=ovSel.children.filter(function(c){return c.scope==="location";});
+  var rows=locs.map(function(l){return pathChainForLocation(ovSel,l);}).join("");
+  var html="<div class='chain-label' style='margin-bottom:10px;'><span style='text-transform:none;font-family:var(--font-mono);font-weight:600;color:var(--text-primary);'>"+esc(port)+"</span> · 转发规则路径 <span class='cplus-tag'>PathChain · 方案C+</span></div>"+rows;
+  document.getElementById("ovBiz").innerHTML=html;
+  document.getElementById("ovHeadSub").textContent="选中 "+(listenPlain(ovSel)+" · "+snameOf(ovSel));
+}
+function showOvTab(name){
+  var isOv=(name==="overview");
+  document.getElementById("ovOverview").hidden=!isOv;
+  document.getElementById("ovBiz").hidden=isOv;
+  document.querySelectorAll(".dtab[data-ovtab]").forEach(function(t){ t.classList.toggle("on",t.getAttribute("data-ovtab")===name); });
+}
+document.querySelectorAll(".dtab[data-ovtab]").forEach(function(t){ t.addEventListener("click",function(){ showOvTab(t.getAttribute("data-ovtab")); }); });
+document.getElementById("btnOvExport").addEventListener("click",function(){ initExprOpen(); renderExportPreview(); document.getElementById("exportModal").hidden=false; });
+
+/* ---------- 全局拓扑：upstream 组列表 + 组详情（主从联动） ---------- */
+var topoSel=null;
+function buildTopoList(){
+  var ups=allNodes.filter(function(n){return n.scope==="upstream";});
+  var box=document.getElementById("topoList"); box.innerHTML="";
+  ups.forEach(function(g){
+    var gname=(g.header||"").replace(/^upstream\s+/,"").trim();
+    var bkc=g.options.filter(function(o){return o.directive==="server";}).length;
+    var item=document.createElement("div"); item.className="row"; item.setAttribute("data-id",g._id);
+    item.innerHTML="<span class='port' style='color:var(--warning)'>"+esc(gname)+"</span><span style='margin-left:auto;color:var(--text-tertiary);font-size:10px;font-family:var(--font-mono);'>"+bkc+" 节点</span>";
+    item.addEventListener("click",function(){ selectTopo(g); });
+    box.appendChild(item);
+  });
+  document.getElementById("topoSub").textContent=nUp+" upstream";
+  if(ups.length) selectTopo(ups[0]); else document.getElementById("topoDetail").innerHTML="<div class='ov-h'>无 upstream 组</div>";
+}
+function selectTopo(g){
+  topoSel=g;
+  [].slice.call(document.querySelectorAll("#topoList .row")).forEach(function(r){ r.classList.toggle("on", r.getAttribute("data-id")==String(g._id)); });
+  var gname=(g.header||"").replace(/^upstream\s+/,"").trim();
+  var backends=g.options.filter(function(o){return o.directive==="server";}).map(function(o){return o.value;});
+  var re=new RegExp("(?:^|/)?"+gname+"(?:[/\\s;]|$)"); // 兼容 http://组/ 与 stream 直写组名
+  var refs=[];
+  /* 全局拓扑：跨上下文收集引用（http 的 location 级 + stream 的 server 级 proxy_pass） */
+  allNodes.filter(function(n){return n.scope==="server";}).forEach(function(sv){
+    sv.options.forEach(function(o){ if(o.directive==="proxy_pass" && re.test(o.value)) refs.push("stream · "+listenOf(sv)+" → "+o.value); });
+    sv.children.forEach(function(l){
+      var pp=l.options.filter(function(o){return o.directive==="proxy_pass";});
+      if(pp.length && re.test(pp[0].value)) refs.push(listenOf(sv)+" · "+(l.header||""));
+    });
+  });
+  var refHtml=refs.map(function(k){return "<span class='t-node loc'>"+esc(k)+"</span>";}).join("");
+  if(!refHtml) refHtml="<span class='t-node' style='color:var(--text-tertiary)'>未被 server 引用</span>";
+  var bkHtml=backends.map(function(v){return "<span class='t-node bk'>"+esc(v)+"</span>";}).join("");
+  document.getElementById("topoHead").textContent=gname;
+  document.getElementById("topoSub").textContent=backends.length+" 节点 · "+esc(g.options.filter(function(o){return o.directive==="ip_hash";}).length?"ip_hash":"round_robin");
+  document.getElementById("topoDetail").innerHTML=
+    "<div style='border:1px solid var(--border-primary);border-radius:var(--radius-md);background:var(--bg-surface-2);overflow:hidden;'>"+
+      "<div style='display:flex;align-items:center;gap:8px;padding:9px 14px;background:var(--bg-surface-3);border-bottom:1px solid var(--border-secondary);'><span class='bkind up'>upstream</span><span style='font-family:var(--font-mono);font-size:12px;color:var(--warning)'>"+esc(gname)+"</span><span style='margin-left:auto;font-size:10px;color:var(--text-tertiary)'>"+backends.length+" 节点</span></div>"+
+      "<div style='padding:10px 14px;display:flex;flex-direction:column;gap:6px;'><div class='grow-note'>被引用（server · location）</div><div class='t-row'>"+refHtml+"</div><div class='grow-note' style='margin-top:6px'>后端节点</div><div class='t-row'>"+bkHtml+"</div></div></div>";
+}
+document.getElementById("btnTopoReload").addEventListener("click",function(){
+  toast("正在 reload nginx…",""); setTimeout(function(){toast("reload 成功，配置已热载","ok");},900);
+});
+
+/* ---------- 业务端口：监听点列表 + 分组详情（主从联动） ---------- */
+var bpSel=null;
+function buildBpList(){
+  var box=document.getElementById("bpList"); box.innerHTML="";
+  var isStm=CTX==="stream";
+  servers.forEach(function(b){
+    var port=listenPlain(b), locs=b.children.filter(function(c){return c.scope==="location";}).length;
+    var row=document.createElement("div"); row.className="row"; row.setAttribute("data-id",b._id);
+    row.innerHTML="<span class='port'>"+esc(port)+"</span><span class='nm'>"+esc(isStm?(proxyTargetsOf(b)||"-"):snameOf(b))+"</span>"+
+      "<span style='margin-left:auto;color:var(--text-tertiary);font-size:10px;font-family:var(--font-mono);'>"+esc(isStm?"TCP":(locs+" loc"))+"</span>";
+    row.addEventListener("click",function(){ selectBp(b); });
+    box.appendChild(row);
+  });
+  selectBp(servers[0]);
+}
+function selectBp(b){
+  bpSel=b;
+  [].slice.call(document.querySelectorAll("#bpList .row")).forEach(function(r){ r.classList.toggle("on", r.getAttribute("data-id")==String(b._id)); });
+  if(CTX==="stream"){
+    document.getElementById("bpHead").textContent=listenPlain(b)+" · "+proxyTargetsOf(b);
+    document.getElementById("bpSub").textContent="TCP 四层转发";
+    document.getElementById("bpDetail").innerHTML =
+      chainForStreamServer(b) +
+      "<div class='chain-label' style='margin-bottom:10px;'>TCP 转发规则 <span class='cplus-tag'>StreamPath · 方案C+</span></div>" +
+      "<div class='rule-row'><div class='rule-meta'><span>TCP</span><span class='uuid'>"+esc(listenPlain(b))+"</span><span class='oc-pill pub'>四层</span><span class='cplus-tag' style='margin-left:auto;'>PathChain · 方案C+</span></div>"+
+      "<div class='oc-chain compact'><span class='oc-node'>"+esc(listenPlain(b))+"</span><span class='oc-arrow'>→</span><span class='oc-node is-upstream'>"+esc(proxyTargetsOf(b)||"-")+"</span></div></div>";
+    return;
+  }
+  document.getElementById("bpHead").textContent=listenPlain(b)+" · "+snameOf(b);
+  document.getElementById("bpSub").textContent=b.children.filter(function(c){return c.scope==="location";}).length+" loc";
+  // 业务端口详情：GlobalChain 链路 + PathChain 转发规则（方案C+ 统一风格）
+  document.getElementById("bpDetail").innerHTML =
+    chainForServer(b) +
+    "<div class='chain-label' style='margin-bottom:10px;'>转发规则路径 <span class='cplus-tag'>PathChain · 方案C+</span></div>" +
+    b.children.filter(function(c){return c.scope==="location";}).map(function(l){return pathChainForLocation(b,l);}).join("");
+}
+document.getElementById("btnBpSave").addEventListener("click",function(){ toast("业务端口分组已保存","ok"); });
+
+/* ================= 导出配置（SSL 开关 + IP/域名替换） ================= */
+var sslOn=true;
+var SSL_DROP=/^(ssl_protocols|ssl_certificate|ssl_certificate_key|ssl_session_cache|ssl_session_timeout|ssl_ciphers|ssl_prefer_server_ciphers)$/;
+/* 导出替换（增强 V）：两处自动替换——
+   ① server_name 域名 → 全局新域名（domNew 单一输入）；② upstream 后端整组替换（默认 + 例外覆盖，纯 IP）。
+   既有逻辑：端口与端口后参数一律沿用各组原节点对应位置。预览命中行标黄并标注原值。 */
+var domNew="";            // 全局新域名：导出时所有 server_name 的值整体替换为它；留空则不替换域名
+var upDefaultIps="";      // 默认后端 IP 清单（纯 IP），应用到未被任何例外覆盖的全部组；留空则这些组不替换
+var upExceptions=[];      // 例外覆盖：{grp:"<CTX>:<组名>", ips:"纯IP…"}；每条例外只针对单个 upstream 组，未单独配置的组一律走默认
+function domParse(s){ return (s||"").split(/[,\n]+/).map(function(e){return e.trim();}).filter(Boolean); }
+function applyDomains(raw){
+  var v=(domNew||"").trim();
+  if(!v) return {raw:raw, changed:false, orig:null};
+  var m=raw.replace(/;\s*$/,"").trim().match(/^server_name\s+(.+)$/);
+  if(!m) return {raw:raw, changed:false, orig:null};
+  return {raw:"server_name "+v, changed:true, orig:"server_name "+m[1]};
+}
+function upNameOf(n){ return (n.header||"").replace(/^upstream\s+/,"").trim(); }
+function upKeyOf(n){ return CTX+":"+upNameOf(n); }
+function upstreamGroups(){ return (TREE[0].children||[]).filter(function(c){return c.scope==="upstream";}); }
+function upNodePorts(g){ return g.options.filter(function(o){return o.directive==="server";}).map(function(o){ var r=o.raw||(o.directive+(o.value?(" "+o.value):"")); var m=r.replace(/;\s*$/,"").trim().match(/^server\s+(\S+)/); var a=m?m[1]:""; var p=a.match(/:(\d+)$/); return p?p[1]:""; }); }
+function upNodeParams(g){ return g.options.filter(function(o){return o.directive==="server";}).map(function(o){ var r=o.raw||(o.directive+(o.value?(" "+o.value):"")); var m=r.replace(/;\s*$/,"").trim().match(/^server\s+(\S+)(.*)$/); return m?m[2].trim():""; }); }
+function upNodeRaws(g){ return g.options.filter(function(o){return o.directive==="server";}).map(function(o){ return (o.raw||(o.directive+(o.value?(" "+o.value):""))).replace(/;\s*$/,"").trim(); }); }
+/* 整组替换：输入为纯 IP 列表，一个 IP = 一个节点。端口与端口后参数(weight 等)一律沿用该组原节点对应位置设置 */
+function deriveUpBackends(g, ips){
+  var ports=upNodePorts(g), params=upNodeParams(g), raws=upNodeRaws(g);
+  return domParse(ips||"").map(function(ip,j){
+    ip=ip.trim();
+    if(!/:\d+$/.test(ip)&&!/^unix:/.test(ip)){ var p=ports[j%ports.length]; if(p) ip=ip+":"+p; }  // 只补端口，端口后参数恒取原
+    var prm=params[j%params.length];
+    return {text:"server "+ip+(prm?(" "+prm):"")+";", orig:(raws[j%raws.length]||null)};
+  });
+}
+/* 该组用哪份 IP：先查例外（首个命中），否则回退默认；都为空则该组不替换（返回 null） */
+function ipsForGroup(k){
+  for(var i=0;i<upExceptions.length;i++){ var e=upExceptions[i]; if(e && e.grp===k && domParse(e.ips).length) return e.ips; }
+  return upDefaultIps;
+}
+function derivedFor(g){ var ips=ipsForGroup(upKeyOf(g)); return domParse(ips).length?deriveUpBackends(g,ips):null; }
+function renderUpExceptions(){
+  var box=document.getElementById("upExceptions"); if(!box) return;
+  box.innerHTML="";
+  var groups=upstreamGroups();
+  var names=groups.map(function(g){ return upNameOf(g); });   // 自动补全候选：当前上下文全部组名
+  function keyByName(n){ for(var i=0;i<groups.length;i++){ if(upNameOf(groups[i])===n) return upKeyOf(groups[i]); } return ""; }
+  function nameByKey(k){ for(var i=0;i<groups.length;i++){ if(upKeyOf(groups[i])===k) return upNameOf(groups[i]); } return ""; }
+  if(!groups.length){ box.innerHTML="<span style='color:var(--text-tertiary);font-size:11px;'>当前上下文无 upstream 组</span>"; return; }
+  if(!upExceptions.length){ box.innerHTML="<div class='up-rule'><span style='color:var(--text-tertiary);font-size:11px;'>尚未添加例外 —— 点下方「＋ 添加例外」，选一个需要差异的 upstream 组并填目标 IP；未单独配置的组一律走默认。</span></div>"; }
+  upExceptions.forEach(function(r,ei){
+    var wrap=document.createElement("div"); wrap.className="up-rule";
+    // 头部：例外标签 + 删除
+    var head=document.createElement("div"); head.className="up-rule-head";
+    var tag=document.createElement("span"); tag.className="up-rule-tag"; tag.textContent="例外 "+(ei+1);
+    head.appendChild(tag);
+    var tools=document.createElement("span"); tools.className="up-rule-tools";
+    var delB=document.createElement("span"); delB.className="rbtn del"; delB.textContent="\u2715"; delB.title="删除例外"; delB.addEventListener("click",function(){ upExceptions.splice(ei,1); renderUpExceptions(); renderExportPreview(); });
+    tools.appendChild(delB); head.appendChild(tools); wrap.appendChild(head);
+    // 选择单个 upstream 组：自动补全输入框（datalist），只针对这一个组
+    var dl=document.createElement("datalist"); dl.id="upgList"+(Math.random().toString(36).slice(2,8));
+    names.forEach(function(n){ var o=document.createElement("option"); o.value=n; dl.appendChild(o); });
+    var label=document.createElement("div"); label.className="up-hint"; label.style.padding="2px 0 4px"; label.textContent="目标 upstream 组（选一个，仅该组使用本 IP）";
+    wrap.appendChild(label); wrap.appendChild(dl);
+    var inp=document.createElement("input"); inp.type="text"; inp.className="up-search"; inp.placeholder="搜索并选择 upstream 组名…"; inp.setAttribute("list",dl.id);
+    inp.value=nameByKey(r.grp)||"";
+    inp.addEventListener("change",function(){ r.grp=keyByName(this.value.trim()); if(r.grp) this.value=nameByKey(r.grp); else this.value=""; renderExportPreview(); });
+    wrap.appendChild(inp);
+    // 本例外 IP（纯 IP，端口/参数自动沿用该组原节点）
+    var ta=document.createElement("textarea"); ta.className="up-ip"; ta.rows=2;
+    ta.placeholder="本例外目标后端 IP（纯 IP，每行/逗号分隔）\n端口与端口后参数自动沿用该组原节点";
+    ta.value=r.ips||"";
+    ta.addEventListener("input",function(){ r.ips=this.value; });
+    ta.addEventListener("change",function(){ r.ips=this.value; renderExportPreview(); });
+    wrap.appendChild(ta);
+    box.appendChild(wrap);
+  });
+}
+function addUpEx(){ upExceptions.push({grp:"",ips:""}); renderUpExceptions(); }
+function initExprOpen(){
+  var di=document.getElementById("upDefaultIps"); if(di && di.value!==upDefaultIps){ di.value=upDefaultIps; }
+  var dn=document.getElementById("domNew"); if(dn && dn.value!==domNew){ dn.value=domNew; }
+  renderUpExceptions();
+}
+/* 导出渲染：逐行进结构，标明是否命中 IP/域名替换（changed/orig）。复制/下载取 change 后文本。 */
+function exportLines(){
+  var out=[];
+  function emit(text,changed,orig){
+    out.push({text:text,changed:!!changed,orig:orig||null});
+  }
+  (function walkEx(n,d){
+    var ind=INDENT.repeat(d);
+    if(n.scope==="comment"){ emit(ind+"# "+n.header); return; }
+    if(n.scope==="if") emit(ind+"# 建议少用 if");
+    emit(ind+(n.header||"")+" {");
+    var body=[];
+    var upRep=(n.scope==="upstream")?derivedFor(n):null;   // 命中替换（默认/例外）时返回新后端行列表（否则 null）
+    n.options.forEach(function(o){
+      var dd=o.directive, raw=o.raw, val=o.value, isDef=false;
+      if(raw==null) raw=(dd+(val?(" "+val):""));                                    // 手写新增项无 raw，按 指令=值 推导
+      if(upRep && dd==="server") return;                              // 整组替换：跳过该组原后端节点行（下方统一输出）
+      if(!sslOn){
+        if(SSL_DROP.test(dd)) return;                                   // 关闭SSL：丢弃 ssl_* 指令
+        if(dd==="listen"){ raw=val.replace(/\bssl\b/g," ").replace(/\s+/g," ").trim(); }  // listen X ssl http2 -> listen X http2
+      }
+      isDef=(dd==="default");
+      var r=(dd==="server_name")?applyDomains(raw.replace(/;\s*$/,"").trim()) : {raw:raw.replace(/;\s*$/,"").trim(),changed:false,orig:null};
+      body.push({raw:r.raw,isDefault:isDef,changed:r.changed,orig:r.orig});
+    });
+    var norm=body.filter(function(b){return !b.isDefault;});
+    var def=body.filter(function(b){return b.isDefault;});
+    norm.concat(def).forEach(function(b){ emit(ind+INDENT+b.raw+";", b.changed, b.orig); });
+    if(upRep){ upRep.forEach(function(b){ emit(ind+INDENT+b.text, true, b.orig); }); }  // 整组替换：输出新后端
+    n.children.forEach(function(c){ walkEx(c,d+1); });
+    emit(ind+"}");
+  })(TREE[0],0);
+  return out;
+}
+function exportConfigText(){ return exportLines().map(function(l){return l.text;}).join("\n"); }
+function renderExportPreview(){
+  var lines=exportLines();
+  var html="";
+  lines.forEach(function(l){
+    var txt=l.text;
+    if(l.changed && l.orig!=null){                     // 命中 IP/域名替换：高亮整行 + 标注原值
+      html+="<span class='subst'>"+esc(txt)+"</span><span class='sub-mark'>← 原值："+esc(l.orig)+"</span>\n";
+      return;
+    }
+    if(!sslOn && /^(\s*)listen /.test(txt)) html+="<span style='color:#6ba8fa'>"+esc(txt)+"</span>\n";
+    else if(!sslOn && /ssl_|ssl /i.test(txt)) html+="<span style='color:#f87171'>"+esc(txt)+"</span>\n";
+    else if(/^\s*#/.test(txt)) html+="<span class='cm'>"+esc(txt)+"</span>\n";
+    else html+=esc(txt)+"\n";
+  });
+  document.getElementById("exportOut").innerHTML=html;
+  var domN=(domNew||"").trim()?1:0;
+  var upN=upstreamGroups().filter(function(g){return derivedFor(g);}).length;
+  var repParts=[]; if(domN) repParts.push(domN+" 条域名(server_name)替换"); if(upN) repParts.push(upN+" 组 upstream 整组替换");
+  document.getElementById("exportStatus").textContent=FILE_NAME[CTX]+" · "+(sslOn?"SSL 场景":"非 SSL 场景 · 已移除 ssl_* 并改写 listen")+(repParts.length?(" · "+repParts.join(" · ")):"");
+  document.getElementById("exportDown").textContent=CTX==="stream"?"下载 .stream":"下载 .conf";
+}
+document.getElementById("btnExport").addEventListener("click",function(){ initExprOpen(); renderExportPreview(); document.getElementById("exportModal").hidden=false; });
+document.getElementById("exportClose").addEventListener("click",function(){ document.getElementById("exportModal").hidden=true; });
+document.getElementById("exportModal").addEventListener("click",function(e){ if(e.target===this) this.hidden=true; });
+document.getElementById("sslSwitch").addEventListener("click",function(){
+  this.classList.toggle("off"); sslOn=!this.classList.contains("off");
+  renderExportPreview();
+});
+document.getElementById("domNew").addEventListener("input",function(){ domNew=this.value; });
+document.getElementById("domNew").addEventListener("change",function(){ domNew=this.value; renderExportPreview(); });
+document.getElementById("upDefaultIps").addEventListener("input",function(){ upDefaultIps=this.value; });
+document.getElementById("upDefaultIps").addEventListener("change",function(){ upDefaultIps=this.value; renderExportPreview(); });
+document.getElementById("upAddEx").addEventListener("click",function(){ addUpEx(); renderExportPreview(); });
+document.getElementById("exportCopy").addEventListener("click",function(){
+  var txt=exportConfigText();
+  var done=function(){ toast("配置已复制到剪贴板","ok"); };
+  var fail=function(){ toast("复制失败（非 secure 环境）；请全选手动复制","warn"); };
+  if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(done,fail); else fail();
+});
+document.getElementById("exportDown").addEventListener("click",function(){
+  var txt=exportConfigText();
+  var a=document.createElement("a");
+  a.href=URL.createObjectURL(new Blob([txt],{type:"text/plain;charset=utf-8"}));
+  a.download = CTX==="stream"
+    ? "businesscenter_nginx_CD_master.stream"
+    : "businesscenter_nginx_CD_master_"+(sslOn?"ssl":"nonssl")+".conf";
+  a.click();
+  toast("已下载 "+(CTX==="stream"?"stream":"")+"配置文件","ok");
+});
+
+/* 初始构建：块管理为默认视图，其余视图在切换时懒构建 */
+selectNode(servers[0]);
+showTab("blocktree");
+})();
+</script>
+</body>
+</html>

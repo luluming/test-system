@@ -1,25 +1,37 @@
 :root {
   --bg-deep:#0a0a0c;--bg-deep2:#0d0d10;--bg-sidebar:#111114;--bg-surface:#18181c;--bg-surface2:#202024;--bg-surface3:#2a2a30;--bg-hover:#2e2e36;
-  --brand:#4a8af4;--brand-hover:#6ba8fa;--brand-light:rgba(74,138,244,.12);--brand-border:rgba(74,138,244,.25);--brand-glow:rgba(74,138,244,.08);
-  --text-pri:#e8e8ea;--text-sec:#b0b0bc;--text-ter:#808090;--border:#202024;--border-soft:#1b1b1f;
-  --success:#22c55e;--success-bg:rgba(34,197,94,.09);--warning:#f59e0b;--warning-bg:rgba(245,158,11,.09);
+  --brand:#4a8af4;--brand-hover:#6ba8fa;--brand-active:#2d6fd9;--brand-light:rgba(74,138,244,.12);--brand-border:rgba(74,138,244,.25);--brand-glow:rgba(74,138,244,.08);
+  --text-pri:#e8e8ea;--text-sec:#b0b0bc;--text-ter:#808090;--text-link:#6ba8fa;--border:#202024;--border-soft:#1b1b1f;
+  --success:#22c55e;--success-bg:rgba(34,197,94,.09);--success-border:rgba(34,197,94,.22);
+  --warning:#f59e0b;--warning-bg:rgba(245,158,11,.09);--warning-border:rgba(245,158,11,.22);
+  --error:#ef4444;--error-bg:rgba(239,68,68,.08);--error-border:rgba(239,68,68,.22);
+  --bg-input:#111115;--focus-ring:rgba(74,138,244,.16);
+  --shadow-dropdown:0 8px 32px rgba(0,0,0,.45);--shadow-tooltip:0 4px 16px rgba(0,0,0,.35);
+  --scroll-thumb:#3a3a3e;--scroll-thumb-h:#4a4a4e;
   --mono:'JetBrains Mono','SF Mono','Consolas',monospace;
   --ease:cubic-bezier(.4,0,.2,1);
   --bar:rgba(10,10,12,.72);
   --glow1:rgba(74,138,244,.08); --glow2:rgba(74,138,244,.08);
-  --rowhover:linear-gradient(90deg,var(--brand-light),transparent 60%),var(--bg-surface2);
+  --rowhover:rgba(74,138,244,.08);
   color-scheme: dark;
 }
 :root[data-theme="soft"] {
-  --bg-deep:#16162a;--bg-deep2:#1a1a30;--bg-sidebar:#1e1e36;--bg-surface:#232338;--bg-surface2:#2a2a42;--bg-hover:#35354f;
-  --text-pri:#edeef6;--text-sec:#b9bac8;--text-ter:#8e8fa1;--border:#31314a;--border-soft:#26263a;
-  --bar:rgba(22,22,42,.78);--glow1:rgba(124,110,255,.10);--glow2:rgba(74,138,244,.08);
+  --bg-deep:#16162a;--bg-deep2:#1a1a30;--bg-sidebar:#1e1e36;--bg-surface:#232338;--bg-surface2:#2a2a42;--bg-surface3:#33334e;--bg-hover:#35354f;
+  --text-pri:#edeef6;--text-sec:#b9bac8;--text-ter:#8e8fa1;--text-link:#8b9cf6;--border:#31314a;--border-soft:#26263a;
+  --bg-input:#191930;--focus-ring:rgba(124,110,255,.18);
+  --scroll-thumb:#45455e;--scroll-thumb-h:#565675;
+  --bar:rgba(22,22,42,.78);--glow1:rgba(124,110,255,.10);--glow2:rgba(74,138,244,.08);--rowhover:rgba(124,110,255,.09);
 }
 :root[data-theme="light"] {
-  --bg-deep:#f4f6f9;--bg-deep2:#eef1f5;--bg-sidebar:#ffffff;--bg-surface:#ffffff;--bg-surface2:#f2f4f8;--bg-hover:#e9edf3;
-  --text-pri:#1a1c28;--text-sec:#464a58;--text-ter:#868b9b;--border:#e1e6ee;--border-soft:#e7ebf1;
-  --success:#1f9d57;--success-bg:rgba(31,157,87,.10);--warning:#d9820b;--warning-bg:rgba(217,130,11,.10);
-  --brand:#3b74e0;--brand-hover:#2f63c7;--brand-light:rgba(59,116,224,.10);--brand-border:rgba(59,116,224,.28);
+  --bg-deep:#f4f6f9;--bg-deep2:#eef1f5;--bg-sidebar:#ffffff;--bg-surface:#ffffff;--bg-surface2:#f2f4f8;--bg-surface3:#e7ebf1;--bg-hover:#e9edf3;
+  --text-pri:#1a1c28;--text-sec:#464a58;--text-ter:#868b9b;--text-link:var(--brand);--border:#e1e6ee;--border-soft:#e7ebf1;
+  --success:#1f9d57;--success-bg:rgba(31,157,87,.10);--success-border:rgba(31,157,87,.28);
+  --warning:#d9820b;--warning-bg:rgba(217,130,11,.10);--warning-border:rgba(217,130,11,.28);
+  --error:#dc2626;--error-bg:rgba(220,38,38,.08);--error-border:rgba(220,38,38,.22);
+  --brand:#3b74e0;--brand-hover:#2f63c7;--brand-active:#2456b8;--brand-light:rgba(59,116,224,.10);--brand-border:rgba(59,116,224,.28);
+  --bg-input:#eef1f5;--focus-ring:rgba(59,116,224,.18);
+  --shadow-dropdown:0 8px 24px rgba(30,40,70,.14);--shadow-tooltip:0 4px 12px rgba(30,40,70,.12);
+  --scroll-thumb:#cfd4dd;--scroll-thumb-h:#b6bdc9;
   --bar:rgba(255,255,255,.82);--glow1:rgba(59,116,224,.06);--glow2:rgba(59,116,224,.04);
   --rowhover:#f5f8fc;
   color-scheme: light;
@@ -27,11 +39,20 @@
 * { box-sizing: border-box; }
 body {
   margin: 0;
-  background: radial-gradient(1000px 520px at 12% -8%, var(--glow1), transparent 55%),
-              radial-gradient(800px 400px at 100% 100%, var(--glow2), transparent 60%),
+  background: radial-gradient(560px 280px at 12% -8%, var(--glow1), transparent 55%),
+              radial-gradient(720px 360px at 100% 100%, var(--glow2), transparent 60%),
               var(--bg-deep);
   color: var(--text-pri);
   font-family: -apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 a { color: var(--brand); text-decoration: none; }
+
+/* === 全局细节：滚动条 / 选区 / 键盘焦点环 === */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--scroll-thumb); border-radius: 10px; border: 1px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: var(--scroll-thumb-h); background-clip: padding-box; border: 1px solid transparent; }
+::selection { background: var(--brand-light); color: var(--text-pri); }
+:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+button:focus:not(:focus-visible), input:focus:not(:focus-visible) { outline: none; }

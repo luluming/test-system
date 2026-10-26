@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>行业管理 · Nginx 配置管理系统</title>
+<style>
+  :root{
+    --bg-deep:#0a0a0c;--bg-deep2:#0d0d10;--bg-sidebar:#111114;--bg-surface:#18181c;--bg-surface2:#202024;--bg-surface3:#2a2a30;--bg-hover:#2e2e36;
+    --brand:#4a8af4;--brand-hover:#6ba8fa;--brand-light:rgba(74,138,244,.12);--brand-border:rgba(74,138,244,.25);--brand-glow:rgba(74,138,244,.08);
+    --text-pri:#e8e8ea;--text-sec:#b0b0bc;--text-ter:#808090;--border:#202024;--border-soft:#1b1b1f;
+    --success:#22c55e;--success-bg:rgba(34,197,94,.09);--warning:#f59e0b;--warning-bg:rgba(245,158,11,.09);
+    --mono:'JetBrains Mono','SF Mono','Consolas',monospace;
+    --ease:cubic-bezier(.4,0,.2,1);
+    --bar:rgba(10,10,12,.72);
+    --glow1:rgba(74,138,244,.08); --glow2:rgba(74,138,244,.08);
+    --rowhover:linear-gradient(90deg,var(--brand-light),transparent 60%),var(--bg-surface2);
+  }
+  body[data-theme="soft"]{
+    --bg-deep:#16162a;--bg-deep2:#1a1a30;--bg-sidebar:#1e1e36;--bg-surface:#232338;--bg-surface2:#2a2a42;--bg-hover:#35354f;
+    --text-pri:#edeef6;--text-sec:#b9bac8;--text-ter:#8e8fa1;--border:#31314a;--border-soft:#26263a;
+    --bar:rgba(22,22,42,.78);--glow1:rgba(124,110,255,.10);--glow2:rgba(74,138,244,.08);
+  }
+  body[data-theme="light"]{
+    --bg-deep:#f4f6f9;--bg-deep2:#eef1f5;--bg-sidebar:#ffffff;--bg-surface:#ffffff;--bg-surface2:#f2f4f8;--bg-hover:#e9edf3;
+    --text-pri:#1a1c28;--text-sec:#464a58;--text-ter:#868b9b;--border:#e1e6ee;--border-soft:#e7ebf1;
+    --success:#1f9d57;--success-bg:rgba(31,157,87,.10);--warning:#d9820b;--warning-bg:rgba(217,130,11,.10);
+    --brand:#3b74e0;--brand-hover:#2f63c7;--brand-light:rgba(59,116,224,.10);--brand-border:rgba(59,116,224,.28);
+    --bar:rgba(255,255,255,.82);--glow1:rgba(59,116,224,.06);--glow2:rgba(59,116,224,.04);
+    --rowhover:#f5f8fc;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:
+    radial-gradient(1000px 520px at 12% -8%,var(--glow1),transparent 55%),
+    radial-gradient(760px 420px at 100% 100%,var(--glow2),transparent 55%),
+    var(--bg-deep);
+    color:var(--text-pri);font-family:-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;min-height:100vh;min-width:1024px;transition:background .3s var(--ease)}
+  a{color:inherit;text-decoration:none}
+
+  /* ===== top bar ===== */
+  .tbar{position:sticky;top:0;z-index:10;height:40px;background:var(--bar);backdrop-filter:blur(8px);border-bottom:1px solid var(--border-soft);display:flex;align-items:center;padding:0 22px;gap:12px}
+  .logo{width:22px;height:22px;border-radius:5px;background:linear-gradient(135deg,#4a8af4,#2d6fd9);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;color:#fff}
+  .tbar .brand{font-size:12px;font-weight:600;letter-spacing:-.2px}
+  .tbar .dim{font-size:11px;color:var(--text-ter);font-family:var(--mono)}
+  .tbar .spacer{flex:1}
+
+  /* theme picker */
+  .themes{display:inline-flex;align-items:center;gap:7px;padding:3px 6px;border-radius:20px;border:1px solid var(--border);background:var(--bg-surface)}
+  .tdot{width:15px;height:15px;border-radius:50%;cursor:pointer;border:2px solid var(--border-soft);transition:transform .15s var(--ease),border-color .15s}
+  .tdot:hover{transform:scale(1.15)}
+  .tdot.on{border-color:var(--brand)}
+  .tdot[data-t="dark"]{background:#0a0a0c}.tdot[data-t="soft"]{background:#232338}.tdot[data-t="light"]{background:#e9edf3;border-color:#cfd6e2}
+  .tbar .crumb{font-size:11px;color:var(--text-ter)}
+  .tbar .crumb b{color:var(--text-sec)}
+
+  .wrap{max-width:1080px;margin:0 auto;padding:30px 24px 56px}
+
+  /* ===== header ===== */
+  .head{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:22px}
+  .head h1{margin:0;font-size:20px;font-weight:600;letter-spacing:-.4px}
+  .head .sub{margin-top:6px;color:var(--text-ter);font-size:12px}
+  .head .right{display:flex;gap:10px}
+  .btn{height:30px;padding:0 15px;border-radius:7px;font-size:12px;display:inline-flex;align-items:center;gap:7px;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--text-sec);transition:.15s var(--ease)}
+  .btn:hover{color:var(--text-pri);border-color:var(--brand);background:var(--bg-surface2)}
+  .btn.p{background:var(--brand);color:#fff;border-color:var(--brand);font-weight:600}
+  .btn.p:hover{background:var(--brand-hover)}
+  .btn:active{transform:scale(.97)}
+
+  /* ===== KPI strip ===== */
+  .kpis{display:flex;align-items:stretch;gap:0;margin:0 0 30px;border:1px solid var(--border);border-radius:12px;background:var(--bg-surface);overflow:hidden}
+  .kpi{position:relative;flex:1;padding:16px 20px;min-width:0}
+  .kpi+.kpi::before{content:'';position:absolute;left:0;top:18px;bottom:18px;width:1px;background:var(--border-soft)}
+  .kpi .k{font-size:11px;color:var(--text-ter)}
+  .kpi .v{font-size:24px;font-weight:650;font-family:var(--mono);letter-spacing:-.5px;margin-top:5px;line-height:1}
+  .kpi .v em{font-size:11px;font-style:normal;color:var(--text-ter);font-weight:400;margin-left:6px;font-family:-apple-system,'Microsoft YaHei'}
+  .kpi .v.blue{color:var(--brand-hover)} .kpi .v.green{color:var(--success)} .kpi .v.amber{color:var(--warning)}
+  .kpi.grow::after{content:'';position:absolute;left:20px;right:20px;bottom:0;height:2px;border-radius:2px;background:linear-gradient(90deg,var(--brand),transparent);opacity:0;transition:.3s var(--ease)}
+  .kpi.grow:hover::after{opacity:1}
+
+  /* ===== section ===== */
+  .sechead{display:flex;align-items:center;gap:12px;margin:0 0 12px}
+  .sechead h2{margin:0;font-size:12px;font-weight:600;color:var(--text-sec);letter-spacing:.4px}
+  .sechead .cnt{font-size:11px;color:var(--text-ter);font-family:var(--mono)}
+  .sechead .spacer{flex:1}
+  .filt{font-size:11px;color:var(--text-ter);display:inline-flex;align-items:center;gap:6px;cursor:pointer}
+  .filt b{color:var(--text-sec);font-weight:500}
+
+  /* ===== industry rows ===== */
+  .list{border:1px solid var(--border);border-radius:12px;background:var(--bg-surface);overflow:hidden}
+  .irow{position:relative;display:grid;grid-template-columns:minmax(230px,1.3fr) .9fr auto auto 190px;gap:20px;align-items:center;padding:18px 20px;cursor:pointer;border-bottom:1px solid var(--border-soft);transition:background .15s var(--ease)}
+  .irow:last-child{border-bottom:none}
+  .irow:hover{background:var(--rowhover)}
+  .irow::after{content:'→';position:absolute;right:18px;top:50%;transform:translateY(-50%);font-size:14px;color:var(--brand-hover);opacity:0;transition:.2s var(--ease)}
+  .irow:hover::after{opacity:1}
+  .ihead{display:flex;align-items:center;gap:12px;min-width:0}
+  .i-ico{width:34px;height:34px;border-radius:9px;flex:none;display:flex;align-items:center;justify-content:center;font-size:15px;border:1px solid var(--border);background:var(--bg-surface2)}
+  .i-name{font-size:13.5px;font-weight:600}
+  .i-tags{display:flex;gap:6px;margin-top:5px;flex-wrap:wrap}
+  .tag{font-size:10px;border-radius:4px;padding:1.5px 7px;font-weight:500}
+  .tag.src{color:var(--warning);border:1px solid var(--warning-bg);background:var(--warning-bg)}
+  .tag.from{color:var(--brand-hover);border:1px solid var(--brand-border);background:var(--brand-light)}
+  .i-meta{font-size:11px;color:var(--text-ter);line-height:1.8;min-width:0}
+  .i-meta b{color:var(--text-sec);font-weight:500}
+  .i-num{font-family:var(--mono);font-size:13px;color:var(--text-pri);text-align:right;min-width:38px}
+  .i-num small{display:block;font-family:-apple-system;font-size:10px;color:var(--text-ter);margin-top:2px}
+  .i-actions{display:flex;gap:8px;justify-content:flex-end}
+  .i-actions .btn{height:28px;padding:0 12px;font-size:11.5px}
+  .i-actions .btn.go{background:var(--brand);color:#fff;border-color:var(--brand);font-weight:600}
+  .i-actions .btn.go:hover{background:var(--brand-hover)}
+
+  .colhead{display:grid;grid-template-columns:minmax(230px,1.3fr) .9fr auto auto 190px;gap:20px;padding:0 20px 8px;font-size:10px;color:var(--text-ter);letter-spacing:.4px;text-transform:uppercase;align-items:end}
+  .colhead .r{text-align:right}
+
+  /* ===== footer ===== */
+  .note{margin-top:22px;font-size:11.5px;color:var(--text-ter);line-height:1.7;padding:13px 16px;border:1px dashed var(--brand-border);border-radius:10px;background:var(--brand-light)}
+  .foot{margin-top:20px;font-size:10.5px;color:var(--text-ter)}
+
+  /* motion */
+  @keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  .kpis{animation:rise .5s var(--ease) both}
+  .irow{animation:rise .5s var(--ease) both}
+  .irow:nth-child(2){animation-delay:.06s}.irow:nth-child(3){animation-delay:.12s}.irow:nth-child(4){animation-delay:.18s}
+  .irow:nth-child(5){animation-delay:.24s}
+</style>
+</head>
+<body>
+
+  <div class="tbar">
+    <div class="logo">Ng</div>
+    <div class="brand">Nginx 配置管理系统</div>
+    <div class="dim">/ · ops</div>
+    <div class="spacer"></div>
+    <div class="themes" title="切换主题">
+      <span class="tdot on" data-t="dark" title="纯黑"></span>
+      <span class="tdot" data-t="soft" title="软深"></span>
+      <span class="tdot" data-t="light" title="浅色"></span>
+    </div>
+    <div class="crumb">登录 › <b>行业管理</b></div>
+  </div>
+
+  <div class="wrap">
+    <div class="head">
+      <div>
+        <h1>行业管理</h1>
+        <div class="sub">各行业独立管理自己的 nginx / stream 配置文件，相互隔离；进入控制台后可按需修改与导出。</div>
+      </div>
+      <div class="right">
+        <span class="btn">☰ 视图 ▾</span>
+        <span class="btn p">＋ 新建行业（模板克隆）</span>
+      </div>
+    </div>
+
+    <div class="kpis">
+      <div class="kpi grow"><div class="k">行业总数</div><div class="v blue">4<em>个行业层</em></div></div>
+      <div class="kpi grow"><div class="k">nginx 配置</div><div class="v green">4<em>份</em></div></div>
+      <div class="kpi grow"><div class="k">stream 配置</div><div class="v green">4<em>份</em></div></div>
+      <div class="kpi grow"><div class="k">全网监听点</div><div class="v amber">29<em>个</em></div></div>
+    </div>
+
+    <div class="sechead">
+      <h2>行业列表</h2><span class="cnt">4 / 4</span>
+      <span class="spacer"></span>
+      <span class="filt">排序 <b>最近更新 ▾</b></span>
+    </div>
+
+    <div class="colhead">
+      <span>行业</span><span>归属 / 更新</span><span class="r">nginx 组</span><span class="r">stream</span><span class="r">操作</span>
+    </div>
+
+    <div class="list">
+      <!-- 海外货运 -->
+      <div class="irow" onclick="location.href='plan-c-real-conf.html?cb=industry'">
+        <div class="ihead">
+          <div class="i-ico" style="color:var(--brand-hover)">🚢</div>
+          <div>
+            <div class="i-name">海外货运</div>
+            <div class="i-tags"><span class="tag src">模板源</span></div>
+          </div>
+        </div>
+        <div class="i-meta">负责人 <b>张工</b><br />更新 <b>10-12</b> · 上游 <b>齐全</b></div>
+        <div class="i-num">22<small>server</small></div>
+        <div class="i-num">31<small>upstream</small></div>
+        <div class="i-actions">
+          <span class="btn" onclick="event.stopPropagation();alert('编辑行业基础信息')" title="编辑基础信息">基础信息</span>
+          <span class="btn go" onclick="event.stopPropagation();location.href='plan-c-real-conf.html?cb=industry'">进入</span>
+        </div>
+      </div>
+
+      <!-- 国内 -->
+      <div class="irow" onclick="location.href='plan-c-real-conf.html?cb=domestic'">
+        <div class="ihead">
+          <div class="i-ico" style="color:var(--success)">🏠</div>
+          <div>
+            <div class="i-name">国内</div>
+            <div class="i-tags"><span class="tag from">克隆自 · 海外货运</span></div>
+          </div>
+        </div>
+        <div class="i-meta">负责人 <b>李工</b><br />更新 <b>10-13</b> · 上游 <b>部分</b></div>
+        <div class="i-num">18<small>server</small></div>
+        <div class="i-num">24<small>upstream</small></div>
+        <div class="i-actions">
+          <span class="btn" onclick="event.stopPropagation();alert('编辑行业基础信息')">基础信息</span>
+          <span class="btn go" onclick="event.stopPropagation();location.href='plan-c-real-conf.html?cb=domestic'">进入</span>
+        </div>
+      </div>
+
+      <!-- 出租 -->
+      <div class="irow" onclick="location.href='plan-c-real-conf.html?cb=taxi'">
+        <div class="ihead">
+          <div class="i-ico" style="color:var(--warning)">🚕</div>
+          <div>
+            <div class="i-name">出租</div>
+            <div class="i-tags"><span class="tag from">克隆自 · 海外货运</span></div>
+          </div>
+        </div>
+        <div class="i-meta">负责人 <b>王工</b><br />更新 <b>10-13</b> · 上游 <b>部分</b></div>
+        <div class="i-num">16<small>server</small></div>
+        <div class="i-num">20<small>upstream</small></div>
+        <div class="i-actions">
+          <span class="btn" onclick="event.stopPropagation();alert('编辑行业基础信息')">基础信息</span>
+          <span class="btn go" onclick="event.stopPropagation();location.href='plan-c-real-conf.html?cb=taxi'">进入</span>
+        </div>
+      </div>
+
+      <!-- 公交 -->
+      <div class="irow" onclick="location.href='plan-c-real-conf.html?cb=bus'">
+        <div class="ihead">
+          <div class="i-ico" style="color:var(--text-sec)">🚌</div>
+          <div>
+            <div class="i-name">公交</div>
+            <div class="i-tags"><span class="tag from">克隆自 · 海外货运</span></div>
+          </div>
+        </div>
+        <div class="i-meta">负责人 <b>赵工</b><br />更新 <b>10-13</b> · 上游 <b>部分</b></div>
+        <div class="i-num">15<small>server</small></div>
+        <div class="i-num">19<small>upstream</small></div>
+        <div class="i-actions">
+          <span class="btn" onclick="event.stopPropagation();alert('编辑行业基础信息')">基础信息</span>
+          <span class="btn go" onclick="event.stopPropagation();location.href='plan-c-real-conf.html?cb=bus'">进入</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="note">流程：登录 → 行业管理（本页）→ 点任一行「进入」到该行业配置页（nginx + stream 双上下文）。「＋ 新建行业（模板克隆）」：选模板源 → 深拷贝 config_blocks / config_options / upstream / 映射 / 转发 → 生成初始配置，<b>克隆后完全独立</b>，可按需修改与导出。</div>
+    <div class="foot">本页为「登录后 · 行业管理落地页」精修草图 v2b · 演示数据 · 行点击可跳转 · 右上角圆点切换 纯黑/软深/浅色 主题。</div>
+  </div>
+  <script>
+    var dots=document.querySelectorAll('.tdot');
+    dots.forEach(function(d){d.addEventListener('click',function(){
+      var t=d.getAttribute('data-t');
+      document.body.setAttribute('data-theme', t==='dark'?'':t);
+      dots.forEach(function(x){x.classList.toggle('on', x===d)});
+    })});
+  </script>
+</body>
+</html>

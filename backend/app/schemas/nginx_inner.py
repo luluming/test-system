@@ -132,6 +132,12 @@ class OptionReorderRequest(BaseModel):
     ids: list[int]
 
 
+class BlockReorderRequest(BaseModel):
+    """同级块重排：parent_id 为 None 表示虚拟根下的顶级块。"""
+    parent_id: int | None = None
+    ids: list[int]
+
+
 # ---- 导出中心 ----
 
 class UpstreamException(BaseModel):
@@ -151,3 +157,21 @@ class ExportRequest(BaseModel):
 
 class ValidateRequest(BaseModel):
     content: str
+
+
+# ---- 配置版本快照 ----
+
+class NginxVersionCreate(BaseModel):
+    """保存版本请求：content 为渲染后的完整配置文本。"""
+
+    content: str = Field(min_length=1)
+
+
+class NginxVersionOut(BaseModel):
+    id: int
+    nginx_config_id: int
+    version: int
+    content: str
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)

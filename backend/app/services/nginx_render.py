@@ -177,6 +177,30 @@ def persist_tree(db: Session, config_id: int, root: dict) -> None:
             child["_sort"] = idx
             insert(row.id, child)
 
+    # 虚拟根顶层 KV（http/stream 块级裸指令）：落为一个 header="" 的顶层块。
+    # 先插入保证 id 排序在最前，与 mock 渲染「root.options 在 children 前」一致。
+    if root.get("options"):
+        root_block = ConfigBlock(
+            nginx_config_id=config_id,
+            parent_id=None,
+            scope=root["scope"],
+            header="",
+            sort_order=0,
+        )
+        db.add(root_block)
+        db.flush()
+        for o in root.get("options", []):
+            db.add(
+                ConfigOption(
+                    block_id=root_block.id,
+                    directive=o.get("directive", ""),
+                    value=o.get("value", ""),
+                    row_type=_row_type_of(o),
+                    is_free_text=bool(o.get("is_free_text")),
+                    sort_order=0,
+                )
+            )
+
     for idx, child in enumerate(root.get("children", [])):
         child["_sort"] = idx
         insert(None, child)
@@ -234,11 +258,19 @@ def build_config_dict(db: Session, config_id: int, context: str = "conf") -> dic
         }
 
     root_header = "stream" if context == "stream" else "http"
+    # 顶层虚拟根 KV 块（header="" 且 scope 同根）：并入 root.options，不进入 children
+    root_options: list[ConfigOption] = []
+    root_children: list[ConfigBlock] = []
+    for b in child_map.get(None, []):
+        if b.header == "" and b.scope == root_header and not child_map.get(b.id):
+            root_options.extend(opt_map.get(b.id, []))
+        else:
+            root_children.append(b)
     return {
         "scope": context,
         "header": root_header,
-        "children": [to_dict(b) for b in child_map.get(None, [])],
-        "options": [],
+        "children": [to_dict(b) for b in root_children],
+        "options": [_option_dict(o) for o in root_options],
     }
 
 

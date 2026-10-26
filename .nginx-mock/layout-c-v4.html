@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>方案 C v4 — 自由 KV 指令 + 嵌套 location 效果图</title>
+<style>
+  :root{
+    --bg-deep:#0a0a0c;--bg-deep-2:#0d0d10;--bg-sidebar:#111114;--bg-surface:#18181c;
+    --bg-surface-2:#202024;--bg-surface-3:#2a2a30;--bg-hover:#2e2e36;--bg-selected:#2a2a42;
+    --bg-input:#111115;--brand:#4a8af4;--brand-hover:#6ba8fa;--brand-light:rgba(74,138,244,.12);--brand-border:rgba(74,138,244,.25);
+    --success:#22c55e;--success-bg:rgba(34,197,94,.08);--success-border:rgba(34,197,94,.20);
+    --warning:#f59e0b;--warning-bg:rgba(245,158,11,.08);--warning-border:rgba(245,158,11,.20);
+    --error:#ef4444;--error-bg:rgba(239,68,68,.08);--error-border:rgba(239,68,68,.20);
+    --info:#4a8af4;--info-bg:rgba(74,138,244,.08);--info-border:rgba(74,138,244,.20);
+    --text-primary:#e8e8ea;--text-secondary:#b0b0bc;--text-tertiary:#808090;
+    --border-primary:#2a2a2e;--border-secondary:#222226;
+    --shadow-dropdown:0 8px 32px rgba(0,0,0,.45);--shadow-focus:0 0 0 3px rgba(74,138,244,.08);
+    --radius-xs:2px;--radius-sm:4px;--radius-md:6px;--radius-lg:8px;
+    --font-sans:-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
+    --font-mono:'JetBrains Mono','SF Mono','Menlo','Consolas',monospace;
+    --ease:cubic-bezier(.4,0,.2,1);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:var(--font-sans);background:var(--bg-deep);color:var(--text-primary);font-size:12.5px;height:100vh;overflow:hidden;}
+  .app{display:flex;flex-direction:column;height:100vh;}
+
+  .titlebar{height:36px;flex:0 0 36px;background:var(--bg-deep);border-bottom:1px solid var(--border-primary);display:flex;align-items:center;padding:0 16px;justify-content:space-between;}
+  .titlebar .left{display:flex;align-items:center;gap:12px;font-weight:600;font-size:12px;letter-spacing:-.3px;}
+  .titlebar .mid{font-size:11px;color:var(--text-tertiary);font-family:var(--font-mono);}
+  .titlebar .win{display:flex;gap:8px;}.win span{width:12px;height:12px;border-radius:50%;display:inline-block;}
+  .win .r{background:#ff5f57;}.win .y{background:#febc2e;}.win .g{background:#28c840;}
+
+  .scrim{display:flex;flex-direction:column;height:calc(100% - 36px);}
+
+  /* 顶级菜单 */
+  .menu{height:38px;flex:0 0 38px;background:var(--bg-surface);border-bottom:1px solid var(--border-primary);display:flex;align-items:center;padding:0 16px;gap:6px;}
+  .navi{display:flex;align-items:center;gap:8px;padding:0 14px;height:30px;border-radius:var(--radius-sm);color:var(--text-secondary);cursor:pointer;font-size:12.5px;border:1px solid transparent;}
+  .navi.on{background:var(--bg-selected);color:var(--text-primary);border-color:var(--brand-border);font-weight:500;}
+  .navi .c{font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);}
+
+  .main{flex:1;display:flex;min-height:0;}
+
+  /* 左资源树 */
+  .side{width:200px;flex:0 0 200px;background:var(--bg-sidebar);border-right:1px solid var(--border-primary);display:flex;flex-direction:column;min-height:0;}
+  .sh{font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px;padding:10px 16px 4px;font-weight:600;}
+  .t-item{display:flex;align-items:center;height:28px;padding:0 12px;border-radius:var(--radius-sm);color:var(--text-secondary);cursor:pointer;font-size:12px;margin:0 6px;gap:8px;}
+  .t-item.on{background:var(--bg-selected);color:var(--text-primary);}
+  .t-item .arrow{margin-left:auto;color:var(--text-tertiary);font-size:10px;}
+
+  /* 中间主从 */
+  .content{flex:1;display:flex;min-width:0;background:var(--bg-surface);}
+  .list{width:240px;flex:0 0 240px;border-right:1px solid var(--border-primary);display:flex;flex-direction:column;min-height:0;background:var(--bg-surface);}
+  .list-head{height:44px;flex:0 0 44px;border-bottom:1px solid var(--border-secondary);padding:0 14px;display:flex;align-items:center;justify-content:space-between;}
+  .search{height:30px;margin:10px 12px 4px;padding:0 10px;background:var(--bg-input);border:1px solid var(--border-primary);border-radius:var(--radius-sm);display:flex;align-items:center;gap:8px;}
+  .search input{background:none;border:none;outline:none;color:var(--text-primary);width:100%;font-size:12px;}
+  .row{display:flex;align-items:center;gap:8px;height:46px;padding:0 14px;cursor:pointer;border-left:3px solid transparent;transition:all .15s;}
+  .row.on{background:var(--bg-selected);border-left-color:var(--brand);}
+  .row .port{color:var(--brand);font-weight:600;font-family:var(--font-mono);}
+  .row .nm{font-family:var(--font-mono);font-size:12px;color:var(--text-primary);}
+  .tag{font-size:9px;padding:1px 7px;border-radius:3px;font-weight:500;}
+  .tag.pub{background:var(--success-bg);border:1px solid var(--success-border);color:var(--success);}
+  .tag.priv{background:var(--error-bg);border:1px solid var(--error-border);color:var(--error);}
+
+  /* 右侧详情 */
+  .detail{flex:1;display:flex;flex-direction:column;min-width:0;}
+  .dt-head{height:46px;flex:0 0 46px;border-bottom:1px solid var(--border-primary);padding:0 20px;display:flex;align-items:center;justify-content:space-between;background:var(--bg-sidebar);}
+  .btn{height:26px;padding:0 12px;font-size:11.5px;border-radius:var(--radius-sm);cursor:pointer;border:1px solid var(--border-primary);background:transparent;color:var(--text-secondary);display:flex;align-items:center;gap:5px;white-space:nowrap;}
+  .btn:hover{background:var(--bg-hover);color:var(--text-primary);border-color:var(--brand-border);}
+  .btn.primary{background:var(--brand);color:#fff;border-color:transparent;}
+  .btn.danger{background:var(--error);color:#fff;border-color:transparent;}
+  .dt-tabs{height:36px;flex:0 0 36px;border-bottom:1px solid var(--border-secondary);display:flex;padding:0 20px;}
+  .dtab{display:flex;align-items:center;padding:0 14px;font-size:12px;color:var(--text-secondary);cursor:pointer;border-right:1px solid var(--border-secondary);position:relative;position:relative;}
+  .dtab.on{color:var(--text-primary);}.dtab.on::after{content:'';position:absolute;bottom:0;left:0;right:0;height:2px;background:var(--brand);}
+  .dtab .bn{margin-left:6px;color:var(--text-tertiary);font-family:var(--font-mono);}
+
+  .dt-body{flex:1;overflow-y:auto;padding:18px 22px;}
+
+  .dsec{margin-bottom:22px;}
+  .dsec>h4{font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:10px;display:flex;align-items:center;gap:8px;}
+  .dsec>h4 .ctl{margin-left:auto;font-size:11px;color:var(--brand);cursor:pointer;letter-spacing:0;text-transform:none;}
+
+  /* KV 指令编辑器 */
+  .kv-card{border:1px solid var(--border-primary);border-radius:var(--radius-md);background:var(--bg-surface-2);overflow:hidden;margin-bottom:8px;}
+  .kv-card.loc{background:var(--bg-surface-2);}
+  .kv-loc-head{display:flex;align-items:center;gap:10px;padding:9px 12px;background:var(--bg-surface-3);border-bottom:1px solid var(--border-secondary);}
+  .kv-loc-head .lpath{font-family:var(--font-mono);font-size:12.5px;color:var(--info);font-weight:600;}
+  .kv-loc-head .lup{font-family:var(--font-mono);font-size:11px;color:var(--text-tertiary);}
+  .kv-loc-head .loc-acts{margin-left:auto;display:flex;gap:4px;}
+  .kv-rows{padding:4px 0;}
+  .kv-row{display:flex;align-items:center;gap:8px;padding:5px 12px;border-bottom:1px solid var(--border-secondary);}
+  .kv-row:last-child{border-bottom:none;}
+  .kv-row:hover{background:var(--bg-hover);}
+  .grip{color:var(--text-tertiary);cursor:grab;font-size:12px;user-select:none;}
+  .directive{width:190px;flex:0 0 190px;height:26px;background:var(--bg-input);border:1px solid var(--border-primary);border-radius:var(--radius-sm);padding:0 10px;font-family:var(--font-mono);font-size:11.5px;color:var(--brand-hover);display:flex;align-items:center;position:relative;}
+  .directive .caret{margin-left:auto;color:var(--text-tertiary);font-size:9px;}
+  .value{flex:1;height:26px;background:var(--bg-input);border:1px solid var(--border-primary);border-radius:var(--radius-sm);padding:0 10px;font-family:var(--font-mono);font-size:11.5px;color:var(--text-primary);display:flex;align-items:center;}
+  .set{color:var(--brand);font-family:var(--font-mono);font-size:11px;background:var(--bg-input);border:1px solid var(--border-primary);width:44px;flex:0 0 44px;border-radius:var(--radius-sm);padding:0 10px;}
+  .kv-acts{display:flex;gap:4px;}
+  .kv-acts .x{color:var(--text-tertiary);cursor:pointer;padding:2px 4px;font-size:12px;}
+  .kv-acts .x:hover{color:var(--error);}
+  .kv-add{display:flex;align-items:center;justify-content:center;padding:8px;color:var(--text-tertiary);cursor:pointer;font-size:11.5px;gap:6px;}
+  .kv-add:hover{color:var(--brand);}
+  /* 补全下拉 */
+  .ac{position:absolute;top:28px;left:0;right:0;background:var(--bg-surface-2);border:1px solid var(--border-primary);border-radius:var(--radius-sm);box-shadow:var(--shadow-dropdown);padding:4px;z-index:5;display:none;}
+  .kv-card .directive.show-ac .ac{display:block;}
+  .ac-item{display:flex;justify-content:space-between;padding:6px 10px;border-radius:var(--radius-sm);font-family:var(--font-mono);font-size:11px;color:var(--text-secondary);cursor:pointer;}
+  .ac-item.on{background:var(--brand-light);color:var(--text-primary);}
+  .ac-item .ctx{color:var(--text-tertiary);font-size:9px;}
+
+  /* 配置渲染预览 */
+  .render{background:var(--bg-deep);border:1px solid var(--border-secondary);border-radius:var(--radius-md);padding:14px 16px;font-family:var(--font-mono);font-size:11.5px;line-height:1.7;color:var(--text-secondary);white-space:pre;overflow:auto;max-height:260px;}
+  .k{color:#6ba8fa;}.n{color:#ff7b72;}.s{color:#7ee787;}.cm{color:#4a4a52;}.b1{color:var(--text-primary);}
+  .render-panel-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;}
+
+  .footer{height:28px;flex:0 0 28px;background:var(--bg-deep);border-top:1px solid var(--border-primary);display:flex;justify-content:space-between;align-items:center;padding:0 20px;font-size:11px;color:var(--text-tertiary);}
+  .label{position:absolute;top:8px;left:8px;background:var(--brand);color:#fff;font-size:10px;padding:2px 8px;border-radius:4px;font-weight:600;z-index:5;}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="titlebar">
+    <div class="left"><span style="font-size:16px;color:var(--text-secondary);">&#9776;</span><span style="width:6px;height:6px;border-radius:50%;background:var(--success);"></span><span>Nginx Console</span></div>
+    <div class="mid">api.example.com · :443</div>
+    <div class="win"><span class="r"></span><span class="y"></span><span class="g"></span></div>
+  </div>
+
+  <div class="scrim">
+    <div class="menu">
+      <span class="navi">&#128279; 全局拓扑</span>
+      <span class="navi on">&#128196; 配置文件</span>
+      <span class="navi">&#128230; Upstream 池 <span class="c">3</span></span>
+    </div>
+
+    <div class="main">
+      <!-- 左资源树 -->
+      <div class="side">
+        <div class="sh">监听点</div>
+        <div class="t-item on">:443 api.example.com</div>
+        <div class="t-item">:80 web.example.com</div>
+        <div class="t-item">:8443 admin.example.com</div>
+        <div class="sh" style="margin-top:10px;">Upstream</div>
+        <div class="t-item">api_backend <span class="arrow">2 节点</span></div>
+        <div class="t-item">web_pool</div>
+      </div>
+
+      <div class="content">
+        <!-- 列表 -->
+        <div class="list">
+          <div class="list-head"><b style="font-size:13px;">配置文件</b><span class="btn" style="height:24px;font-size:11px;">+ 新增</span></div>
+          <div class="search">&#128269;<input placeholder="搜索…"/></div>
+          <div class="row on"><span class="port">:443</span><span class="nm">api</span><span style="margin-left:auto;"><span class="tag pub">公网</span></span></div>
+          <div class="row"><span class="port">:80</span><span class="nm">web</span><span style="margin-left:auto;"><span class="tag pub">公网</span></span></div>
+          <div class="row"><span class="port">:8443</span><span class="nm">admin</span><span style="margin-left:auto;"><span class="tag priv">内网</span></span></div>
+        </div>
+
+        <!-- 详情 -->
+        <div class="detail">
+          <div class="dt-head">
+            <div style="display:flex;align-items:center;gap:10px;"><b style="font-family:var(--font-mono);">api.example.com.conf</b><span class="tag pub">公网开放</span></div>
+            <div style="display:flex;gap:6px;"><span class="btn">同步</span><span class="btn primary">保存</span></div>
+          </div>
+          <div class="dt-tabs">
+            <div class="dtab on">指令编辑</div>
+            <div class="dtab">域名映射 <span class="bn">2</span></div>
+            <div class="dtab">配置预览</div>
+          </div>
+
+          <div class="dt-body">
+            <!-- 指令编辑 -->
+            <div class="dsec">
+              <h4>server 指令 <span style="color:var(--text-tertiary);font-weight:400;">固定字段(结构化)</span><span class="ctl">+ 自由指令</span></h4>
+
+              <!-- 固定字段行 -->
+              <div class="kv-row" style="padding:5px 8px;width:fit-content;"><span class="set">listen</span><span class="value" style="max-width:340px;">443 ssl;</span></div>
+
+              <!-- server 级 KV 自由指令 -->
+              <div class="kv-card">
+                <div class="kv-rows">
+                  <div class="kv-row">
+                    <span class="grip">&#10022;</span>
+                    <div class="directive" onclick="toggleAc(this)">ssl_certificate<span class="caret">&#9662;</span>
+                      <div class="ac">
+                        <div class="ac-item on"><span>ssl_certificate</span><span class="ctx">server</span></div>
+                        <div class="ac-item"><span>ssl_certificate_key</span><span class="ctx">server</span></div>
+                        <div class="ac-item"><span>ssl_protocols</span><span class="ctx">server</span></div>
+                      </div>
+                    </div>
+                    <span class="set">=</span>
+                    <div class="value">/etc/ssl/api.pem</div>
+                    <div class="kv-acts"><span class="x">&#9998;</span><span class="x">&#10005;</span></div>
+                  </div>
+                  <div class="kv-row">
+                    <span class="grip">&#10022;</span>
+                    <div class="directive">add_header<span class="caret">&#9662;</span></div>
+                    <span class="set">=</span>
+                    <div class="value">X-Frame-Options "SAMEORIGIN"</div>
+                    <div class="kv-acts"><span class="x">&#9998;</span><span class="x">&#10005;</span></div>
+                  </div>
+                  <div class="kv-row">
+                    <span class="grip">&#10022;</span>
+                    <div class="directive">client_max_body_size<span class="caret">&#9662;</span></div>
+                    <span class="set">=</span>
+                    <div class="value">50m</div>
+                    <div class="kv-acts"><span class="x">&#9998;</span><span class="x">&#10005;</span></div>
+                  </div>
+                </div>
+                <div class="kv-add">+ 新增指令（支持补全）</div>
+              </div>
+            </div>
+
+            <!-- 嵌套 location -->
+            <div class="dsec">
+              <h4>location <span style="color:var(--text-tertiary);font-weight:400;">嵌套子实体</span><span class="ctl">+ 新增</span></h4>
+
+              <div class="kv-card loc">
+                <div class="kv-loc-head">
+                  <span class="lpath">location /api/</span>
+                  <span class="lup">&#8594; upstream api_backend</span>
+                  <span class="loc-acts"><span class="btn" style="height:22px;font-size:10px;">编辑</span><span class="btn" style="height:22px;font-size:10px;">&#10005;</span></span>
+                </div>
+                <div class="kv-rows">
+                  <div class="kv-row"><span class="grip">&#10022;</span><div class="directive">proxy_set_header<span class="caret">&#9662;</span></div><span class="set">=</span><div class="value">X-Real-IP $remote_addr</div><div class="kv-acts"><span class="x">&#10005;</span></div></div>
+                  <div class="kv-row"><span class="grip">&#10022;</span><div class="directive">proxy_set_header<span class="caret">&#9662;</span></div><span class="set">=</span><div class="value">Host $host</div><div class="kv-acts"><span class="x">&#10005;</span></div></div>
+                  <div class="kv-row"><span class="grip">&#10022;</span><div class="directive">proxy_connect_timeout<span class="caret">&#9662;</span></div><span class="set">=</span><div class="value">60s</div><div class="kv-acts"><span class="x">&#10005;</span></div></div>
+                </div>
+                <div class="kv-add">+ 新增指令</div>
+              </div>
+
+              <div class="kv-card loc">
+                <div class="kv-loc-head">
+                  <span class="lpath">location /admin/</span>
+                  <span class="lup">&#8594; 127.0.0.1:9000 (内网)</span>
+                  <span class="loc-acts"><span class="btn" style="height:22px;font-size:10px;">编辑</span><span class="btn" style="height:22px;font-size:10px;">&#10005;</span></span>
+                </div>
+                <div class="kv-rows">
+                  <div class="kv-row"><span class="grip">&#10022;</span><div class="directive">deny<span class="caret">&#9662;</span></div><span class="set">=</span><div class="value">all</div><div class="kv-acts"><span class="x">&#10005;</span></div></div>
+                </div>
+                <div class="kv-add">+ 新增指令</div>
+              </div>
+            </div>
+
+            <!-- 配置预览 -->
+            <div class="dsec">
+              <div class="render-panel-head"><h4 style="margin:0;">渲染预览</h4><span class="tag pub">nginx -t 通过</span></div>
+              <div class="render">server {
+    <span class="k">listen</span> <span class="n">443</span> ssl;
+    <span class="k">server_name</span> api.example.com;
+
+    <span class="k">ssl_certificate</span> /etc/ssl/api.pem;
+    <span class="k">add_header</span> X-Frame-Options <span class="s">"SAMEORIGIN"</span>;
+    <span class="k">client_max_body_size</span> <span class="n">50m</span>;
+
+    <span class="k">location</span> <span class="s">/api/</span> {
+        <span class="k">proxy_pass</span> http://api_backend;
+        <span class="k">proxy_set_header</span> X-Real-IP <span class="s">$remote_addr</span>;
+        <span class="k">proxy_connect_timeout</span> <span class="n">60s</span>;
+    }
+
+    <span class="k">location</span> <span class="s">/admin/</span> {
+        <span class="k">deny</span> all;
+    }
+}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <div><span style="color:var(--success);">&#9679; main</span></div>
+      <div>1 处未保存 · 配置 28 行</div>
+      <div>NGINX · conf.d</div>
+    </div>
+  </div>
+</div>
+
+<script>
+  function toggleAc(el){
+    document.querySelectorAll('.directive').forEach(function(d){d.classList.remove('show-ac')});
+    el.classList.add('show-ac');
+  }
+  document.addEventListener('click',function(e){
+    var isD=e.target.closest('.directive');
+    if(!isD)document.querySelectorAll('.directive').forEach(function(d){d.classList.remove('show-ac')});
+  });
+</script>
+</body>
+</html>

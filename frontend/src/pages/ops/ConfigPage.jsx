@@ -1,15 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useOps } from "./OpsContext";
 import * as lib from "../../lib/nginx-inner";
 import * as nginx from "../../api/nginx";
 import * as inner from "../../api/nginxInner";
-import { getToken } from "../../store/auth";
-
-/* holder：租约归属标识（token 前缀 8 位即可，不泄露完整凭据） */
-function makeHolder() {
-  const t = getToken() || "";
-  return t.slice(0, 8);
-}
 
 /* ---------- KV 行编辑器（用于块树 Tab / 块管理） ---------- */
 export function KvListEditor({ block, onPersist }) {
@@ -21,51 +14,69 @@ export function KvListEditor({ block, onPersist }) {
     inner.listDirectives().then((r) => setDirectives(r.data)).catch(() => {});
   }, []);
 
-  const optionsWith = useMemo(() => lib.orderedOptions(block.options || []), [block.options]);
+  // 原地变更（增/删/交换）后数组引用不变，不能 useMemo，否则列表不刷新
+  const optionsWith = lib.orderedOptions(block);
 
   const move = (o, dir) => {
     const arr = block.options;
     const i = arr.indexOf(o), j = i + dir;
     if (j < 0 || j >= arr.length) return;
     if (o.directive === "default") return; // default 不可移动
+    [arr[i], arr[j]] = [arr[j], arr[i]]; // 交换位置
     lib.setTree(lib.getTree());
     // 重排后落库
-    if (o.id) {
-      const ids = arr.map((x) => x.id).filter(Boolean);
+    const ids = arr.map((x) => x.id).filter(Boolean);
+    if (ids.length > 1) {
       inner.reorderOptions(block.id, ids).then(() => toast("顺序已保存", "ok")).catch(() => toast("重排保存失败", "err"));
     }
     onPersist && onPersist();
   };
 
-  const updateKV = (o, field, val) => {
-    o[field] = val;
+  /* 提交（新增/编辑统一入口，对齐 mock：单次提交，避免重复 createOption）
+   * onPersist 必须在持久化 API 成功后再调用：若同步提前触发镜像同步，
+   * mirror 复制的是旧 DB 状态（PUT 尚未生效），会造成 443/20551 竞态不一致。 */
+  const commitKV = (o, d, v) => {
+    o.directive = (d || "").trim();
+    o.value = (v || "").trim();
     o.raw = o.directive + (o.value ? " " + o.value : "");
     if (o.is_free_text || o.row_type === "raw") o.raw = o.directive;
     lib.setTree(lib.getTree());
-    if (o.id && (field === "directive" || field === "value")) {
-      inner.updateOption(o.id, { directive: o.directive, value: o.value }).then(() => toast("已保存", "ok")).catch(() => toast("保存失败", "err"));
+    if (o.id) {
+      inner.updateOption(o.id, { directive: o.directive, value: o.value })
+        .then(() => { onPersist && onPersist(); toast("已保存", "ok"); })
+        .catch(() => toast("保存失败", "err"));
+    } else if (o._new) {
+      inner.createOption({ block_id: block.id, directive: o.directive, value: o.value, row_type: o.row_type || "kv" })
+        .then((r) => { o.id = r.data.id; o._new = false; lib.setTree(lib.getTree()); onPersist && onPersist(); toast("已保存", "ok"); })
+        .catch(() => toast("新增 KV 保存失败", "err"));
+    } else {
+      onPersist && onPersist();
     }
-    onPersist && onPersist();
   };
 
   const removeKV = (o) => {
-    if (o.id) {
-      inner.deleteOption(o.id).then(() => {}).catch(() => {});
-    }
-    block.options = block.options.filter((x) => x !== o);
-    lib.setTree(lib.getTree());
-    onPersist && onPersist();
-    toast("已删除", "ok");
+    const removeLocal = () => {
+      block.options = block.options.filter((x) => x !== o);
+      lib.setTree(lib.getTree());
+      onPersist && onPersist();
+      toast("已删除", "ok");
+    };
+    if (o.id) inner.deleteOption(o.id).then(removeLocal).catch(removeLocal);
+    else removeLocal();
   };
 
   const addKV = () => {
     block.options.push({ directive: "", value: "", raw: "", _new: true });
     lib.setTree(lib.getTree());
     onPersist && onPersist();
+    toast("已新增 KV，编辑指令名与值后回车生效", "ok");
   };
 
   return (
     <div className="t-body">
+      <datalist id="directives-dl">
+        {directives.map((x) => <option key={x.name} value={x.name}>{x.description}</option>)}
+      </datalist>
       {optionsWith.map((o, oi) => (
         <KvRow
           key={o.id ?? `new-${oi}`}
@@ -76,7 +87,7 @@ export function KvListEditor({ block, onPersist }) {
           first={oi === 0}
           last={oi === optionsWith.length - 1}
           onMove={(d) => move(o, d)}
-          onUpdate={(f, v) => updateKV(o, f, v)}
+          onCommit={(d, v) => commitKV(o, d, v)}
           onRemove={() => removeKV(o)}
           canMoveDefault={o.directive !== "default"}
         />
@@ -86,8 +97,9 @@ export function KvListEditor({ block, onPersist }) {
   );
 }
 
-export function KvRow({ o, directives, isDefault, isComment, first, last, onMove, onUpdate, onRemove, canMoveDefault }) {
-  const [editing, setEditing] = useState(false);
+export function KvRow({ o, directives, isDefault, isComment, first, last, onMove, onCommit, onRemove, canMoveDefault }) {
+  // mock 对齐：新增行直接进入行内编辑（两个输入框），回车/失焦提交生效
+  const [editing, setEditing] = useState(o._new === true);
   const [d, setD] = useState(o.directive);
   const [v, setV] = useState(o.value);
 
@@ -96,21 +108,26 @@ export function KvRow({ o, directives, isDefault, isComment, first, last, onMove
   }
   const display = lib.rawText(o);
   if (editing) {
+    const doCommit = () => {
+      if (o._new && !String(d).trim()) return; // 新增行指令名不能为空，留待继续编辑
+      onCommit(d, v);
+      setEditing(false);
+    };
     return (
-      <div className="kv-row">
-        <input className="kv-edit-inline" list="directives-dl" value={d}
-          onChange={(e) => setD(e.target.value)} placeholder="指令名" />
-        <input className="kv-edit-inline" value={v} onChange={(e) => setV(e.target.value)} placeholder="值" />
-        <button className="t-op" title="保存" onClick={() => { onUpdate("directive", d); onUpdate("value", v); setEditing(false); }}>✓</button>
-        <button className="t-op" title="取消" onClick={() => { setD(o.directive); setV(o.value); setEditing(false); }}>✕</button>
+      <div className="kv-row kv-new">
+        <input className="kv-edit-inline" list="directives-dl" value={d} autoFocus={!!o._new}
+          onChange={(e) => setD(e.target.value)} placeholder="指令名"
+          onKeyDown={(e) => { if (e.key === "Enter") doCommit(); }} />
+        <input className="kv-edit-inline" value={v} onChange={(e) => setV(e.target.value)}
+          placeholder="值（可含参数，如 /api/ 或 http://…）"
+          onKeyDown={(e) => { if (e.key === "Enter") doCommit(); }} />
+        <button className="t-op" title="保存" onClick={() => { doCommit(); }}>✓</button>
+        {!o._new && <button className="t-op" title="取消" onClick={() => { setD(o.directive); setV(o.value); setEditing(false); }}>✕</button>}
       </div>
     );
   }
   return (
     <div className={`kv-row${isDefault ? " is-def" : ""}`} onClick={() => setEditing(true)} title="点击编辑">
-      <datalist id="directives-dl">
-        {directives.map((x) => <option key={x.name} value={x.name}>{x.description}</option>)}
-      </datalist>
       {isDefault ? <span className="tag2 def">default</span> : null}
       <span className="k">{o.directive}</span>{" "}
       {o.value ? <span className="v">{o.value}</span> : null}
@@ -126,13 +143,24 @@ export function KvRow({ o, directives, isDefault, isComment, first, last, onMove
 /* ---------- 块树可视化（BlockTree，只读基础；供块树 Tab 与块管理复用） ---------- */
 export function BlockTree({ onNodeClick, fullEdit }) {
   const ops = useOps();
-  const { tree, selected, setSelected, onPersist, toast } = ops;
+  const { tree, selected, setSelected, toast, configId, ctx, loadTree, syncMirrorsNow } = ops;
   const sel = selected;
   const root = tree[0];
-  const vis = useMemo(() => lib.buildTree(tree, null), [tree]);
+  const vis = useMemo(() => lib.buildTree(tree, sel), [tree, sel]);
+  // 树对象为原地变更，浅拷贝数组生成新引用即可触发 React 重渲染；编辑提交后自动触发镜像同步
+  const persist = () => {
+    ops.setTree([...(ops.tree || [])]);
+    syncMirrorsNow && syncMirrorsNow();
+  };
 
   if (!vis[0]) {
-    return <div className="empty-hint" style={{ padding: "48px 20px", color: "var(--text-ter)", fontSize: 12.5 }}>暂无块树</div>;
+    return (
+      <div className="empty-hint" style={{ padding: "40px 20px", color: "var(--text-ter)", fontSize: 12.5 }}>
+        <div>暂无块树</div>
+        <div style={{ marginTop: 6, fontSize: 11.5 }}>配置为空或加载失败，可重试加载，或在右上角「＋ 块」新增</div>
+        <button className="btn mini" style={{ marginTop: 12 }} onClick={() => loadTree && loadTree(configId, ctx)}>重新加载</button>
+      </div>
+    );
   }
 
   return (
@@ -142,7 +170,7 @@ export function BlockTree({ onNodeClick, fullEdit }) {
         root
         sel={sel}
         onPick={setSelected}
-        onPersist={onPersist || (() => {})}
+        onPersist={persist}
         kind={fullEdit ? "edit" : "view"}
         toast={toast}
       />
@@ -150,9 +178,12 @@ export function BlockTree({ onNodeClick, fullEdit }) {
   );
 }
 
-function TreeNode({ node, root, sel, onPick, onPersist, kind, toast, depth }) {
+function TreeNode({ node, root, sel, onPick, onPersist, kind, toast, depth, first, last, onMove }) {
   const ops = useOps();
   const [expanded, setExpanded] = useState(true);
+  const [addOpen, setAddOpen] = useState(false); // ＋子块 下拉菜单
+  const [editingHeader, setEditingHeader] = useState(false);
+  const [hdr, setHdr] = useState(node.header);
 
   const handleAddChild = (type) => {
     const hdr = type === "location" ? "location /" : type === "if" ? "if ($cond) {" : "limit_except GET {";
@@ -163,6 +194,39 @@ function TreeNode({ node, root, sel, onPick, onPersist, kind, toast, depth }) {
     inner.createBlock({ nginx_config_id: cfgId, parent_id: node.ref.id, scope: type, header: hdr })
       .then((r) => { nb.id = r.data.id; nb._new = false; onPersist && onPersist(); toast("已新增子块(" + type + ")", "ok"); })
       .catch(() => toast("子块保存失败", "err"));
+  };
+
+  /* 块头改名（mock：双击标题行内编辑，回车/失焦提交） */
+  const commitHeader = () => {
+    const h = (hdr || "").trim();
+    setEditingHeader(false);
+    if (!h || h === node.ref.header) return;
+    node.ref.header = h;
+    lib.setTree(lib.getTree());
+    if (node.ref.id) {
+      inner.updateBlock(node.ref.id, { header: h })
+        .then(() => { onPersist && onPersist(); toast("已改名", "ok"); })
+        .catch(() => toast("改名失败", "err"));
+    } else {
+      onPersist && onPersist();
+    }
+  };
+
+  /* 同级块重排（▲/▼）：在真实 children 数组内交换并落库 sort_order */
+  const moveChild = (c, dir) => {
+    const arr = node.ref.children;
+    const i = arr.indexOf(c.ref), j = i + dir;
+    if (j < 0 || j >= arr.length) return;
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+    lib.setTree(lib.getTree());
+    const ids = arr.map((x) => x.id).filter(Boolean);
+    if (ids.length > 1) {
+      inner.reorderBlocks(node.ref.id, ids)
+        .then(() => { onPersist && onPersist(); toast("顺序已保存", "ok"); })
+        .catch(() => toast("重排保存失败", "err"));
+    } else {
+      onPersist && onPersist();
+    }
   };
 
   const handleDeleteBlock = () => {
@@ -184,38 +248,44 @@ function TreeNode({ node, root, sel, onPick, onPersist, kind, toast, depth }) {
         <div className="t-head">
           <button className="t-op" style={{ width: 18 }} onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}>{expanded ? "▾" : "▸"}</button>
           <span className={`bkind ${node.kind}`}>{node.scope}</span>
-          <span>{node.header}</span>
+          {editingHeader ? (
+            <input className="hdr-edit" autoFocus value={hdr} onChange={(e) => setHdr(e.target.value)}
+              onClick={(e) => e.stopPropagation()}
+              onBlur={() => commitHeader()}
+              onKeyDown={(e) => { if (e.key === "Enter") commitHeader(); if (e.key === "Escape") { setHdr(node.header); setEditingHeader(false); } }} />
+          ) : (
+            <span className="hdr" title="双击改名" onDoubleClick={(e) => { e.stopPropagation(); setHdr(node.header); setEditingHeader(true); }}>{node.header}</span>
+          )}
           <span className="t-actions">
-            {kind === "edit" && node.scope === "server" && (
-              <button className="t-edit" onClick={(e) => { e.stopPropagation(); handleAddChild("location"); }}>＋location</button>
+            {kind === "edit" && ["server", "location", "if"].includes(node.scope) && (
+              <span className="add-wrap">
+                <button className="t-edit" onClick={(e) => { e.stopPropagation(); setAddOpen(!addOpen); }}>＋子块 ▾</button>
+                {addOpen && (
+                  <span className="sub-menu" onClick={(e) => e.stopPropagation()}>
+                    {["location", "if", "limit_except"].map((tp) => (
+                      <button key={tp} className="sub-it" onClick={() => { setAddOpen(false); handleAddChild(tp); }}>{tp}</button>
+                    ))}
+                  </span>
+                )}
+              </span>
+            )}
+            {kind === "edit" && !root && typeof onMove === "function" && (
+              <>
+                <button className="t-edit" title="上移" disabled={first} onClick={(e) => { e.stopPropagation(); onMove(-1); }}>▲</button>
+                <button className="t-edit" title="下移" disabled={last} onClick={(e) => { e.stopPropagation(); onMove(1); }}>▼</button>
+              </>
             )}
             {kind === "edit" && !root && (
               <button className="t-edit" style={{ color: "#ef4444" }} onClick={(e) => { e.stopPropagation(); handleDeleteBlock(); }}>✕</button>
             )}
           </span>
         </div>
-        {expanded && (
-          <div className="t-body">
-            {node.options.map((o, oi) => (
-              <KvRow
-                key={oi}
-                o={{ directive: o.directive, value: o.value, raw: o.raw, row_type: o.isRaw ? "raw" : "kv", is_free_text: o.isRaw, id: o.ref?.id, _new: o.isNew }}
-                directives={[]}
-                isDefault={o.isDefault}
-                isComment={false}
-                first={oi === 0} last={oi === node.options.length - 1}
-                onMove={() => {}}
-                onUpdate={() => {}}
-                onRemove={() => {}}
-                canMoveDefault={!o.isDefault}
-              />
-            ))}
-          </div>
-        )}
+        {expanded && <KvListEditor block={node.ref} onPersist={onPersist} />}
         {expanded && node.children && node.children.length > 0 && (
           <div className="t-body">
-            {node.children.map((c) => (
-              <TreeNode key={c.ref._id} node={c} root={false} sel={sel} onPick={onPick} onPersist={onPersist} kind={kind} toast={toast} depth={(depth || 0) + 1} />
+            {node.children.map((c, ci) => (
+              <TreeNode key={c.ref._id} node={c} root={false} sel={sel} onPick={onPick} onPersist={onPersist} kind={kind} toast={toast} depth={(depth || 0) + 1}
+                first={ci === 0} last={ci === node.children.length - 1} onMove={(dir) => moveChild(c, dir)} />
             ))}
           </div>
         )}
@@ -276,98 +346,8 @@ export function OverviewGrid({ onPickServer }) {
   );
 }
 
-/* ---------- ConfigPage：主从五 Tab ---------- */
-export default function ConfigPage() {
-  const ops = useOps();
-  const { configs, configId, setConfigId, ctx, setCtx, toast, tree, setTree, configId: cid } = ops;
-  const [tab, setTab] = useState("overview");
-  const [dms, setDms] = useState([]);
-  const [fps, setFps] = useState([]);
-  const [bps, setBps] = useState([]);
-  const [selectedServer, setSelectedServer] = useState(null);
-  const [holder, setHolder] = useState(null);
-  const heartbeatRef = useRef(null);
-
-  const activeConfig = configs.find((c) => c.id === configId);
-
-  // 加载各 Tab 数据
-  useEffect(() => {
-    if (!cid) return;
-    nginx.listDomainMappings(cid).then((r) => setDms(r.data)).catch(() => {});
-    nginx.listForwardPorts(cid).then((r) => setFps(r.data)).catch(() => {});
-    nginx.listBizPorts(cid).then((r) => setBps(r.data)).catch(() => {});
-  }, [cid]);
-
-  // 编辑租约心跳
-  useEffect(() => {
-    if (!cid) return;
-    const h = makeHolder();
-    setHolder(h);
-    const beat = () => inner.editHeartbeat(cid, h).catch(() => {});
-    beat();
-    heartbeatRef.current = setInterval(beat, 60000);
-    return () => {
-      if (heartbeatRef.current) clearInterval(heartbeatRef.current);
-      inner.editRelease(cid, h).catch(() => {});
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cid]);
-
-  return (
-    <div className="split" style={{ flex: 1, minHeight: 0 }}>
-      {/* 左 ListPanel */}
-      <div className="list-panel">
-        <input className="lp-search" placeholder="搜索配置…" />
-        <div className="lp-head">nginx 配置 ({configs.length})</div>
-        <div style={{ flex: 1, overflowY: "auto" }}>
-          {configs.map((c) => (
-            <div key={c.id} className={`lp-row${c.id === configId ? " on" : ""}`} onClick={() => setConfigId(c.id)}>
-              <div>
-                <div className="lp-nm">{c.name}</div>
-                <div className="lp-meta">v{c.version} · {c.enabled ? "启用" : "停用"}</div>
-              </div>
-              <span style={{ marginLeft: "auto" }} className="tag2 pub">{c.id}</span>
-            </div>
-          ))}
-          {configs.length === 0 && <div className="empty-hint">该行业暂无 nginx 配置</div>}
-        </div>
-      </div>
-
-      {/* 右 DetailPanel */}
-      <div className="detail-panel">
-        <div className="dtabs">
-          {[["overview", "概览"], ["domain", "域名映射"], ["forward", "转发规则"], ["biz", "业务端口"], ["tree", "块树"]].map(([k, lbl]) => (
-            <div key={k} className={`dtab${tab === k ? " on" : ""}`} onClick={() => setTab(k)}>{lbl}</div>
-          ))}
-        </div>
-        <div className="toolbar">
-          <button className="btn" onClick={() => toast("连通性测试：全部正常", "ok")}>测连</button>
-          <button className="btn" onClick={() => toast("已切换启用状态", "ok")}>启停</button>
-          <button className="btn" onClick={() => toast("reload 成功，配置已热载", "ok")}>重载</button>
-          <button className="btn" onClick={() => toast("nginx -t 校验通过", "ok")}>nginx -t</button>
-          <span className="spacer" />
-          <button className="btn" onClick={() => toast("块树已保存", "ok")}>保存</button>
-        </div>
-
-        <div className="ops-scroll">
-          {tab === "overview" && (
-            <div>
-              <StatBanner />
-              <OverviewGrid onPickServer={(b) => setSelectedServer(b)} />
-            </div>
-          )}
-          {tab === "domain" && <DomMapPanel dms={dms} industryId={cid} />}
-          {tab === "forward" && <ForwardPanel fps={fps} industryId={cid} />}
-          {tab === "biz" && <BizPanel bps={bps} industryId={cid} />}
-          {tab === "tree" && <div className="ops-scroll"><StatBanner /><BlockTree /></div>}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 /* ---------- 域名映射 ---------- */
-function DomMapPanel({ dms, industryId }) {
+export function DomMapPanel({ dms, industryId }) {
   const { toast } = useOps();
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({ domain: "", forward_tos: "", description: "", is_primary: false });
@@ -423,19 +403,13 @@ function DomMapPanel({ dms, industryId }) {
 }
 
 /* ---------- 转发规则 ---------- */
-function ForwardPanel({ fps, industryId }) {
+export function ForwardPanel({ fps, industryId }) {
   const { toast } = useOps();
-  const runTest = (id) => {
-    inner.testForwardPort(id).then((r) => {
-      const d = r.data || {};
-      toast(d.ok ? `连通正常 / ${d.host || ""} ${d.latency_ms != null ? d.latency_ms + "ms" : ""}` : `连通失败：${d.error || ""}`, d.ok ? "ok" : "err");
-    }).catch(() => toast("测试失败", "err"));
-  };
   return (
     <div>
       <div style={{ marginBottom: 10 }} className="chain-label">转发规则（转发端口 → 目标）</div>
       <table className="ov-tbl">
-        <thead><tr><th>监听端口</th><th>目标</th><th>类型</th><th>启用</th><th>操作</th></tr></thead>
+        <thead><tr><th>监听端口</th><th>目标</th><th>类型</th><th>启用</th></tr></thead>
         <tbody>
           {(fps || []).map((r) => (
             <tr key={r.id}>
@@ -443,34 +417,9 @@ function ForwardPanel({ fps, industryId }) {
               <td className="mono" style={{ color: "var(--text-sec)" }}>{r.upstream_target || r.target || "—"}</td>
               <td><span className="tag2 pub">{r.is_public ? "公网" : "内网"}</span></td>
               <td>{r.enabled ? <span className="status-dot ok" /> : <span className="status-dot" style={{ background: "var(--text-ter)" }} />}</td>
-              <td><button className="btn mini" onClick={() => runTest(r.id)}>测试</button></td>
             </tr>
           ))}
-          {!fps.length && <tr><td colSpan={5} className="empty-hint">暂无转发规则</td></tr>}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-/* ---------- 业务端口 ---------- */
-function BizPanel({ bps, industryId }) {
-  const ops = useOps();
-  const { toast, setView } = ops;
-  return (
-    <div>
-      <div style={{ marginBottom: 10 }} className="chain-label">业务端口列表</div>
-      <table className="ov-tbl">
-        <thead><tr><th>服务名</th><th>端口</th><th>公网开放</th></tr></thead>
-        <tbody>
-          {(bps || []).map((r) => (
-            <tr key={r.id}>
-              <td>{r.service_name || "—"}</td>
-              <td className="mono">{r.port}</td>
-              <td>{r.public_exposed ? <span className="tag2 pub">公网</span> : <span className="tag2 bare">内网</span>}</td>
-            </tr>
-          ))}
-          {!bps.length && <tr><td colSpan={3} className="empty-hint">暂无业务端口</td></tr>}
+          {!fps.length && <tr><td colSpan={4} className="empty-hint">暂无转发规则</td></tr>}
         </tbody>
       </table>
     </div>

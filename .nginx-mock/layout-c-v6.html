@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>方案 C v6 — 泛化块覆盖全部构造</title>
+<style>
+  :root{
+    --bg-deep:#0a0a0c;--bg-surface:#18181c;--bg-surface-2:#202024;--bg-surface-3:#2a2a30;
+    --bg-hover:#2e2e36;--bg-selected:#2a2a42;--bg-input:#111115;--bg-sidebar:#111114;
+    --brand:#4a8af4;--brand-hover:#6ba8fa;--brand-light:rgba(74,138,244,.12);--brand-border:rgba(74,138,244,.25);
+    --success:#22c55e;--success-bg:rgba(34,197,94,.08);--success-border:rgba(34,197,94,.20);
+    --warning:#f59e0b;--warning-bg:rgba(245,158,11,.08);--warning-border:rgba(245,158,11,.20);
+    --error:#ef4444;--error-bg:rgba(239,68,68,.08);--error-border:rgba(239,68,68,.20);
+    --info:#4a8af4;--info-bg:rgba(74,138,244,.08);--info-border:rgba(74,138,244,.20);
+    --purple:#a78bfa;--purple-bg:rgba(167,139,250,.08);--purple-border:rgba(167,139,250,.2);
+    --text-primary:#e8e8ea;--text-secondary:#b0b0bc;--text-tertiary:#808090;
+    --border-primary:#2a2a2e;--border-secondary:#222226;
+    --radius-xs:2px;--radius-sm:4px;--radius-md:6px;--radius-lg:8px;
+    --font-sans:-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
+    --font-mono:'JetBrains Mono','SF Mono','Menlo','Consolas',monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:var(--font-sans);background:var(--bg-deep);color:var(--text-primary);font-size:12.5px;overflow:hidden;height:100vh;}
+  .app{display:flex;flex-direction:column;height:100vh;}
+  .top{height:36px;flex:0 0 36px;background:var(--bg-deep);border-bottom:1px solid var(--border-primary);display:flex;align-items:center;padding:0 16px;justify-content:space-between;}
+  .pool{display:flex;gap:10px;align-items:center;height:calc(100% - 36px);padding:16px;overflow:auto;align-items:flex-start;}
+  .col{width:240px;flex:0 0 240px;display:flex;flex-direction:column;gap:12px;}
+  .col-hd{font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px;font-weight:600;}
+  .block{border:1px solid var(--border-primary);border-radius:var(--radius-md);background:var(--bg-surface-2);overflow:hidden;}
+  .block-head{display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--bg-surface-3);border-bottom:1px solid var(--border-secondary);}
+  .bkind{font-size:9px;padding:1px 7px;border-radius:var(--radius-xs);font-weight:600;letter-spacing:.4px;text-transform:uppercase;flex:0 0 auto;}
+  .bkind.map{background:var(--warning-bg);border:1px solid var(--warning-border);color:var(--warning);}
+  .bkind.geo{background:var(--success-bg);border:1px solid var(--success-border);color:var(--success);}
+  .bkind.split{background:var(--purple-bg);border:1px solid var(--purple-border);color:var(--purple);}
+  .bkind.if{background:var(--error-bg);border:1px solid var(--error-border);color:var(--error);}
+  .bkind.lf{background:var(--brand-light);border:1px solid var(--brand-border);color:var(--brand);}
+  .bkind.comment{background:transparent;border:1px solid var(--border-primary);color:var(--text-tertiary);}
+  .bkind.tt{background:var(--info-bg);border:1px solid var(--info-border);color:var(--info);}
+  .bhead{font-family:var(--font-mono);font-size:11px;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .badd{margin-left:auto;color:var(--text-tertiary);cursor:pointer;font-size:13px;padding:0 3px;flex:0 0 auto;}
+  .badd:hover{color:var(--brand);}
+  .kv-rows{padding:3px 0;}
+  .kv{display:flex;align-items:center;gap:6px;padding:4px 10px;border-bottom:1px solid var(--border-secondary);font-family:var(--font-mono);font-size:10.5px;}
+  .kv:last-child{border-bottom:none;}
+  .kv .d{color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .kv .v{color:var(--text-secondary);margin-left:auto;white-space:nowrap;}
+  .kv .t{flex:0 0 auto;margin-left:6px;font-size:8.5px;padding:0 5px;border-radius:3px;}
+  .kv .t.k1{background:var(--success-bg);color:var(--success);border:1px solid var(--success-border);}
+  .kv .t.k2{background:var(--purple-bg);color:var(--purple);border:1px solid var(--purple-border);}
+  .kv .t.k3{background:var(--warning-bg);color:var(--warning);border:1px solid var(--warning-border);}
+  .kv-cm{color:var(--text-tertiary);font-family:var(--font-mono);font-size:10.5px;padding:4px 10px;font-style:italic;}
+  .tag{font-size:9px;padding:1px 6px;border-radius:3px;font-weight:500;white-space:nowrap;}
+  .tag.pub{background:var(--success-bg);border:1px solid var(--success-border);color:var(--success);}
+  .hint{margin-left:14px;font-size:9.5px;color:var(--text-tertiary);line-height:1.5;}
+  .footer{height:28px;flex:0 0 28px;background:var(--bg-deep);border-top:1px solid var(--border-primary);display:flex;justify-content:space-between;align-items:center;padding:0 20px;font-size:11px;color:var(--text-tertiary);}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="top">
+    <div style="display:flex;align-items:center;gap:12px;"><b>Nginx Console</b><span style="font-size:11px;color:var(--text-tertiary);">泛化块 · 覆盖其余构造</span></div>
+    <div><span style="color:var(--success);">&#9679;</span> main</div>
+  </div>
+
+  <div class="pool">
+    <!-- 列 1 -->
+    <div class="col">
+      <div class="col-hd">条件映射块</div>
+      <div class="block">
+        <div class="block-head"><span class="bkind map">map</span><span class="bhead">$http_cookie → $cookie_to_delete</span><span class="badd">+</span></div>
+        <div class="kv-rows">
+          <div class="kv"><span class="d">~*uid=streamax(.*)</span><span class="v">"$1"</span><span class="t k3">正则</span></div>
+          <div class="kv"><span class="d">default</span><span class="v">$http_cookie</span><span class="t k1">default</span></div>
+        </div>
+      </div>
+      <div class="hint">map：条件→结果，default 置底</div>
+
+      <div class="block">
+        <div class="block-head"><span class="bkind geo">geo</span><span class="bhead">$remote_addr $country</span><span class="badd">+</span></div>
+        <div class="kv-rows">
+          <div class="kv"><span class="d">10.0.0.0/8</span><span class="v">"内网"</span><span class="t k1">IP段</span></div>
+          <div class="kv"><span class="d">default</span><span class="v">"外网"</span><span class="t k1">default</span></div>
+        </div>
+      </div>
+      <div class="hint">geo：IP段→变量，行内可用 IP/网段</div>
+
+      <div class="block">
+        <div class="block-head"><span class="bkind split">split_clients</span><span class="bhead">$remote_addr $grade</span><span class="badd">+</span></div>
+        <div class="kv-rows">
+          <div class="kv"><span class="d">50%</span><span class="v">"A组"</span><span class="t k2">占比</span></div>
+          <div class="kv"><span class="d">50%</span><span class="v">"B组"</span><span class="t k2">占比</span></div>
+        </div>
+      </div>
+      <div class="hint">split_clients：按比例分流/A-B</div>
+    </div>
+
+    <!-- 列 2 -->
+    <div class="col">
+      <div class="col-hd">条件 / 格式</div>
+      <div class="block">
+        <div class="block-head"><span class="bkind if">if</span><span class="bhead">($http_user_agent ~* "bot")</span><span class="badd">+</span></div>
+        <div class="kv-rows">
+          <div class="kv"><span class="d">return 403;</span><span class="v">directive</span></div>
+          <div class="kv"><span class="d">proxy_pass http://blocked;</span><span class="v">directive</span></div>
+        </div>
+      </div>
+      <div class="hint">if：嵌套块，子行仍走 KV；提示少用</div>
+
+      <div class="block">
+        <div class="block-head"><span class="bkind lf">log_format</span><span class="bhead">main</span><span class="badd">+</span></div>
+        <div class="kv-rows">
+          <div class="kv"><span class="d">'$remote_addr - $remote_user'</span><span class="t k1">字符串</span></div>
+          <div class="kv"><span class="d">'"$request" $status'</span><span class="t k1">字符串</span></div>
+        </div>
+      </div>
+      <div class="hint">log_format：名为 token 列表，每行一个 token</div>
+
+      <div class="block">
+        <div class="block-head"><span class="bkind tt">types</span><span class="bhead">(MIME)</span><span class="badd">+</span></div>
+        <div class="kv-rows">
+          <div class="kv"><span class="d">text/html</span><span class="v">html htm</span><span class="t k1">MIME</span></div>
+          <div class="kv"><span class="d">application/json</span><span class="v">json</span><span class="t k1">MIME</span></div>
+        </div>
+      </div>
+      <div class="hint">types：扩展名→MIME 映射（普通 KV 行即为 types）</div>
+
+      <div>
+        <div class="block">
+          <div class="block-head"><span class="bkind comment"># 注释</span><span class="badd">+</span></div>
+          <div class="kv-cm"># 备份节点 / 临时禁用流量进入 server 块</div>
+        </div>
+        <div class="hint">注释：独立发表，渲染时输出 # 行；可挂块或行</div>
+      </div>
+    </div>
+
+    <!-- 列 3 -->
+    <div class="col">
+      <div class="col-hd">容器 / 文件 / include</div>
+      <div class="block">
+        <div class="block-head"><span class="bkind comment">http</span><span class="bhead">顶层容器</span><span class="badd">+</span></div>
+        <div class="kv-rows">
+          <div class="kv"><span class="d">注：默认隐式 = 根容器</span><span class="v">可显式建模</span></div>
+        </div>
+      </div>
+      <div class="hint">http/stream/events：顶层容器，可将根显式化</div>
+
+      <div class="block">
+        <div class="block-head"><span class="bkind lf">include</span><span class="bhead">/etc/nginx/conf.d/*.conf</span><span class="badd">+</span></div>
+        <div class="kv-rows">
+          <div class="kv"><span class="d">conf.d/*.conf</span><span class="t k1">glob</span></div>
+          <div class="kv"><span class="d">snippets/ssl.conf</span><span class="t k1">file</span></div>
+        </div>
+      </div>
+      <div class="hint">include：引用外部文件/目录；支持跨配置拆分</div>
+
+      <div class="block">
+        <div class="block-head"><span class="bkind lf">多文件结构</span><span class="bhead">server 拆分</span><span class="badd">+</span></div>
+        <div class="kv-rows">
+          <div class="kv"><span class="d">api-base.conf</span><span class="v">基础段</span></div>
+          <div class="kv"><span class="d">location-*.conf</span><span class="v">按 location 拆</span></div>
+        </div>
+      </div>
+      <div class="hint">一个逻辑 server 可拆多文件（block 标记 belongsToFile）</div>
+
+      <div class="block">
+        <div class="block-head"><span class="bkind comment">原样行</span><span class="bhead">冷门指令兜底</span><span class="badd">+</span></div>
+        <div class="kv-rows">
+          <div class="kv"><span class="d">proxy_cache_path /tmp/cache levels=1:2 …</span><span class="v">原文</span><span class="t k3">raw</span></div>
+        </div>
+      </div>
+      <div class="hint">raw：完全冷门的指令可按"原文整行"直接内联，照录渲染，保证不漏</div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <div style="display:flex;gap:14px;"><span style="color:var(--success);">&#9679; main</span></div>
+    <div>泛化块：map / geo / split_clients / if / log_format / types / include / 注释 / raw</div>
+    <div>NGINX</div>
+  </div>
+</div>
+</body>
+</html>

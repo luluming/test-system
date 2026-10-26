@@ -150,3 +150,22 @@ class BizPortOut(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class MirrorPairCreate(BaseModel):
+    """创建镜像对请求：src_listen 为母本监听端口，dst_listen 为镜像端口。"""
+
+    src_listen: str = Field(min_length=1, max_length=32)
+    dst_listen: str = Field(min_length=1, max_length=32)
+
+
+class MirrorPairOut(BaseModel):
+    """镜像对响应。"""
+
+    id: int
+    nginx_config_id: int
+    src_listen: str
+    dst_listen: str
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)

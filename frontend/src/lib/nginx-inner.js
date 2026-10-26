@@ -15,16 +15,20 @@ const FILE_NAME = {
   conf: "businesscenter_nginx_CD_master.conf",
   stream: "businesscenter_nginx_CD_master.stream",
 };
+let fileName = ""; // 当前配置文件名：由工作台按 configId 设置（行业间不再写死）
+export function setFileName(n) { fileName = n; }
+export function getFileName() { return fileName || (FILE_NAME[CTX] || FILE_NAME.conf); }
 
 export function setCtx(c) { CTX = c; }
 export function getCtx() { return CTX; }
 export function setTree(t) { TREE = t; }
 export function getTree() { return TREE; }
 export function getMirrors() { return MIRRORS; }
+/* 镜像对由后端持久化配置（nginx_mirror_pairs）；加载后覆盖默认值，空对象表示无镜像对 */
+export function setMirrors(pairs) { MIRRORS = pairs || {}; }
 export function setSelected(n) { selected = n; }
 export function getSelected() { return selected; }
 export function getUpstreamSet() { return UPSTREAM_SET; }
-export function getFileName() { return FILE_NAME[CTX] || FILE_NAME.conf; }
 
 // ---- 基础工具（mock L996-997）----
 export function esc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
@@ -101,8 +105,14 @@ function refreshUpstreamSet() {
 /* 把后端 /tree 返回的嵌套 blocks 结构补 parent/raw/_id，构建模块状态；返回 [root] 与 parse() 同形 */
 export function normalizeTree(blocks, rootScope) {
   const root = { scope: rootScope || "http", header: rootScope === "stream" ? "stream" : "http", children: [], options: [], parent: null, level: -1 };
+  const rh = rootScope === "stream" ? "stream" : "http";
   (function attach(src, parent) {
     (src || []).forEach((b) => {
+      // 顶层虚拟根 KV 块（header="" 且 scope 同根、无子块）→ 并入 root.options
+      if (parent === root && b.scope === rh && !b.header && !(b.children || []).length) {
+        (b.options || []).forEach((o) => root.options.push(hydrateOption(o)));
+        return;
+      }
       const n = {
         id: b.id, scope: b.scope || "raw", header: b.header || "",
         children: [], options: (b.options || []).map(hydrateOption),
@@ -303,6 +313,28 @@ export function mirrorPortOf(srv) {
   return o ? String(o.value || "").replace(/;$/, "").split(/\s+/)[0] : null;
 }
 
+/* 镜像角色判定：返回 null（非镜像对）或 { role:"src"|"dst", peer: 对端端口 } */
+export function mirrorInfoOf(srv) {
+  const port = mirrorPortOf(srv);
+  if (port == null) return null;
+  if (MIRRORS[port]) return { role: "src", peer: MIRRORS[port] };
+  const hit = Object.keys(MIRRORS).find((k) => MIRRORS[k] === port);
+  if (hit) return { role: "dst", peer: hit };
+  return null;
+}
+
+/* 结构签名（listen 端口归一化，用于镜像对差异判定） */
+function sigOfNode(n) {
+  const parts = [n.scope + " " + (n.header || "")];
+  (n.options || []).forEach((o) => {
+    if (o.directive === "listen") parts.push("listen@PORT");
+    else parts.push(o.directive + "=" + String(o.value != null ? o.value : ""));
+  });
+  (n.children || []).forEach((c) => parts.push(sigOfNode(c)));
+  return parts.join("\n");
+}
+export function mirrorSigOf(srv) { return sigOfNode(srv); }
+
 function findServerByListen(port) {
   const a = TREE[0].children;
   for (let i = 0; i < a.length; i++) { if (a[i].scope === "server" && mirrorPortOf(a[i]) === port) return a[i]; }
@@ -475,6 +507,15 @@ export function exportLines(tree, cfg) {
       if (!sslOn) {
         if (SSL_DROP.test(dd)) return;
         if (dd === "listen") { raw = (dd + " " + val).replace(/\bssl\b/g, " ").replace(/\s+/g, " ").trim(); }
+      } else if (dd === "listen") {
+        // SSL 开启时：listen 443 自动补 ssl http2（已有则不重复添加）
+        const m = String(val || "").trim().match(/^(\d+)\b(.*)$/);
+        if (m && m[1] === "443") {
+          const parts = (m[2] || "").split(/\s+/).filter(Boolean);
+          if (!parts.includes("ssl")) parts.push("ssl");
+          if (!parts.includes("http2")) parts.push("http2");
+          raw = "listen " + m[1] + (parts.length ? " " + parts.join(" ") : "");
+        }
       }
       isDef = (dd === "default");
       const r = (dd === "server_name") ? applyDomains(raw.replace(/;\s*$/, "").trim(), domNew) : { raw: raw.replace(/;\s*$/, "").trim(), changed: false, orig: null };

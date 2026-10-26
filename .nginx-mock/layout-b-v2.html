@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>方案 B v2 — 卡片式监听点 · 细化版</title>
+<style>
+  :root{
+    --bg-deep:#0a0a0c;--bg-deep-2:#0d0d10;--bg-sidebar:#111114;--bg-surface:#18181c;
+    --bg-surface-2:#202024;--bg-surface-3:#2a2a30;--bg-hover:#2e2e36;--bg-selected:#2a2a42;
+    --bg-input:#111115;--brand:#4a8af4;--brand-hover:#6ba8fa;--brand-active:#2d6fd9;
+    --brand-light:rgba(74,138,244,.12);--brand-border:rgba(74,138,244,.25);--brand-glow:rgba(74,138,244,.08);
+    --success:#22c55e;--success-bg:rgba(34,197,94,.08);--success-border:rgba(34,197,94,.20);
+    --warning:#f59e0b;--warning-bg:rgba(245,158,11,.08);--warning-border:rgba(245,158,11,.20);
+    --error:#ef4444;--error-bg:rgba(239,68,68,.08);--error-border:rgba(239,68,68,.20);
+    --info:#4a8af4;--info-bg:rgba(74,138,244,.08);--info-border:rgba(74,138,244,.20);
+    --text-primary:#e8e8ea;--text-secondary:#b0b0bc;--text-tertiary:#808090;
+    --border-primary:#2a2a2e;--border-secondary:#222226;
+    --shadow-dropdown:0 8px 32px rgba(0,0,0,.45);--shadow-modal:0 24px 64px rgba(0,0,0,.50);--shadow-focus:0 0 0 3px rgba(74,138,244,.08);
+    --radius-xs:2px;--radius-sm:4px;--radius-md:6px;--radius-lg:8px;
+    --font-sans:-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
+    --font-mono:'JetBrains Mono','SF Mono','Menlo','Consolas',monospace;
+    --ease:cubic-bezier(.4,0,.2,1);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:var(--font-sans);background:var(--bg-deep);color:var(--text-primary);font-size:12.5px;height:100vh;overflow:hidden;}
+  .app{display:flex;flex-direction:column;height:100vh;}
+  .titlebar{height:36px;flex:0 0 36px;background:var(--bg-deep);border-bottom:1px solid var(--border-primary);display:flex;align-items:center;padding:0 16px;justify-content:space-between;}
+  .titlebar .left{display:flex;align-items:center;gap:12px;font-weight:600;font-size:12px;letter-spacing:-.3px;}
+  .titlebar .mid{font-size:11px;color:var(--text-tertiary);font-family:var(--font-mono);}
+  .titlebar .win{display:flex;gap:8px;}.win span{width:12px;height:12px;border-radius:50%;display:inline-block;}
+  .win .r{background:#ff5f57;}.win .y{background:#febc2e;}.win .g{background:#28c840;}
+
+  .main{flex:1;display:flex;min-height:0;}
+
+  /* 左筛选 */
+  .side{width:200px;flex:0 0 200px;background:var(--bg-sidebar);border-right:1px solid var(--border-primary);display:flex;flex-direction:column;min-height:0;}
+  .side-head{padding:10px 16px;font-size:13px;font-weight:500;border-bottom:1px solid var(--border-secondary);color:var(--text-secondary);}
+  .side-body{flex:1;overflow-y:auto;padding:8px 8px;}
+  .f{display:flex;align-items:center;height:30px;padding:0 10px;border-radius:var(--radius-sm);color:var(--text-secondary);cursor:pointer;margin-bottom:2px;justify-content:space-between;font-size:12px;}
+  .f:hover{background:var(--bg-hover);color:var(--text-primary);}
+  .f.on{background:var(--bg-selected);color:var(--text-primary);}
+  .f .cnt{font-family:var(--font-mono);font-size:11px;color:var(--text-tertiary);}
+  .f .badge{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:8px;}
+  .f .badge.g{background:var(--success);}.f .badge.n{background:var(--text-tertiary);}.f .badge.b{background:var(--brand);}
+  .grp{font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px;margin:14px 10px 6px;font-weight:600;}
+  .side-foot{flex:0 0 28px;border-top:1px solid var(--border-secondary);display:flex;align-items:center;padding:0 12px;font-size:11px;color:var(--text-tertiary);font-family:var(--font-mono);}
+
+  .content{flex:1;background:var(--bg-surface);display:flex;flex-direction:column;min-width:0;position:relative;}
+  .toolbar{height:48px;flex:0 0 48px;background:var(--bg-surface);border-bottom:1px solid var(--border-primary);display:flex;align-items:center;padding:0 16px;gap:12px;justify-content:space-between;}
+  .tb-l{display:flex;align-items:center;gap:12px;}
+  .tb-title{font-size:13px;font-weight:500;color:var(--text-primary);}
+  .from-cur{display:flex;gap:6px;background:var(--bg-input);border:1px solid var(--border-primary);border-radius:var(--radius-sm);padding:3px;}
+  .fc{height:24px;padding:0 10px;font-size:11.5px;border-radius:3px;cursor:pointer;display:flex;align-items:center;color:var(--text-secondary);}
+  .fc:hover{color:var(--text-primary);}
+  .fc.on{background:var(--bg-surface-3);color:var(--text-primary);}
+  .search{display:flex;align-items:center;gap:8px;height:30px;background:var(--bg-input);border:1px solid var(--border-primary);border-radius:var(--radius-sm);padding:0 10px;width:200px;}
+  .search input{background:transparent;border:none;outline:none;color:var(--text-primary);font-size:12px;width:100%;}
+  .btn{height:28px;padding:0 14px;font-size:12px;border-radius:var(--radius-sm);cursor:pointer;border:1px solid var(--border-primary);background:transparent;color:var(--text-secondary);display:flex;align-items:center;gap:6px;transition:all .15s;white-space:nowrap;}
+  .btn:hover{background:var(--bg-hover);color:var(--text-primary);border-color:var(--border-focus,var(--brand-border));}
+  .btn:active{transform:scale(.97);}
+  .btn.primary{background:var(--brand);color:#fff;border-color:transparent;}
+  .btn.primary:hover{background:var(--brand-hover);box-shadow:0 0 20px rgba(74,138,244,.18);}
+  .btn.icon{width:28px;padding:0;justify-content:center;}
+
+  /* 统计条 */
+  .stats{height:40px;flex:0 0 40px;background:var(--bg-surface);border-bottom:1px solid var(--border-secondary);display:flex;align-items:center;padding:0 16px;gap:24px;}
+  .stat{display:flex;align-items:baseline;gap:6px;}
+  .stat b{font-family:var(--font-mono);font-size:17px;font-weight:600;}
+  .stat b.g{color:var(--success);}.stat b.o{color:var(--warning);}.stat b.r{color:var(--error);}.stat b.b{color:var(--brand);}
+  .stat .l{font-size:11px;color:var(--text-tertiary);}
+  .stat.dev{flex:1;text-align:right;}
+
+  .cards{flex:1;overflow-y:auto;padding:16px;display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;align-content:start;}
+  .card{background:var(--bg-surface-2);border:1px solid var(--border-primary);border-radius:var(--radius-lg);display:flex;flex-direction:column;overflow:hidden;transition:all .18s var(--ease);cursor:pointer;position:relative;}
+  .card:hover{transform:translateY(-2px);border-color:var(--brand-border);box-shadow:var(--shadow-dropdown);}
+  .card.hot::before{content:'';position:absolute;inset:0;background:var(--brand-glow);pointer-events:none;}
+  .card.alert{border-color:var(--error-border);}
+  .card.alert .head-strip{background:var(--error);}
+  .head-strip{height:3px;flex:0 0 3px;background:var(--border-secondary);}
+  .card-head{height:48px;flex:0 0 48px;padding:0 14px;display:flex;align-items:center;justify-content:space-between;gap:8px;}
+  .ch-l{display:flex;align-items:center;gap:10px;min-width:0;}
+  .port-b{font-family:var(--font-mono);font-weight:600;font-size:14px;background:var(--brand-light);border:1px solid var(--brand-border);color:var(--brand);border-radius:var(--radius-sm);padding:2px 10px;flex:0 0 auto;}
+  .host{font-family:var(--font-mono);font-size:12px;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .ch-r{display:flex;gap:6px;align-items:center;flex:0 0 auto;}
+  .tag{font-size:10px;font-weight:500;padding:2px 8px;border-radius:var(--radius-xs);white-space:nowrap;}
+  .tag.pub{background:var(--success-bg);border:1px solid var(--success-border);color:var(--success);}
+  .tag.priv{background:var(--error-bg);border:1px solid var(--error-border);color:var(--error);}
+  .tag.run{background:var(--success-bg);border:1px solid var(--success-border);color:var(--success);}
+  .tag.stopped{background:transparent;border:1px solid var(--border-primary);color:var(--text-tertiary);}
+  .tag.warn{background:var(--warning-bg);border:1px solid var(--warning-border);color:var(--warning);}
+  .card-body{padding:12px 14px;display:flex;flex-direction:column;gap:12px;flex:1;}
+  .sec{margin-bottom:8px;}
+  .sec-label{font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:6px;display:flex;align-items:center;gap:6px;}
+  .sec-label .n{color:var(--text-tertiary);font-weight:400;}
+  .domains{display:flex;flex-wrap:wrap;gap:6px;}
+  .dom{font-family:var(--font-mono);font-size:11px;background:var(--bg-surface-3);border:1px solid var(--info-border);color:var(--info);border-radius:var(--radius-sm);padding:2px 8px;}
+  .dom.primary{color:var(--text-primary);border-color:var(--border-primary);}
+  .forwards{display:flex;flex-direction:column;gap:6px;}
+  .fw{display:flex;align-items:center;justify-content:space-between;background:var(--bg-surface);border:1px solid var(--border-secondary);border-radius:var(--radius-sm);padding:5px 8px;font-family:var(--font-mono);font-size:11px;gap:8px;}
+  .fw .path{border-radius:3px;padding:0 6px;font-size:10.5px;background:var(--bg-surface-3);color:var(--text-primary);font-weight:500;flex:0 0 auto;}
+  .fw .up{color:var(--text-tertiary);margin-left:auto;white-space:nowrap;}
+  .fw .expo{flex:0 0 auto;font-size:9px;}
+  .ports{display:flex;flex-wrap:wrap;gap:6px;}
+  .pc{font-family:var(--font-mono);font-size:11px;background:var(--bg-surface);border:1px solid var(--border-secondary);border-radius:var(--radius-sm);padding:3px 8px;display:flex;align-items:center;gap:5px;color:var(--text-primary);}
+  .pc.on{border-color:var(--success-border);background:var(--success-bg);}
+  .pc.off{color:var(--text-tertiary);}
+  .pc .s{width:6px;height:6px;border-radius:50%;display:inline-block;}
+  .pc.on .s{background:var(--success);box-shadow:0 0 4px var(--success);}
+  .pc.off .s{background:var(--text-tertiary);}
+  .card-foot{height:40px;flex:0 0 40px;background:var(--bg-surface);border-top:1px solid var(--border-secondary);padding:0 12px;display:flex;align-items:center;gap:6px;justify-content:flex-end;}
+  .card-foot .btn{height:26px;padding:0 12px;font-size:11.5px;}
+  .card-foot .spacer{flex:1;}
+  .card-foot .ovr{font-size:10.5px;color:var(--text-tertiary);font-family:var(--font-mono);}
+
+  /* 详情抽屉 */
+  .drawer{position:absolute;top:0;right:0;bottom:0;width:420px;background:var(--bg-sidebar);border-left:1px solid var(--border-primary);box-shadow:var(--shadow-modal);transform:translateX(100%);transition:transform .28s var(--ease);display:flex;flex-direction:column;z-index:20;max-width:90%;}
+  .drawer.open{transform:translateX(0);}
+  .dw-head{height:48px;flex:0 0 48px;border-bottom:1px solid var(--border-secondary);padding:0 16px;display:flex;align-items:center;justify-content:space-between;}
+  .dw-head h4{font-size:14px;font-weight:600;font-family:var(--font-mono);}
+  .dw-head .close{cursor:pointer;color:var(--text-tertiary);font-size:16px;padding:4px;}
+  .dw-head .close:hover{color:var(--text-primary);}
+  .dw-body{flex:1;overflow-y:auto;padding:16px;}
+  .dw .dsec{margin-bottom:16px;}
+  .dw .dsec>h5{font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:8px;}
+  .fld{display:flex;flex-direction:column;gap:4px;margin-bottom:12px;}
+  .fld .l{font-size:11px;color:var(--text-tertiary);}
+  .fld .i{height:32px;background:var(--bg-input);border:1px solid var(--border-primary);border-radius:var(--radius-sm);padding:0 12px;font-family:var(--font-mono);font-size:12px;color:var(--text-primary);display:flex;align-items:center;}
+  .tgl{width:38px;height:20px;border-radius:10px;background:var(--bg-surface-3);border:1px solid var(--border-primary);position:relative;cursor:pointer;}
+  .tgl.on{background:var(--success);border-color:transparent;}
+  .tgl::after{content:'';position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#fff;transition:all .15s var(--ease);}
+  .tgl.on::after{left:20px;}
+  .sw-label{display:flex;align-items:center;justify-content:space-between;}
+  .dw-foot{height:56px;flex:0 0 56px;border-top:1px solid var(--border-secondary);padding:0 16px;display:flex;align-items:center;gap:8px;justify-content:flex-end;background:var(--bg-surface);}
+
+  /* toast */
+  .toast{position:absolute;bottom:34px;right:24px;background:var(--bg-surface-2);border-left:4px solid var(--success);box-shadow:var(--shadow-dropdown);border-radius:var(--radius-md);padding:10px 16px;min-width:260px;font-size:11.5px;color:var(--text-primary);transform:translateY(20px);opacity:0;transition:all .25s var(--ease);z-index:30;}
+  .toast.show{transform:translateY(0);opacity:1;}
+
+  .footer{height:28px;flex:0 0 28px;background:var(--bg-deep);border-top:1px solid var(--border-primary);display:flex;justify-content:space-between;align-items:center;padding:0 20px;font-size:11px;color:var(--text-tertiary);}
+  .footer .e{color:var(--error);}.footer .w{color:var(--warning);}
+  .label{position:absolute;top:8px;left:8px;background:var(--brand);color:#fff;font-size:10px;padding:2px 8px;border-radius:4px;font-weight:600;z-index:5;}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="titlebar">
+    <div class="left"><span style="font-size:16px;color:var(--text-secondary);cursor:pointer;">&#9776;</span><span style="width:6px;height:6px;border-radius:50%;background:var(--success);box-shadow:0 0 4px var(--success);"></span><span>Nginx Console</span></div>
+    <div class="mid">conf.d / production</div>
+    <div class="win"><span class="r"></span><span class="y"></span><span class="g"></span></div>
+  </div>
+
+  <div class="main">
+    <!-- 左侧筛选 -->
+    <div class="side">
+      <div class="side-head">拓扑筛选</div>
+      <div class="side-body">
+        <div class="grp">视图</div>
+        <div class="f on"><span><span class="badge b"></span>全部监听点</span><span class="cnt">6</span></div>
+        <div class="grp">环境</div>
+        <div class="f"><span>生产</span><span class="cnt">4</span></div>
+        <div class="f"><span>实验</span><span class="cnt">2</span></div>
+        <div class="grp">公网状态</div>
+        <div class="f"><span><span class="badge g"></span>公网开放</span><span class="cnt">4</span></div>
+        <div class="f"><span><span class="badge n"></span>仅内网</span><span class="cnt">2</span></div>
+        <div class="f"><span>停止中</span><span class="cnt">2</span></div>
+        <div class="grp">站点分组</div>
+        <div class="f"><span>api</span><span class="cnt">3</span></div>
+        <div class="f"><span>web</span><span class="cnt">2</span></div>
+        <div class="f"><span>admin</span><span class="cnt">1</span></div>
+      </div>
+      <div class="side-foot">6 监听点 · 4 公网</div>
+    </div>
+
+    <!-- 内容区 -->
+    <div class="content">
+      <div class="toolbar">
+        <div class="tb-l">
+          <span class="tb-title">监听点</span>
+          <div class="from-cur">
+            <span class="fc on">全部</span><span class="fc">公网</span><span class="fc">内网</span><span class="fc">异常</span>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <div class="search">&#128269;<input placeholder="搜索域名 / 端口 / 站点…"/></div>
+          <span class="btn icon" title="刷新">&#8635;</span>
+          <span class="btn icon" title="网格/列表">&#9636;</span>
+          <span class="btn primary">+ 新增监听点</span>
+        </div>
+      </div>
+
+      <div class="stats">
+        <div class="stat"><b class="b">8</b><span class="l">域名映射</span></div>
+        <div class="stat"><b class="b">12</b><span class="l">转发规则</span></div>
+        <div class="stat"><b class="g">4</b><span class="l">公网端口</span></div>
+        <div class="stat"><b class="n" style="color:var(--text-secondary);">10</b><span class="l">内网端口</span></div>
+        <div class="stat"><b class="o">1</b><span class="l">告警</span></div>
+        <div class="stat dev"><span class="l">最后同步 09:31 · &#9679; 已连接</span></div>
+      </div>
+
+      <div class="cards">
+        <!-- 卡片 1 :443 正常 公网 -->
+        <div class="card">
+          <div class="head-strip"></div>
+          <div class="card-head">
+            <div class="ch-l"><span class="port-b">:443</span><span class="host">api.example.com</span></div>
+            <div class="ch-r"><span class="tag pub">公网</span><span class="tag run">&#9679; 运行</span></div>
+          </div>
+          <div class="card-body">
+            <div class="sec"><div class="sec-label">域名映射 <span class="n">2</span></div>
+              <div class="domains"><span class="dom primary">api.example.com</span><span class="dom">api.example.net</span></div>
+            </div>
+            <div class="sec"><div class="sec-label">转发规则 <span class="n">2</span></div>
+              <div class="forwards">
+                <div class="fw"><span class="path">/api/</span><span class="up">&#8594; 127.0.0.1:8000</span><span class="tag pub expo">公网</span></div>
+                <div class="fw"><span class="path">/admin/</span><span class="up">&#8594; 127.0.0.1:9000</span><span class="tag priv expo">内网</span></div>
+              </div>
+            </div>
+            <div class="sec"><div class="sec-label">业务端口</div>
+              <div class="ports"><span class="pc on"><span class="s"></span>:8000</span><span class="pc off"><span class="s"></span>:9000</span></div>
+            </div>
+          </div>
+          <div class="card-foot"><span class="ovr">Reload 09:31</span><span class="spacer"></span><span class="btn">测试</span><span class="btn">Reload</span><span class="btn primary" onclick="openDrawer()">编辑</span></div>
+        </div>
+
+        <!-- 卡片 2 :80 停止 公网 -->
+        <div class="card">
+          <div class="head-strip"></div>
+          <div class="card-head">
+            <div class="ch-l"><span class="port-b">:80</span><span class="host">web.example.com</span></div>
+            <div class="ch-r"><span class="tag pub">公网</span><span class="tag stopped">&#9675; 停止</span></div>
+          </div>
+          <div class="card-body">
+            <div class="sec"><div class="sec-label">域名映射 <span class="n">1</span></div>
+              <div class="domains"><span class="dom primary">web.example.com</span></div>
+            </div>
+            <div class="sec"><div class="sec-label">转发规则 <span class="n">1</span></div>
+              <div class="forwards"><div class="fw"><span class="path">/</span><span class="up">&#8594; 127.0.0.1:8080</span><span class="tag pub expo">公网</span></div></div>
+            </div>
+            <div class="sec"><div class="sec-label">业务端口</div><div class="ports"><span class="pc on"><span class="s"></span>:8080</span></div></div>
+          </div>
+          <div class="card-foot"><span class="ovr">Reload 08:02</span><span class="spacer"></span><span class="btn">测试</span><span class="btn">Reload</span><span class="btn primary" onclick="openDrawer()">编辑</span></div>
+        </div>
+
+        <!-- 卡片 3 :8443 运行 内网 -->
+        <div class="card">
+          <div class="head-strip"></div>
+          <div class="card-head">
+            <div class="ch-l"><span class="port-b">:8443</span><span class="host">admin.example.com</span></div>
+            <div class="ch-r"><span class="tag priv">内网</span><span class="tag run">&#9679; 运行</span></div>
+          </div>
+          <div class="card-body">
+            <div class="sec"><div class="sec-label">域名映射 <span class="n">1</span></div>
+              <div class="domains"><span class="dom primary">admin.example.com</span></div>
+            </div>
+            <div class="sec"><div class="sec-label">转发规则 <span class="n">2</span></div>
+              <div class="forwards">
+                <div class="fw"><span class="path">/console/</span><span class="up">&#8594; 127.0.0.1:9001</span><span class="tag priv expo">内网</span></div>
+                <div class="fw"><span class="path">/deploy/</span><span class="up">&#8594; 127.0.0.1:9002</span><span class="tag priv expo">内网</span></div>
+              </div>
+            </div>
+            <div class="sec"><div class="sec-label">业务端口</div><div class="ports"><span class="pc off"><span class="s"></span>:9001</span><span class="pc off"><span class="s"></span>:9002</span></div></div>
+          </div>
+          <div class="card-foot"><span class="ovr">Reload 09:15</span><span class="spacer"></span><span class="btn">测试</span><span class="btn">Reload</span><span class="btn primary" onclick="openDrawer()">编辑</span></div>
+        </div>
+
+        <!-- 卡片 4 :8090 运行 公网 -->
+        <div class="card">
+          <div class="head-strip"></div>
+          <div class="card-head">
+            <div class="ch-l"><span class="port-b">:8090</span><span class="host">static.example.com</span></div>
+            <div class="ch-r"><span class="tag pub">公网</span><span class="tag run">&#9679; 运行</span></div>
+          </div>
+          <div class="card-body">
+            <div class="sec"><div class="sec-label">域名映射 <span class="n">2</span></div>
+              <div class="domains"><span class="dom primary">static.example.com</span><span class="dom">cdn.example.com</span></div>
+            </div>
+            <div class="sec"><div class="sec-label">转发规则 <span class="n">1</span></div>
+              <div class="forwards"><div class="fw"><span class="path">/assets/</span><span class="up">&#8594; 127.0.0.1:8082</span><span class="tag pub expo">公网</span></div></div>
+            </div>
+            <div class="sec"><div class="sec-label">业务端口</div><div class="ports"><span class="pc on"><span class="s"></span>:8082</span><span class="pc off"><span class="s"></span>:8083</span></div></div>
+          </div>
+          <div class="card-foot"><span class="ovr">Reload 10:47</span><span class="spacer"></span><span class="btn">测试</span><span class="btn">Reload</span><span class="btn primary" onclick="openDrawer()">编辑</span></div>
+        </div>
+
+        <!-- 卡片 5 :3000 停止 内网 + 告警 -->
+        <div class="card alert">
+          <div class="head-strip"></div>
+          <div class="card-head">
+            <div class="ch-l"><span class="port-b">:3000</span><span class="host">dev.example.com</span></div>
+            <div class="ch-r"><span class="tag priv">实验</span><span class="tag warn">&#9888; 失败</span></div>
+          </div>
+          <div class="card-body">
+            <div class="sec"><div class="sec-label">域名映射 <span class="n">1</span></div>
+              <div class="domains"><span class="dom primary">dev.example.com</span></div>
+            </div>
+            <div class="sec"><div class="sec-label">转发规则 <span class="n">1</span></div>
+              <div class="forwards"><div class="fw"><span class="path">/</span><span class="up">&#8594; 127.0.0.1:3000</span><span class="tag priv expo">内网</span></div></div>
+            </div>
+            <div class="sec"><div class="sec-label">业务端口</div><div class="ports"><span class="pc off" style="color:var(--text-tertiary);">未配置</span></div></div>
+          </div>
+          <div class="card-foot"><span class="ovr" style="color:var(--error);">test failed 10:02</span><span class="spacer"></span><span class="btn">测试</span><span class="btn primary" onclick="openDrawer()">编辑</span></div>
+        </div>
+      </div>
+
+      <!-- 详情抽屉 -->
+      <div class="drawer" id="drawer">
+        <div class="dw-head"><h4>:443 · api.example.com</h4><span class="close" onclick="closeDrawer()">&#10005;</span></div>
+        <div class="dw-body dw">
+          <div class="dsec">
+            <h5>基本信息</h5>
+            <div class="fld"><span class="l">监听端口</span><div class="i">443 (ssl)</div></div>
+            <div class="fld"><span class="l">server_name</span><div class="i">api.example.com api.example.net</div></div>
+            <div class="fld sw-label"><span class="l">公网开放</span><div class="tgl on"></div></div>
+            <div class="fld sw-label"><span class="l">运行状态</span><span class="tag run">&#9679; 运行中</span></div>
+          </div>
+          <div class="dsec">
+            <h5>转发规则</h5>
+            <div class="fld"><span class="l">/api/ &#8594; 127.0.0.1:8000</span><span class="tag pub" style="width:fit-content;">公网</span></div>
+            <div class="fld"><span class="l">/admin/ &#8594; 127.0.0.1:9000</span><span class="tag priv" style="width:fit-content;">内网</span></div>
+          </div>
+        </div>
+        <div class="dw-foot">
+          <span class="btn">测试</span><span class="btn">Reload</span><span class="btn" style="margin-right:auto;">删除</span>
+          <span class="btn primary">保存变更</span>
+        </div>
+      </div>
+
+      <div class="toast" id="toast">&#10004; 已切换视图 · 监听点已同步</div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <div style="display:flex;gap:14px;"><span style="color:var(--success);">&#9679; main</span></div>
+    <div style="display:flex;gap:14px;"><span class="w">1 错误</span><span class="e">0 告警</span></div>
+    <div>5 监听点 · NGINX · conf.d</div>
+  </div>
+</div>
+
+<script>
+  // 过滤按钮切换 + toast 演示
+  document.querySelectorAll('.fc').forEach(function(btn){
+    btn.addEventListener('click',function(){
+      document.querySelectorAll('.fc').forEach(function(b){b.classList.remove('on')});
+      this.classList.add('on');
+      var t=document.getElementById('toast');
+      t.classList.add('show');
+      setTimeout(function(){t.classList.remove('show')},2200);
+    });
+  });
+  function openDrawer(){document.getElementById('drawer').classList.add('open');}
+  function closeDrawer(){document.getElementById('drawer').classList.remove('open');}
+</script>
+</body>
+</html>

@@ -155,6 +155,16 @@ def export_lines(
                     # "listen" 前缀，故补回指令名（否则输出 443 http2; 为无效行）
                     cleaned = re.sub(r"\s+", " ", re.sub(r"\bssl\b", " ", val)).strip()
                     raw = dd + " " + cleaned if cleaned else dd
+            elif dd == "listen":
+                # SSL 开启时：listen 443 自动补 ssl http2（已有则不重复添加）
+                m = re.match(r"^(\d+)\b(.*)$", (val or "").strip())
+                if m and m.group(1) == "443":
+                    parts = [p for p in re.split(r"\s+", m.group(2).strip()) if p]
+                    if "ssl" not in parts:
+                        parts.append("ssl")
+                    if "http2" not in parts:
+                        parts.append("http2")
+                    raw = "listen " + m.group(1) + ((" " + " ".join(parts)) if parts else "")
             is_def = dd == "default"
             if dd == "server_name":
                 r, changed, orig = apply_domains(raw.rstrip(";").strip(), dom_new)

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Button, Card, Form, Input, message } from "antd";
+import { Button, Form, Input, message } from "antd";
 import {
   LockOutlined,
   MailOutlined,
@@ -76,24 +76,15 @@ export default function ResetPassword() {
       {/* 左侧深色品牌区：产品名 + 标语（窄屏时隐藏） */}
       <aside className="auth-brand">
         <div className="auth-brand-inner">
-          <h1>test-system</h1>
-          <p>安全 · 简洁 · 高效，一站式内部协作平台</p>
+          <span className="auth-logo-dot" />
+          <h1>Nginx 配置管理系统</h1>
+          <p>行业隔离 · 块级配置 · 拓扑预览，一站式 nginx / stream 运维工作台</p>
         </div>
       </aside>
 
       {/* 右侧表单区：重置密码表单卡片 */}
       <main className="auth-panel">
-        <Card
-          className="auth-card"
-          style={{
-            width: 400,
-            maxWidth: "100%",
-            borderRadius: 10,
-            borderColor: "#e2e7ee",
-            boxShadow: "0 2px 16px rgba(30, 41, 51, 0.06)",
-          }}
-          styles={{ body: { padding: "32px 32px 28px" } }}
-        >
+        <div className="auth-card">
           <h2 className="auth-title">重置密码</h2>
           <p className="auth-subtitle">验证身份后即可设置新密码</p>
           <Form
@@ -176,7 +167,7 @@ export default function ResetPassword() {
               <Link to="/login">返回登录</Link>
             </div>
           </Form>
-        </Card>
+        </div>
       </main>
     </div>
   );

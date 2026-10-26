@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>方案 B — 卡片式监听点视图 · nginx 配置管理系统 Mockup</title>
+<style>
+  :root{
+    --bg-deep:#0a0a0c;--bg-deep-2:#0d0d10;--bg-sidebar:#111114;--bg-surface:#18181c;
+    --bg-surface-2:#202024;--bg-surface-3:#2a2a30;--bg-hover:#2e2e36;--bg-selected:#2a2a42;
+    --bg-input:#111115;--brand:#4a8af4;--brand-hover:#6ba8fa;
+    --brand-light:rgba(74,138,244,.12);--brand-border:rgba(74,138,244,.25);
+    --success:#22c55e;--success-bg:rgba(34,197,94,.08);--success-border:rgba(34,197,94,.20);
+    --warning:#f59e0b;--warning-bg:rgba(245,158,11,.08);--warning-border:rgba(245,158,11,.20);
+    --error:#ef4444;--error-bg:rgba(239,68,68,.08);--error-border:rgba(239,68,68,.20);
+    --info:#4a8af4;--info-bg:rgba(74,138,244,.08);--info-border:rgba(74,138,244,.20);
+    --text-primary:#e8e8ea;--text-secondary:#b0b0bc;--text-tertiary:#808090;
+    --border-primary:#2a2a2e;--border-secondary:#222226;
+    --shadow-dropdown:0 8px 32px rgba(0,0,0,.45);
+    --radius-sm:4px;--radius-md:6px;--radius-lg:8px;
+    --font-sans:-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
+    --font-mono:'JetBrains Mono','SF Mono','Menlo','Consolas',monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:var(--font-sans);background:var(--bg-deep);color:var(--text-primary);font-size:12.5px;height:100vh;overflow:hidden;}
+  .app{display:flex;flex-direction:column;height:100vh;}
+
+  .titlebar{height:36px;flex:0 0 36px;background:var(--bg-deep);border-bottom:1px solid var(--border-primary);display:flex;align-items:center;padding:0 16px;justify-content:space-between;}
+  .titlebar .left{display:flex;align-items:center;gap:12px;font-weight:600;font-size:12px;letter-spacing:-.3px;}
+  .dot{width:6px;height:6px;border-radius:50%;background:var(--success);box-shadow:0 0 4px var(--success);}
+  .titlebar .mid{font-size:11px;color:var(--text-tertiary);}
+  .titlebar .win{display:flex;gap:8px;}.titlebar .win span{width:12px;height:12px;border-radius:50%;}
+  .win .r{background:#ff5f57;}.win .y{background:#febc2e;}.win .g{background:#28c840;}
+
+  .main{flex:1;display:flex;min-height:0;}
+  /* 左侧筛选栏 */
+  .side{width:220px;flex:0 0 220px;background:var(--bg-sidebar);border-right:1px solid var(--border-primary);display:flex;flex-direction:column;min-height:0;}
+  .side-head{padding:10px 16px;font-size:15px;color:var(--text-secondary);font-weight:500;border-bottom:1px solid var(--border-secondary);}
+  .side-body{flex:1;overflow-y:auto;padding:10px 12px;}
+  .grp-label{font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin:12px 4px 6px;}
+  .f-item{display:flex;align-items:center;height:32px;padding:0 12px;border-radius:var(--radius-sm);color:var(--text-secondary);cursor:pointer;margin-bottom:2px;justify-content:space-between;}
+  .f-item:hover{background:var(--bg-hover);color:var(--text-primary);}
+  .f-item.on{background:var(--bg-selected);color:var(--text-primary);border-left:2px solid var(--brand);}
+  .f-item .n{display:flex;align-items:center;gap:8px;font-family:var(--font-mono);}
+  .f-item .c{font-size:11px;color:var(--text-tertiary);}
+  .status-line{height:28px;flex:0 0 28px;background:var(--bg-deep);border-top:1px solid var(--border-secondary);display:flex;align-items:center;padding:0 16px;font-size:11px;color:var(--text-tertiary);font-family:var(--font-mono);}
+
+  .content{flex:1;background:var(--bg-surface);display:flex;flex-direction:column;min-width:0;position:relative;}
+  .toolbar{height:36px;flex:0 0 36px;background:var(--bg-surface);border-bottom:1px solid var(--border-primary);display:flex;align-items:center;padding:0 16px;gap:10px;justify-content:space-between;}
+  .tb-left{display:flex;gap:8px;align-items:center;font-family:var(--font-mono);font-size:12px;color:var(--text-secondary);}
+  .tb-right{display:flex;gap:8px;align-items:center;}
+  .btn{height:26px;padding:0 12px;font-size:11.5px;border-radius:var(--radius-sm);cursor:pointer;border:1px solid var(--border-primary);background:transparent;color:var(--text-secondary);display:flex;align-items:center;gap:4px;}
+  .btn:hover{background:var(--bg-hover);color:var(--text-primary);}
+  .btn.primary{background:var(--brand);color:#fff;border-color:transparent;}
+  .btn.primary:hover{background:var(--brand-hover);}
+  .btn:active{transform:scale(.97);}
+
+  .cards{flex:1;overflow-y:auto;padding:16px;display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:16px;align-content:start;}
+  .card{background:var(--bg-surface-2);border:1px solid var(--border-primary);border-radius:var(--radius-lg);overflow:hidden;display:flex;flex-direction:column;transition:all .15s;}
+  .card:hover{border-color:var(--brand-border);transform:translateY(-2px);box-shadow:var(--shadow-dropdown);}
+  .card-head{height:44px;flex:0 0 44px;background:var(--bg-sidebar);border-bottom:1px solid var(--border-secondary);padding:0 14px;display:flex;align-items:center;justify-content:space-between;}
+  .ch-l{display:flex;align-items:center;gap:10px;}
+  .port-badge{font-family:var(--font-mono);font-size:13.5px;font-weight:600;background:var(--brand-light);border:1px solid var(--brand-border);color:var(--brand);border-radius:var(--radius-sm);padding:2px 10px;}
+  .host{font-family:var(--font-mono);font-size:12px;color:var(--text-secondary);}
+  .ch-r{display:flex;gap:6px;align-items:center;}
+  .tag{font-size:10px;font-weight:500;padding:1px 8px;border-radius:var(--radius-xs);}
+  .tag.pub{background:var(--success-bg);border:1px solid var(--success-border);color:var(--success);}
+  .tag.priv{background:var(--error-bg);border:1px solid var(--error-border);color:var(--error);}
+  .tag.ok{background:var(--success-bg);border:1px solid var(--success-border);color:var(--success);}
+  .tag.off{background:transparent;border:1px solid var(--border-primary);color:var(--text-tertiary);}
+  .card-body{padding:12px 14px;display:flex;flex-direction:column;gap:12px;flex:1;}
+  .sec-label{font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;font-weight:600;}
+  .domains{display:flex;flex-wrap:wrap;gap:6px;}
+  .dom{font-family:var(--font-mono);font-size:11px;background:var(--bg-surface-3);border:1px solid var(--info-border);color:var(--info);border-radius:var(--radius-sm);padding:3px 8px;}
+  .forwards{display:flex;flex-direction:column;gap:6px;}
+  .fw{display:flex;align-items:center;justify-content:space-between;background:var(--bg-surface);border:1px solid var(--border-secondary);border-radius:var(--radius-sm);padding:6px 8px;font-family:var(--font-mono);font-size:11px;color:var(--text-secondary);}
+  .fw .path{color:var(--text-primary);}
+  .fw .up{color:var(--text-tertiary);}
+  .ports{display:flex;flex-wrap:wrap;gap:6px;}
+  .pc{font-family:var(--font-mono);font-size:11px;background:var(--bg-surface);border:1px solid var(--border-secondary);border-radius:var(--radius-sm);padding:3px 8px;display:flex;align-items:center;gap:5px;color:var(--text-primary);}
+  .pc.on{border-color:var(--success-border);background:var(--success-bg);}
+  .pc.off{color:var(--text-tertiary);}
+  .pc .s{width:6px;height:6px;border-radius:50%;display:inline-block;}
+  .pc.on .s{background:var(--success);box-shadow:0 0 4px var(--success);}
+  .pc.off .s{background:var(--text-tertiary);}
+  .card-foot{height:40px;flex:0 0 40px;background:var(--bg-surface);border-top:1px solid var(--border-secondary);padding:0 14px;display:flex;align-items:center;gap:8px;justify-content:flex-end;}
+  .footer{height:28px;flex:0 0 28px;background:var(--bg-deep);border-top:1px solid var(--border-primary);display:flex;justify-content:space-between;align-items:center;padding:0 20px;font-size:11px;color:var(--text-tertiary);}
+  .label{position:absolute;top:8px;left:8px;background:var(--brand);color:#fff;font-size:10px;padding:1px 8px;border-radius:4px;font-weight:600;z-index:5;}
+  .filter-bar{display:flex;gap:6px;padding-bottom:2px;}
+  .filter-bar .btn.small{height:24px;padding:0 10px;font-size:11px;}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="titlebar">
+    <div class="left"><span style="font-size:16px;color:var(--text-secondary);">&#9776;</span><span class="dot"></span><span>Nginx Console</span></div>
+    <div class="mid">监听点总览 · 生产环境</div>
+    <div class="win"><span class="r"></span><span class="y"></span><span class="g"></span></div>
+  </div>
+
+  <div class="main">
+    <!-- 左筛选 -->
+    <div class="side">
+      <div class="side-head">拓扑筛选</div>
+      <div class="side-body">
+        <div class="f-item on"><span class="n">&#128270; 全部监听点</span><span class="c">6</span></div>
+        <div class="grp-label">环境</div>
+        <div class="f-item"><span class="n">生产</span><span class="c">4</span></div>
+        <div class="f-item"><span class="n">实验</span><span class="c">2</span></div>
+        <div class="grp-label">公网状态</div>
+        <div class="f-item"><span class="n">&#9679; 公网开放</span><span class="c" style="color:var(--success);">4</span></div>
+        <div class="f-item"><span class="n">&#9679; 仅内网</span><span class="c" style="color:var(--text-tertiary);">2</span></div>
+        <div class="grp-label">按站点</div>
+        <div class="f-item"><span class="n">api</span><span class="c">3</span></div>
+        <div class="f-item"><span class="n">web</span><span class="c">2</span></div>
+        <div class="f-item"><span class="n">admin</span><span class="c">1</span></div>
+      </div>
+      <div class="status-line">6 监听点 · 已过滤 0</div>
+    </div>
+
+    <!-- 卡片区 -->
+    <div class="content">
+      <div class="toolbar">
+        <div class="tb-left">
+          <span>监听点视图</span>
+          <div class="filter-bar">
+            <span class="btn small on" style="background:var(--bg-hover);color:var(--text-primary);border-color:var(--brand-border);">全部</span>
+            <span class="btn small">公网</span>
+            <span class="btn small">内网</span>
+          </div>
+        </div>
+        <div class="tb-right">
+          <span class="btn">&#9881; 配置</span>
+          <span class="btn primary">+ 新增监听点</span>
+        </div>
+      </div>
+
+      <div class="cards">
+        <!-- 卡片 1 :443 api -->
+        <div class="card">
+          <div class="card-head">
+            <div class="ch-l"><span class="port-badge">:443</span><span class="host">api.example.com</span></div>
+            <div class="ch-r"><span class="tag pub">公网开放</span><span class="tag ok">&#9679; 运行中</span></div>
+          </div>
+          <div class="card-body">
+            <div><div class="sec-label">域名映射 (2)</div><div class="domains"><span class="dom">api.example.com</span><span class="dom">api.example.net</span></div></div>
+            <div><div class="sec-label">转发规则 (2)</div>
+              <div class="forwards">
+                <div class="fw"><span class="path">/api/</span><span class="up">&#8594; 127.0.0.1:8000</span><span class="tag pub" style="font-size:9px;">公网</span></div>
+                <div class="fw"><span class="path">/admin/</span><span class="up">&#8594; 127.0.0.1:9000</span><span class="tag priv" style="font-size:9px;">内网</span></div>
+              </div>
+            </div>
+            <div><div class="sec-label">业务启动端口 (2)</div>
+              <div class="ports"><span class="pc on"><span class="s"></span>:8000 公网</span><span class="pc off"><span class="s"></span>:9000 内网</span></div>
+            </div>
+          </div>
+          <div class="card-foot"><span class="btn">测试</span><span class="btn">Reload</span><span class="btn">编辑</span></div>
+        </div>
+
+        <!-- 卡片 2 :80 web -->
+        <div class="card">
+          <div class="card-head">
+            <div class="ch-l"><span class="port-badge">:80</span><span class="host">web.example.com</span></div>
+            <div class="ch-r"><span class="tag pub">公网开放</span><span class="tag off">&#9679; 停止</span></div>
+          </div>
+          <div class="card-body">
+            <div><div class="sec-label">域名映射 (1)</div><div class="domains"><span class="dom">web.example.com</span></div></div>
+            <div><div class="sec-label">转发规则 (1)</div>
+              <div class="forwards"><div class="fw"><span class="path">/</span><span class="up">&#8594; 127.0.0.1:8080</span><span class="tag pub" style="font-size:9px;">公网</span></div></div>
+            </div>
+            <div><div class="sec-label">业务启动端口 (1)</div>
+              <div class="ports"><span class="pc on"><span class="s"></span>:8080 公网</span></div>
+            </div>
+          </div>
+          <div class="card-foot"><span class="btn">测试</span><span class="btn">Reload</span><span class="btn">编辑</span></div>
+        </div>
+
+        <!-- 卡片 3 :8443 admin（内网） -->
+        <div class="card">
+          <div class="card-head">
+            <div class="ch-l"><span class="port-badge">:8443</span><span class="host">admin.example.com</span></div>
+            <div class="ch-r"><span class="tag priv">仅内网</span><span class="tag ok">&#9679; 运行中</span></div>
+          </div>
+          <div class="card-body">
+            <div><div class="sec-label">域名映射 (1)</div><div class="domains"><span class="dom">admin.example.com</span></div></div>
+            <div><div class="sec-label">转发规则 (2)</div>
+              <div class="forwards">
+                <div class="fw"><span class="path">/console/</span><span class="up">&#8594; 127.0.0.1:9001</span><span class="tag priv" style="font-size:9px;">内网</span></div>
+                <div class="fw"><span class="path">/deploy/</span><span class="up">&#8594; 127.0.0.1:9002</span><span class="tag priv" style="font-size:9px;">内网</span></div>
+              </div>
+            </div>
+            <div><div class="sec-label">业务启动端口 (2)</div>
+              <div class="ports"><span class="pc off"><span class="s"></span>:9001 内网</span><span class="pc off"><span class="s"></span>:9002 内网</span></div>
+            </div>
+          </div>
+          <div class="card-foot"><span class="btn">测试</span><span class="btn">Reload</span><span class="btn">编辑</span></div>
+        </div>
+
+        <!-- 卡片 4 :8090 static -->
+        <div class="card">
+          <div class="card-head">
+            <div class="ch-l"><span class="port-badge">:8090</span><span class="host">static.example.com</span></div>
+            <div class="ch-r"><span class="tag pub">公网开放</span><span class="tag ok">&#9679; 运行中</span></div>
+          </div>
+          <div class="card-body">
+            <div><div class="sec-label">域名映射 (2)</div><div class="domains"><span class="dom">static.example.com</span><span class="dom">cdn.example.com</span></div></div>
+            <div><div class="sec-label">转发规则 (1)</div>
+              <div class="forwards"><div class="fw"><span class="path">/assets/</span><span class="up">&#8594; 127.0.0.1:8082</span><span class="tag pub" style="font-size:9px;">公网</span></div></div>
+            </div>
+            <div><div class="sec-label">业务启动端口 (2)</div>
+              <div class="ports"><span class="pc on"><span class="s"></span>:8082 公网</span><span class="pc off"><span class="s"></span>:8083 内网</span></div>
+            </div>
+          </div>
+          <div class="card-foot"><span class="btn">测试</span><span class="btn">Reload</span><span class="btn">编辑</span></div>
+        </div>
+
+        <!-- 卡片 5 实验 :3000 -->
+        <div class="card" style="opacity:.85;">
+          <div class="card-head">
+            <div class="ch-l"><span class="port-badge">:3000</span><span class="host">dev.example.com</span></div>
+            <div class="ch-r"><span class="tag priv">实验</span><span class="tag off">&#9679; 停止</span></div>
+          </div>
+          <div class="card-body">
+            <div><div class="sec-label">域名映射 (1)</div><div class="domains"><span class="dom">dev.example.com</span></div></div>
+            <div><div class="sec-label">转发规则 (1)</div>
+              <div class="forwards"><div class="fw"><span class="path">/</span><span class="up">&#8594; 127.0.0.1:3000</span><span class="tag priv" style="font-size:9px;">内网</span></div></div>
+            </div>
+            <div><div class="sec-label">业务启动端口 (0)</div><div class="ports"><span class="pc off" style="color:var(--text-tertiary);">未配置</span></div></div>
+          </div>
+          <div class="card-foot"><span class="btn">测试</span><span class="btn">Reload</span><span class="btn">编辑</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <div><span style="color:var(--success);">&#9679;</span> main</div>
+    <div>6 监听点 · 4 公网 · 2 内网</div>
+    <div>NGINX · conf.d</div>
+  </div>
+</div>
+<div class="label">方案 B · 卡片式监听点</div>
+</body>
+</html>

@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>nginx 配置管理系统 · 布局方案预览</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: -apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+         background:#0a0a0c; color:#e8e8ea; padding:32px; }
+  h1 { margin:0 0 4px; font-size:22px; }
+  .subtitle { color:#808090; margin:0 0 24px; font-size:14px; }
+  .options { display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:20px; }
+  .option { background:#18181c; border:1px solid #2a2a2e; border-radius:8px; padding:16px;
+            cursor:pointer; transition:.15s; }
+  .option:hover { background:#202024; }
+  .option.active { border-color:#4a8af4; background:#1a1a30; }
+  .letter { display:inline-block; background:#4a8af4; color:#fff; border-radius:4px; font-weight:700;
+            width:28px; height:28px; line-height:28px; text-align:center; margin-bottom:10px; }
+  .option h3 { margin:4px 0 6px; font-size:16px; }
+  .option .one { color:#b0b0bc; font-size:13px; margin:0 0 12px; }
+  /* wireframe */
+  .wf { border:1px solid #2a2a2e; border-radius:6px; margin:12px 0; font-size:11px; color:#b0b0bc; overflow:hidden; }
+  .wf .bar { height:26px; display:flex; align-items:center; gap:8px; padding:0 10px; background:#0d0d10; border-bottom:1px solid #2a2a2e; }
+  .wf .dot { width:10px; height:10px; border-radius:50%; background:#3a3a3e; }
+  .wf .cols { display:flex; min-height:150px; }
+  .wf .lcol { width:120px; background:#111114; border-right:1px solid #2a2a2e; padding:8px; }
+  .wf .lcol .tree { height:14px; background:#2a2a2e; border-radius:3px; margin:0 0 6px; }
+  .wf .main { flex:1; padding:10px; }
+  .wf .row { display:flex; gap:8px; margin:0 0 8px; }
+  .wf .box { background:#2a2a2e; border-radius:3px; }
+  .wf .box.h { height:14px; }
+  .wf .box.m { height:70px; }
+  .wf .box.s  { height:16px; width:40px; }
+  .wf .rcol { width:120px; background:#111114; border-left:1px solid #2a2a2e; padding:8px; }
+  .wf .pills { display:flex; flex-wrap:wrap; gap:6px; }
+  .wf .pill { background:#2a2a42; border:1px solid rgba(74,138,244,.25); color:#6ba8fa;
+              border-radius:4px; padding:2px 8px; }
+  .tag { display:inline-block; border-radius:3px; padding:1px 7px; font-size:10px; margin-right:4px; }
+  .tag.g { background:rgba(34,197,94,.08); border:1px solid rgba(34,197,94,.2); color:#22c55e; }
+  .tag.r { background:rgba(239,68,68,.08); border:1px solid rgba(239,68,68,.2); color:#ef4444; }
+  .pros { color:#b0b0bc; font-size:12px; margin:4px 0 0; }
+  .pros b { color:#22c55e; }
+  .cons { color:#b0b0bc; font-size:12px; }
+  .cons b { color:#ef4444; }
+  .hint { margin-top:24px; color:#808090; font-size:13px; }
+</style>
+</head>
+<body>
+  <h1>把这个交给 nginx 配置管理系统？布局方案预览</h1>
+  <p class="subtitle">在浏览器里点选你倾向的方案（本地高亮），然后在对话里告诉我你的选择或想法</p>
+
+  <div class="options">
+    <!-- 方案 A -->
+    <div class="option" id="optA" onclick="pick('A',this)">
+      <span class="letter">A</span>
+      <h3>编辑器主导（IDE 式）</h3>
+      <p class="one">以 "配置文件" 为对象，左侧目录树 + 中间列表 + 右侧正文编辑。适合深度逐文件编辑 nginx 内容。</p>
+      <div class="wf">
+        <div class="bar"><span class="dot"></span><span class="dot"></span><span>项目: /etc/nginx</span></div>
+        <div class="cols">
+          <div class="lcol"><div class="tree"></div><div class="tree"></div><div class="tree"></div><div class="tree"></div></div>
+          <div class="main">
+            <div class="row"><div class="box h" style="flex:1"></div></div>
+            <div class="box m" style="width:100%"></div>
+            <div style="height:4px"></div>
+            <div class="row"><div class="box s"></div><div class="box s"></div><div class="box s"></div></div>
+          </div>
+        </div>
+      </div>
+      <div class="pros"><b>+</b> 贴合 nginx 文件组织，好维护完整配置</div>
+      <div class="cons"><b>−</b> 映射/端口/公网关系藏在文本里，不够直观</div>
+    </div>
+
+    <!-- 方案 B -->
+    <div class="option" id="optB" onclick="pick('B',this)">
+      <span class="letter">B</span>
+      <h3>卡片式（Server / 监听点视图）</h3>
+      <p class="one">一张卡片 = 一个监听点(server/listen)，内含域名映射、转发端口、公网开关。结构化、可视化关系。</p>
+      <div class="wf">
+        <div class="bar"><span class="dot"></span><span>监听点总览</span></div>
+        <div class="cols" style="min-height:150px">
+          <div style="flex:1;padding:8px">
+            <div style="border:1px solid #2a2a2e;border-radius:6px;padding:6px;margin-bottom:8px">
+              <span class="pill">:443</span> api.example.com → 127.0.0.1:8000
+              <div><span class="tag g">公网</span><span class="tag r">内网</span></div>
+            </div>
+            <div style="border:1px solid #2a2a2e;border-radius:6px;padding:6px">
+              <span class="pill">:8080</span> 管理后台
+              <div><span class="tag r">内网</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="pros"><b>+</b> 一眼看懂 域名→端口→公网 关系</div>
+      <div class="cons"><b>−</b> 大配置/多 server 时卡片可能过密</div>
+    </div>
+
+    <!-- 方案 C -->
+    <div class="option" id="optC" onclick="pick('C',this)">
+      <span class="letter">C</span>
+      <h3>列表 + 详情主从</h3>
+      <p class="one">上方站点/端口列表，选中后在下方或侧栏展示详情编辑 + 公网开关。信息密度高，编辑与总览分离。</p>
+      <div class="wf">
+        <div class="bar"><span class="dot"></span><span>站点列表</span></div>
+        <div class="cols" style="min-height:150px">
+          <div style="flex:2;padding:8px">
+            <div class="row"><div class="box h" style="flex:1"></div><div class="box h" style="flex:1"></div><div class="box h" style="flex:1"></div></div>
+            <div class="row"><div class="box h" style="flex:1"></div><div class="box h" style="flex:1"></div><div class="box h" style="flex:1"></div></div>
+            <div class="row"><div class="box h" style="flex:1"></div><div class="box h" style="flex:1"></div><div class="box h" style="flex:1"></div></div>
+          </div>
+          <div class="rcol" style="flex:1;width:auto;border-left:1px solid #2a2a2e;background:#0d0d10">
+            <div class="pill">详情编辑</div>
+            <div style="height:6px"></div>
+            <div class="box h" style="width:100%"></div>
+            <div style="height:6px"></div>
+            <div class="box h" style="width:60%"></div>
+            <div style="height:10px"></div>
+            <span class="tag g">公网开</span><span class="tag r">公网关</span>
+          </div>
+        </div>
+      </div>
+      <div class="pros"><b>+</b> 列表+详情分离，易扩展字段、可批量</div>
+      <div class="cons"><b>−</b> 不如 B 直观反映映射关系</div>
+    </div>
+  </div>
+
+  <p class="hint">看完告诉我：你倾向 A / B / C？或说下你对"配置文件管理"更看重什么（如批量、直观关系、深层编辑），我再细化。</p>
+
+<script>
+  function pick(id, el){
+    document.querySelectorAll('.option').forEach(o=>o.classList.remove('active'));
+    el.classList.add('active');
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>方案 A — 编辑器主导 · nginx 配置管理系统 Mockup</title>
+<style>
+  :root {
+    --bg-deep:#0a0a0c;--bg-deep-2:#0d0d10;--bg-sidebar:#111114;--bg-surface:#18181c;
+    --bg-surface-2:#202024;--bg-surface-3:#2a2a30;--bg-hover:#2e2e36;--bg-selected:#2a2a42;
+    --bg-active:#1a1a30;--bg-input:#111115;
+    --brand:#4a8af4;--brand-hover:#6ba8fa;--brand-active:#2d6fd9;
+    --brand-light:rgba(74,138,244,.12);--brand-subtle:rgba(74,138,244,.05);
+    --brand-border:rgba(74,138,244,.25);
+    --success:#22c55e;--success-bg:rgba(34,197,94,.08);--success-border:rgba(34,197,94,.20);
+    --warning:#f59e0b;--warning-bg:rgba(245,158,11,.08);--warning-border:rgba(245,158,11,.20);
+    --error:#ef4444;--error-bg:rgba(239,68,68,.08);--error-border:rgba(239,68,68,.20);
+    --info:#4a8af4;--info-bg:rgba(74,138,244,.08);--info-border:rgba(74,138,244,.20);
+    --text-primary:#e8e8ea;--text-secondary:#b0b0bc;--text-tertiary:#808090;
+    --text-inverse:#0d0d0f;--text-disabled:#4a4a52;--text-link:#6ba8fa;
+    --border-primary:#2a2a2e;--border-secondary:#222226;--border-subtle:rgba(255,255,255,.04);
+    --shadow-dropdown:0 8px 32px rgba(0,0,0,.45);
+    --radius-xs:2px;--radius-sm:4px;--radius-md:6px;--radius-lg:8px;
+    --font-sans:-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
+    --font-mono:'JetBrains Mono','SF Mono','Menlo','Consolas',monospace;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:var(--font-sans); background:var(--bg-deep); color:var(--text-primary); font-size:12.5px; overflow:hidden; height:100vh; }
+  .app { display:flex; flex-direction:column; height:100vh; }
+
+  /* === 标题栏 36px === */
+  .titlebar { height:36px; flex:0 0 36px; background:var(--bg-deep); border-bottom:1px solid var(--border-primary); display:flex; align-items:center; padding:0 16px; justify-content:space-between; }
+  .titlebar .left { display:flex; align-items:center; gap:3px; }
+  .titlebar .menu { font-size:16px; color:var(--text-secondary); padding:4px 8px; border-radius:var(--radius-sm); cursor:pointer; }
+  .titlebar .menu:hover{ background:var(--bg-hover); }
+  .dot{width:6px;height:6px;border-radius:50%;background:var(--success);margin-left:10px;display:inline-block;box-shadow:0 0 4px var(--success);}
+  .titlebar .name{ font-weight:600; font-size:12px; letter-spacing:-.3px; }
+  .titlebar .mid{ font-size:11px; color:var(--text-tertiary); font-family:var(--font-mono);}
+  .titlebar .win{ display:flex; gap:8px; }
+  .titlebar .win span{ width:12px;height:12px;border-radius:50%;display:inline-block;cursor:pointer;opacity:.8;}
+  .titlebar .win .r{background:#ff5f57;}.titlebar .win .y{background:#febc2e;}.titlebar .win .g{background:#28c840;}
+
+  .main { flex:1; display:flex; min-height:0; }
+  /* === 左侧边栏 文件树 220px === */
+  .tree { width:220px; flex:0 0 220px; background:var(--bg-sidebar); border-right:1px solid var(--border-primary); display:flex; flex-direction:column; min-height:0; }
+  .tree-head { padding:8px 16px 6px; font-size:10px; color:var(--text-tertiary); font-weight:600; text-transform:uppercase; letter-spacing:.5px; display:flex; justify-content:space-between; align-items:center;}
+  .tree-head .act { color:var(--text-tertiary); cursor:pointer; padding:0 4px; border-radius:var(--radius-sm); font-size:12px;}
+  .tree-head .act:hover{ color:var(--text-primary); background:var(--bg-hover);}
+  .tree-body { flex:1; overflow-y:auto; padding-bottom:8px; }
+  .t-title{margin:6px 16px 4px;font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px;font-weight:600;}
+  .t-item{ display:flex;align-items:center;height:28px;padding:0 12px;border-radius:var(--radius-sm);color:var(--text-secondary);cursor:pointer;position:relative;user-select:none;}
+  .t-item:hover{ background:var(--bg-hover); color:var(--text-primary); padding-left:14px;}
+  .t-item.sel{ background:var(--bg-selected); color:var(--text-primary); padding-left:14px;}
+  .t-item.sel::before{ content:''; position:absolute; left:0; top:6px; bottom:6px; width:2px; background:var(--brand);}
+  .t-item .icon{ width:16px; height:16px; margin-right:8px; flex:0 0 16px; color:var(--text-tertiary); display:flex;align-items:center;justify-content:center;font-size:11px;flex-direction:column;gap:1px;}
+  .t-item .arrow{ width:8px;margin-right:6px;font-size:8px;color:var(--text-tertiary);flex:0 0 8px;text-align:center;}
+  .t-item .lvl1{padding-left:0;}.t-item .lvl2{padding-left:16px;}.t-item .lvl3{padding-left:32px;}
+  .t-item .badge{margin-left:auto;font-size:10px;color:var(--text-tertiary);}
+  .t-item .badge.pub{color:var(--success);}.t-item .badge.priv{color:var(--text-tertiary);}
+  .t-item.file .icon{color:var(--text-tertiary);}
+  .t-item.dir .icon{color:var(--warning);}
+
+  .tree-foot{ border-top:1px solid var(--border-secondary); padding:6px 16px; font-size:11px; color:var(--text-tertiary); }
+
+  /* === 中区 === */
+  .edit { flex:1; display:flex; flex-direction:column; background:var(--bg-surface); min-width:0; }
+  .tabs{ height:36px; flex:0 0 36px; background:var(--bg-surface); border-bottom:1px solid var(--border-primary); display:flex; align-items:center; padding:0 8px; overflow-x:auto;}
+  .tab{ display:flex;align-items:center;gap:6px;height:36px;padding:0 16px;font-size:12.5px;color:var(--text-secondary);border-right:1px solid var(--border-secondary);cursor:pointer;white-space:nowrap;position:relative;user-select:none;}
+  .tab.on{ color:var(--text-primary); }
+  .tab.on::after{ content:''; position:absolute; bottom:0; left:0; right:0; height:2px; background:var(--brand);}
+  .tab .x{margin-left:6px;color:var(--text-tertiary);font-size:12px;cursor:pointer;opacity:0;}
+  .tab:hover .x{opacity:1;}
+  .tab .x:hover{color:var(--text-primary);}
+  .tab .l{margin-left:6px;font-size:10px;color:var(--text-tertiary);font-family:var(--font-mono);border:1px solid var(--brand-border);color:var(--brand);border-radius:var(--radius-xs);padding:0 4px;}
+
+  .code{ flex:1; display:flex; min-height:0; position:relative; overflow:hidden;}
+  .gutter{ width:52px; flex:0 0 52px; background:var(--bg-surface); border-right:1px solid var(--border-secondary); padding:20px 0 0; user-select:none; font-family:var(--font-mono); font-size:10px; color:var(--text-tertiary); line-height:1.5; text-align:right; overflow:hidden;}
+  .gutter div{ padding-right:16px; height:20px;}
+  .gutter div.hl{ background:var(--bg-hover); color:var(--text-secondary);}
+  .lines{ flex:1; padding:20px 28px; font-family:var(--font-mono); font-size:13.5px; line-height:1.5; overflow:auto; position:relative;}
+  .lines::after{ content:''; position:absolute; left:0; right:0; bottom:0; height:120px; background:radial-gradient(ellipse at bottom,rgba(74,138,244,.06),transparent); pointer-events:none;}
+  .ln{ height:20px; white-space:pre;}
+  .ln.active{ background:var(--bg-hover);}
+  .c-muted{ color:var(--text-tertiary); } .c-kw{ color:var(--brand-hover);} .c-str{ color:#7ee787;} .c-sec{ color:#f59e0b;} .c-num{color:#ff7b72;}
+
+  /* === 右侧面板 细节 320px === */
+  .detail { width:320px; flex:0 0 320px; background:var(--bg-sidebar); border-left:1px solid var(--border-primary); display:flex; flex-direction:column; min-height:0;}
+  .d-head{ padding:10px 16px; font-size:15px; color:var(--text-secondary); font-weight:500; border-bottom:1px solid var(--border-secondary); display:flex; justify-content:space-between; align-items:center;}
+  .d-head .setup{ cursor:pointer; color:var(--text-tertiary); font-size:13px;}
+  .d-head .setup:hover{ color:var(--text-primary);}
+  .d-body{ flex:1; overflow-y:auto; padding:8px 12px;}
+  .d-sec{margin-bottom:12px;}
+  .d-sec h4{ font-size:10px; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:.5px; margin-bottom:6px; font-weight:600;}
+  .kv{ background:var(--bg-surface); border:1px solid var(--border-secondary); border-radius:var(--radius-md); padding:8px 10px; display:flex; flex-direction:column; gap:6px;}
+  .kv .row{ display:flex; justify-content:space-between; font-size:11.5px;}
+  .kv .row .k{ color:var(--text-tertiary);} .kv .row .v{ color:var(--text-primary); font-family:var(--font-mono);}
+  .tag{ display:inline-block; font-size:10px; font-weight:500; padding:1px 8px; border-radius:var(--radius-xs);}
+  .tag.pub{ background:var(--success-bg); border:1px solid var(--success-border); color:var(--success);}
+  .tag.priv{ background:var(--error-bg); border:1px solid var(--error-border); color:var(--error);}
+  .tag.dom{ background:var(--info-bg); border:1px solid var(--info-border); color:var(--info);}
+  .tag.inactive{ background:transparent; border:1px solid var(--border-primary); color:var(--text-tertiary);}
+  .rule{ background:var(--bg-surface); border:1px solid var(--border-secondary); border-radius:var(--radius-sm); padding:6px 8px; font-family:var(--font-mono); font-size:11px; color:var(--text-secondary); display:flex; justify-content:space-between; align-items:center;}
+  .rule .fmt{margin-left:auto;color:var(--text-tertiary);}
+  .port-chips{ display:flex; flex-wrap:wrap; gap:6px;}
+  .port-chips .pc{ flex:0 0 auto; background:var(--bg-surface-2); border:1px solid var(--border-secondary); border-radius:var(--radius-sm); padding:3px 8px; font-family:var(--font-mono); font-size:11px; color:var(--text-primary); display:flex; align-items:center; gap:4px;}
+  .port-chips .pc .mini{font-size:9px;display:flex;gap:3px;}
+  .port-chips .pc.on{border-color:var(--success-border);background:var(--success-bg);}
+  .port-chips .pc.off{border-color:var(--border-primary);color:var(--text-tertiary);}
+
+  .d-actions{ display:flex; gap:8px; padding:10px 12px; border-top:1px solid var(--border-secondary);}
+  .btn{ height:28px; padding:0 14px; font-size:12.5px; border-radius:var(--radius-sm); cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all .15s; border:1px solid transparent;}
+  .btn:active{ transform:scale(.97);}
+  .btn-primary{ background:var(--brand); color:#fff;} .btn-primary:hover{ background:var(--brand-hover); box-shadow:0 0 24px rgba(74,138,244,.15); transform:translateY(-1px);}
+  .btn-secondary{ background:transparent; border-color:var(--border-primary); color:var(--text-secondary);} .btn-secondary:hover{ background:var(--bg-hover); color:var(--text-primary);}
+  .btn-danger{ background:var(--error); color:#fff;} .btn-danger:hover{ filter:brightness(.9);}
+  .spacer{flex:1;}
+
+  /* === 状态栏 28px === */
+  .status{ height:28px; flex:0 0 28px; background:var(--bg-deep); border-top:1px solid var(--border-primary); display:flex; justify-content:space-between; align-items:center; padding:0 20px; font-size:11px; color:var(--text-tertiary);}
+  .status .grp{display:flex; align-items:center; gap:16px;}
+  .status .e{color:var(--error);}.status .w{color:var(--warning);}
+  .label{position:absolute;top:8px;left:8px;background:var(--brand);color:#fff;font-size:10px;padding:1px 8px;border-radius:var(--radius-xs);font-weight:600;}
+  .container,.edit,.detail,.tree{position:relative;}
+  .overlay-banner{ position:absolute; top:6px; right:12px; z-index:5; background:var(--bg-surface-2); border:1px solid var(--brand-border); color:var(--text-secondary); font-size:11px; padding:4px 10px; border-radius:var(--radius-sm); box-shadow:var(--shadow-dropdown);}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- === 标题栏 === -->
+  <div class="titlebar">
+    <div class="left">
+      <span class="menu">&#9776;</span>
+      <span class="dot"></span>
+      <span class="name">Nginx Console</span>
+    </div>
+    <div class="mid">api/conf.d/api.example.com.conf &nbsp;·&nbsp; 主配置文件</div>
+    <div class="win"><span class="r"></span><span class="y"></span><span class="g"></span></div>
+  </div>
+
+  <div class="main">
+    <!-- === 左侧文件树 === -->
+    <div class="tree">
+      <div class="tree-head">资源管理器 <span class="act">+</span></div>
+      <div class="tree-body">
+        <div class="t-title">多行内嵌 mock 数据 — 共 3 站点</div>
+        <div class="t-item dir lvl1"><span class="arrow">&#9662;</span><span class="icon">&#128193;</span>站点<strong style="margin:0 0 0 8px">conf.d</strong></div>
+      </div>
+
+      <div style="padding:0 12px 4px;">
+        <div class="t-item dir lvl2"><span class="arrow">&#9656;</span><span class="icon">&#128193;</span>默认配置</div>
+        <div class="t-item file lvl3"><span class="arrow">&nbsp;</span><span class="icon" style="color:var(--brand);">&#128196;</span>default.conf</div>
+        <div class="t-item dir lvl2"><span class="arrow">&#9662;</span><span class="icon">&#128193;</span>业务站点</div>
+        <div class="t-item file lvl3 sel"><span class="arrow">&nbsp;</span><span class="icon" style="color:var(--brand);">&#128196;</span>api.example.com.conf <span class="badge pub">公网</span></div>
+        <div class="t-item file lvl3"><span class="arrow">&nbsp;</span><span class="icon" style="color:var(--brand);">&#128196;</span>web.example.com.conf <span class="badge pub">公网</span></div>
+        <div class="t-item file lvl3"><span class="arrow">&nbsp;</span><span class="icon" style="color:var(--brand);">&#128196;</span>admin.example.com.conf <span class="badge priv">内网</span></div>
+        <div class="t-item file lvl3"><span class="arrow">&nbsp;</span><span class="icon" style="color:var(--brand);">&#128196;</span>static.example.com.conf <span class="badge pub">公网</span></div>
+        <div class="t-item dir lvl2"><span class="arrow">&#9656;</span><span class="icon">&#128193;</span>实验环境</div>
+        <div class="t-item dir lvl2"><span class="arrow">&#9656;</span><span class="icon">&#128193;</span>归档</div>
+      </div>
+
+      <div class="t-title">映射 &amp; 端口</div>
+      <div style="padding:0 12px;">
+        <div class="t-item dir lvl1"><span class="arrow">&#9662;</span><span class="icon">&#128279;</span>域名映射</div>
+        <div class="t-item file lvl2"><span class="arrow">&nbsp;</span><span class="icon" style="color:var(--info);">&#128196;</span>成全 8 条</div>
+        <div class="t-item dir lvl1" style="margin-top:4px;"><span class="arrow">&#9662;</span><span class="icon">&#128260;</span>转发端口</div>
+        <div class="t-item file lvl2"><span class="arrow">&nbsp;</span><span class="icon" style="color:var(--warning);">&#128196;</span>计 12 条</div>
+        <div class="t-item dir lvl1" style="margin-top:4px;"><span class="arrow">&#9662;</span><span class="icon">&#128267;</span>业务启动端口</div>
+        <div class="t-item file lvl2"><span class="arrow">&nbsp;</span><span class="icon" style="color:var(--success);">&#128196;</span>公网 5 个</div>
+        <div class="t-item file lvl2"><span class="arrow">&nbsp;</span><span class="icon" style="color:var(--text-tertiary);">&#128196;</span>内网 9 个</div>
+      </div>
+
+      <div class="tree-foot">3 站点 · 8 映射 · 14 端口</div>
+    </div>
+
+    <!-- === 中区编辑器 === -->
+    <div class="edit">
+      <div class="tabs">
+        <div class="tab on">api.example.com.conf <span class="l">:443</span><span class="x">&#10005;</span></div>
+        <div class="tab">web.example.com.conf <span class="l">:80</span><span class="x">&#10005;</span></div>
+        <div class="tab">admin.example.com.conf <span class="l">内网</span><span class="x">&#10005;</span></div>
+      </div>
+
+      <div class="code">
+        <div class="gutter">
+          <div>1</div><div>2</div><div class="hl">3</div><div>4</div><div>5</div><div>6</div><div >7</div><div>8</div><div>9</div><div>10</div><div>11</div><div>12</div><div>13</div><div>14</div><div>15</div><div>16</div><div>17</div><div>18</div><div>19</div><div>20</div><div>21</div><div>22</div><div>23</div><div>24</div><div>25</div><div>26</div><div>27</div><div>28</div><div>29</div><div>30</div>
+        </div>
+        <div class="lines">
+          <div class="ln c-muted"><span class="c-muted"># ===== 站点: api.example.com  (公网) =====</span></div>
+          <div class="ln"><span class="c-kw">server</span> {</div>
+          <div class="ln active">    <span class="c-sec">listen</span> <span class="c-num">443</span> <span class="c-kw">ssl</span>;</div>
+          <div class="ln">    <span class="c-sec">server_name</span> <span class="c-str">api.example.com</span>;</div>
+          <div class="ln c-muted">    <span class="c-muted"># 证书: /etc/letsencrypt/live/api.example.com</span></div>
+          <div class="ln">    <span class="c-sec">ssl_certificate</span> <span class="c-str">/etc/ssl/api.example.com.pem</span>;</div>
+          <div class="ln">    <span class="c-sec">ssl_certificate_key</span> <span class="c-str">/etc/ssl/api.example.com.key</span>;</div>
+          <div class="ln">    <span class="c-sec">client_max_body_size</span> <span class="c-num">50m</span>;</div>
+          <div class="ln">    <span class="c-sec">gzip</span> <span class="c-kw">on</span>;</div>
+          <div class="ln">    <span class="c-sec">gzip_types</span> <span class="c-str">text/plain text/css application/json</span>;</div>
+          <div class="ln">&nbsp;</div>
+          <div class="ln">    <span class="c-muted"># --- 转发到业务后端 :8000 (公网开放) ---</span></div>
+          <div class="ln">    <span class="c-sec">location</span> <span class="c-str">/api/</span> {</div>
+          <div class="ln">        proxy_pass <span class="c-str">http://127.0.0.1:8000</span>;</div>
+          <div class="ln">        proxy_set_header Host <span class="c-str">$host</span>;</div>
+          <div class="ln">        proxy_set_header X-Real-IP <span class="c-str">$remote_addr</span>;</div>
+          <div class="ln">    }</div>
+          <div class="ln">&nbsp;</div>
+          <div class="ln c-muted">    <span class="c-muted"># --- 转发到业务后端 :9000 (仅内网) ---</span></div>
+          <div class="ln">    <span class="c-sec">location</span> <span class="c-str">/admin/</span> {</div>
+          <div class="ln">        <span class="c-sec">allow</span> <span class="c-num">10.0.0.0/8</span>;  <span class="c-muted"># 内网白名单</span></div>
+          <div class="ln">        <span class="c-sec">deny</span> all;</div>
+          <div class="ln">        proxy_pass <span class="c-str">http://127.0.0.1:9000</span>;</div>
+          <div class="ln">    }</div>
+          <div class="ln">&nbsp;</div>
+          <div class="ln"><span class="c-kw">}</span>  <span class="c-muted"># end server</span></div>
+          <div class="ln">&nbsp;</div>
+          <div class="ln"><span class="c-muted"># 关联: 域名映射 2 条 · 转发端口 2 个 · 业务端口 2 个</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- === 右侧详情 === -->
+    <div class="detail">
+      <div class="d-head">site: api.example.com <span class="setup">&#9881;</span></div>
+      <div class="d-body">
+        <div class="d-sec"><h4>概览</h4>
+          <div class="kv">
+            <div class="row"><span class="k">监听端口</span><span class="v">:443 (ssl)</span></div>
+            <div class="row"><span class="k">公网状态</span><span class="tag pub">公网开放</span></div>
+            <div class="row"><span class="k">配置文件</span><span class="v">conf.d/api.conf</span></div>
+            <div class="row"><span class="k">启用</span><span class="v" style="color:var(--success);">&#9679; 运行中</span></div>
+            <div class="row"><span class="k">最近 reload</span><span class="v">2026-10-08 09:31</span></div>
+          </div>
+        </div>
+
+        <div class="d-sec"><h4>域名映射 (2)</h4>
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            <div class="rule"><span>api.example.com</span><span class="fmt">HTTPS → :443</span></div>
+            <div class="rule"><span>api.example.net</span><span class="fmt">→ :443 (redirect)</span></div>
+          </div>
+        </div>
+
+        <div class="d-sec"><h4>转发规则 (2)</h4>
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            <div class="rule"><span>/api/ → 127.0.0.1:8000</span><span class="tag pub">公网</span></div>
+            <div class="rule"><span>/admin/ → 127.0.0.1:9000</span><span class="tag priv">内网</span></div>
+          </div>
+        </div>
+
+        <div class="d-sec"><h4>业务启动端口 (2)</h4>
+          <div class="port-chips">
+            <div class="pc on">:8000 <span class="mini"><span style="color:var(--success);">&#9679;</span>公网</span></div>
+            <div class="pc off">:9000 <span class="mini"><span style="color:var(--text-tertiary);">&#9679;</span>内网</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="d-actions">
+        <button class="btn btn-primary">编辑配置</button>
+        <button class="btn btn-secondary spacer">测试</button>
+        <button class="btn btn-secondary">Reload</button>
+        <button class="btn btn-danger">删除</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- === 状态栏 === -->
+  <div class="status">
+    <div class="grp" style="gap:4px;"><span style="color:var(--success);">&#9679;</span> main</div>
+    <div class="grp">0 <span class="e">错误</span> · 0 <span class="w">警告</span> · 0 未保存</div>
+    <div class="grp"><span>行 3</span><span>列 5</span><span>NGINX</span><span>UTF-8</span></div>
+  </div>
+</div>
+
+<div class="label">方案 A · 假数据预览</div>
+</body>
+</html>

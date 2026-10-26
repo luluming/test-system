@@ -48,6 +48,29 @@ class NginxConfig(Base):
     __table_args__ = (UniqueConstraint("industry_id", "name", name="uq_nginx_config_industry_name"),)
 
 
+class NginxConfigVersion(Base):
+    """配置文件版本快照：每次「保存」以渲染后的完整文本存一版，用于历史对比。
+
+    version 从 1 起按配置自增；对比取两版的 content 逐行 diff。
+    """
+
+    __tablename__ = "nginx_config_versions"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    nginx_config_id: Mapped[int] = mapped_column(
+        ForeignKey("nginx_configs.id"), index=True, nullable=False
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("nginx_config_id", "version", name="uq_nginx_config_version"),
+    )
+
+
 class ConfigBlock(Base):
     """泛化 nginx 块：靠 scope + parent_id 表达任意嵌套层级。
 
@@ -89,6 +112,33 @@ class ConfigOption(Base):
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
+    )
+
+
+class NginxMirrorPair(Base):
+    """镜像同步对：src_listen 为母本监听端口，dst_listen 自动跟随。
+
+    属于配置文件级元数据（按 nginx_config_id 隔离）；内容同步走
+    POST /config-blocks/{src}/mirror/{dst} 接口。
+    """
+
+    __tablename__ = "nginx_mirror_pairs"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    nginx_config_id: Mapped[int] = mapped_column(
+        ForeignKey("nginx_configs.id"), index=True, nullable=False
+    )
+    src_listen: Mapped[str] = mapped_column(String(32), nullable=False)
+    dst_listen: Mapped[str] = mapped_column(String(32), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "nginx_config_id", "src_listen", "dst_listen",
+            name="uq_nginx_mirror_pair",
+        ),
     )
 
 
