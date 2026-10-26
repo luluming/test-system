@@ -11,6 +11,7 @@ from app.models.nginx import (
     DomainMapping,
     ForwardPort,
     NginxConfig,
+    NginxMirrorPair,
     Upstream,
     UpstreamServer,
 )
@@ -27,7 +28,23 @@ def derive_code(name: str) -> str:
 def clone_industry(
     db: Session, *, payload: CloneIndustryRequest
 ) -> Industry:
-    """事务内新建行业并深拷源行业全部数据；任一步失败整体回滚。"""
+    """事务内新建行业并深拷源行业全部数据；任一步失败整体回滚。
+
+    source_industry_id 为空时仅创建空行业（code 手填或自动派生），不拷贝任何数据。
+    """
+    if payload.source_industry_id is None:
+        new_industry = Industry(
+            code=payload.code or derive_code(payload.name),
+            name=payload.name,
+            owner=payload.owner,
+            is_template=False,
+            cloned_from_id=None,
+        )
+        db.add(new_industry)
+        db.commit()
+        db.refresh(new_industry)
+        return new_industry
+
     source = db.execute(
         select(Industry).where(Industry.id == payload.source_industry_id)
     ).scalar_one_or_none()
@@ -50,6 +67,7 @@ def clone_industry(
             select(NginxConfig).where(NginxConfig.industry_id == source.id)
         ).scalars().all()
     )
+    cfg_id_map: dict[int, int] = {}
     for cfg in source_configs:
         new_cfg = NginxConfig(
             industry_id=new_industry.id,
@@ -61,7 +79,20 @@ def clone_industry(
         )
         db.add(new_cfg)
         db.flush()
+        cfg_id_map[cfg.id] = new_cfg.id
         _copy_block_tree(db, new_cfg.id, cfg.id)
+
+    # 1.5 镜像对（config 级元数据，旧 config id → 新 config id 重映射）
+    for mp in db.execute(
+        select(NginxMirrorPair).where(NginxMirrorPair.nginx_config_id.in_(cfg_id_map))
+    ).scalars().all():
+        db.add(
+            NginxMirrorPair(
+                nginx_config_id=cfg_id_map[mp.nginx_config_id],
+                src_listen=mp.src_listen,
+                dst_listen=mp.dst_listen,
+            )
+        )
 
     # 2. upstreams + upstream_servers（行业级），构建旧→新 id 映射供 forward_ports 重映射
     up_map: dict[int, int] = {}

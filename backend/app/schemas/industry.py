@@ -26,11 +26,19 @@ class IndustryCreate(BaseModel):
 
 
 class CloneIndustryRequest(BaseModel):
-    """从模板行业克隆请求。"""
+    """从模板行业克隆请求；source_industry_id 可选，不填则创建空行业。"""
 
-    source_industry_id: int
+    source_industry_id: int | None = None
     name: str = Field(min_length=1, max_length=50)
     owner: str | None = Field(default=None, max_length=50)
+    code: str | None = Field(default=None, max_length=50)
+
+    @field_validator("code")
+    @classmethod
+    def _code_must_be_slug(cls, v: str | None) -> str | None:
+        if v is not None and not _CODE_RE.match(v):
+            raise ValueError("行业 code 仅允许小写字母、数字与下划线")
+        return v
 
 
 class IndustryUpdate(BaseModel):
