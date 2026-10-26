@@ -28,6 +28,11 @@ class Settings(BaseSettings):
     # CORS：允许的前端开发服务器来源
     CORS_ORIGINS: list[str] = ["http://localhost:5173"]
 
+    # 对外基址（推送 curl 命令等使用）：空则自动探测出口公网 IP；也可显式指定如
+    # PUBLIC_BASE_URL=https://nginx.example.com（可带端口）
+    PUBLIC_BASE_URL: str = ""
+    API_PORT: int = 8000
+
 
 def _load_settings() -> Settings:
     """加载配置；SECRET_KEY 缺失时抛出 RuntimeError 拒绝启动。"""

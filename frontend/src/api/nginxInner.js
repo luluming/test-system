@@ -149,3 +149,7 @@ export function createPushToken(configId, purpose) {
     params: { purpose },
   });
 }
+// ---- 全局元信息：后端公网基址（供 curl 命令使用）----
+export function getMetaBase() {
+  return client.get("/meta");
+}

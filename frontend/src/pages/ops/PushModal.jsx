@@ -62,6 +62,7 @@ export default function PushModal({ open, onClose }) {
   const [busy, setBusy] = useState(false);
   const [pushTokens, setPushTokens] = useState(null); // {preview, apply, expires_at}
   const [taskIdInput, setTaskIdInput] = useState("");
+  const [publicBase, setPublicBase] = useState(""); // 后端公网基址
 
   const configName = (configs || []).find((c) => c.id === configId)?.name || "";
   const industryName = industry?.name || "";
@@ -74,6 +75,9 @@ export default function PushModal({ open, onClose }) {
     if (open) {
       loadTasks();
       setTab("push");
+      inner.getMetaBase()
+        .then((r) => setPublicBase(r.data?.base_url || ""))
+        .catch(() => setPublicBase(""));
     }
   }, [open, configId]);
 
@@ -157,7 +161,8 @@ export default function PushModal({ open, onClose }) {
       .catch(() => toast("记录详情加载失败", "err"));
   };
 
-  const base = `${window.location.origin}`.replace(/:\d+$/, "") || "http://localhost";
+  const originBase = `${window.location.origin}`.replace(/:\d+$/, "") || "http://localhost";
+  const base = publicBase || originBase;
   const previewToken = pushTokens?.preview || "<TOKEN>";
   const applyToken = pushTokens?.apply || "<TOKEN>";
   const taskIdText = taskIdInput || "<task_id>";
@@ -223,7 +228,9 @@ python tools/nginx_push.py --industry "${industryName}" --config "${configName}"
 
             <div style={{ marginTop: 14, borderTop: "1px solid var(--border-soft)", paddingTop: 10 }}>
               <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "space-between", marginBottom: 6, flexWrap: "wrap" }}>
-                <span style={{ fontSize: 11, color: "var(--text-ter)" }}>生成命令（推送目标：{industryName} / {configName}，端口从文件内容自动识别）</span>
+                <span style={{ fontSize: 11, color: "var(--text-ter)" }}>
+                  生成命令（推送目标：{industryName} / {configName}，基址 {publicBase ? "公网地址" : "当前站点"}：{base}）
+                </span>
                 <button className="btn mini primary" onClick={genTokens} disabled={busy || !configId}>
                   {busy ? "生成中…" : (pushTokens ? "重新生成 Token" : "生成推送 Token")}
                 </button>
