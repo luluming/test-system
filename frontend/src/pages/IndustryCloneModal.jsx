@@ -13,6 +13,16 @@ export default function IndustryCloneModal({ templates, open, onClose, onCreated
   const canSubmit = useMemo(() => name.trim().length > 0, [name]);
   const btnLabel = hasSource ? "创建并克隆" : "创建空行业";
 
+  // code 本地校验：字母/数字/下划线/连字符（输入时已转小写并去空格）
+  const codeErr = !hasSource && code.trim() !== "" && !/^[a-z0-9_-]+$/.test(code.trim());
+
+  const errText = (e) => {
+    const d = e?.response?.data?.detail;
+    if (typeof d === "string") return d;
+    if (Array.isArray(d)) return d.map((x) => x.msg).join("；");
+    return "创建失败，请重试";
+  };
+
   if (!open) return null;
   return (
     <div className="modal-mask" onClick={onClose}>
@@ -31,7 +41,12 @@ export default function IndustryCloneModal({ templates, open, onClose, onCreated
         {!hasSource && (
           <>
             <label>行业 code（可选，留空自动生成）</label>
-            <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="如：domestic（小写字母/数字/下划线）" />
+            <input
+              value={code}
+              onChange={(e) => setCode(e.target.value.toLowerCase().replace(/\s+/g, ""))}
+              placeholder="如：domestic-web（字母/数字/下划线/连字符）"
+            />
+            {codeErr && <p className="err">code 仅允许字母、数字、下划线与连字符</p>}
           </>
         )}
         <label>负责人（可选）</label>
@@ -41,7 +56,7 @@ export default function IndustryCloneModal({ templates, open, onClose, onCreated
           <button className="btn" onClick={onClose}>取消</button>
           <button
             className="btn primary"
-            disabled={!canSubmit || loading}
+            disabled={!canSubmit || loading || codeErr}
             onClick={async () => {
               setLoading(true); setErr("");
               try {
@@ -51,7 +66,7 @@ export default function IndustryCloneModal({ templates, open, onClose, onCreated
                 const created = await cloneIndustry(payload);
                 onCreated(created.data);
               } catch (e) {
-                setErr(e.response?.data?.detail || "创建失败，请重试");
+                setErr(errText(e));
               } finally {
                 setLoading(false);
               }

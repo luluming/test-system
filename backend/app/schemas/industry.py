@@ -4,8 +4,8 @@ import re
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-# 行业 code 白名单：小写字母、数字、下划线，长度 1-50
-_CODE_RE = re.compile(r"^[a-z0-9_]+$")
+# 行业 code 白名单：字母、数字、下划线、连字符；校验时统一转小写
+_CODE_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 class IndustryCreate(BaseModel):
@@ -21,8 +21,8 @@ class IndustryCreate(BaseModel):
     @classmethod
     def _code_must_be_slug(cls, v: str) -> str:
         if not _CODE_RE.match(v):
-            raise ValueError("行业 code 仅允许小写字母、数字与下划线")
-        return v
+            raise ValueError("行业 code 仅允许字母、数字、下划线与连字符")
+        return v.lower()
 
 
 class CloneIndustryRequest(BaseModel):
@@ -37,8 +37,8 @@ class CloneIndustryRequest(BaseModel):
     @classmethod
     def _code_must_be_slug(cls, v: str | None) -> str | None:
         if v is not None and not _CODE_RE.match(v):
-            raise ValueError("行业 code 仅允许小写字母、数字与下划线")
-        return v
+            raise ValueError("行业 code 仅允许字母、数字、下划线与连字符")
+        return v.lower() if v is not None else v
 
 
 class IndustryUpdate(BaseModel):
