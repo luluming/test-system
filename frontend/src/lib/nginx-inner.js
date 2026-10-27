@@ -240,7 +240,11 @@ export function renderPreviewLines(node) {
     lines.push(ind + (n.header || "") + " {");
     const norm = [], def = [];
     n.options.forEach((o) => { if (o.directive === "default") def.push(o); else norm.push(o); });
-    norm.concat(def).forEach((o) => { lines.push(ind + INDENT + String(o.raw != null ? o.raw : (o.directive + (o.value ? (" " + o.value) : ""))).replace(/;\s*$/, "") + ";"); });
+    norm.concat(def).forEach((o) => {
+      const raw = String(o.raw != null ? o.raw : (o.directive + (o.value ? (" " + o.value) : ""))).replace(/;\s*$/, "");
+      if (o.row_type === "comment") { lines.push(ind + INDENT + raw); return; }
+      lines.push(ind + INDENT + raw + ";");
+    });
     n.children.forEach((c) => rb(c, depth + 1));
     lines.push(ind + "}");
   })(node, 0);

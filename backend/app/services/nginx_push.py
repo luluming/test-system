@@ -89,11 +89,17 @@ def _split_terms(s: str) -> list[str]:
 
 # ---- 解析：原文 → 规范化块树（与 build_config_dict 同形）----
 
+def _comment_option(text: str, ln: int) -> dict:
+    """整行/行内注释 → 父块 options 中的 comment 行（非子块，保证往返渲染保真）。"""
+    t = text[1:].strip()
+    return {"directive": "#", "value": t, "row_type": "comment", "raw": "# " + t, "_line": ln}
+
+
 def parse_nginx(src: str) -> tuple[dict | None, list[dict]]:
     """原文 → 块树；结构不完整返回 (None, [{line, reason}])。
 
-    行内注释（引号外的 #）一律剥离：整行注释 → comment 块；
-    指令/块头行带尾注 → 代码部分正常解析，注释另存为 comment 子块，避免污染指令值。
+    行内注释（引号外的 #）一律剥离，并作为父块内的 comment 选项行保留
+    （row_type="comment"），不生成子块，避免污染指令值。
     """
     errors: list[dict] = []
     root: dict = {"scope": "http", "header": "http", "children": [], "options": []}
@@ -105,11 +111,9 @@ def parse_nginx(src: str) -> tuple[dict | None, list[dict]]:
         body, cmt = _strip_inline_comment(trimmed)
         cur = stack[-1][0]
         if not body.strip():
-            # 整行均为注释
+            # 整行均为注释 → 父块 comment 选项行（非子块）
             if cmt:
-                cur["children"].append(
-                    {"scope": "comment", "header": cmt[1:].strip(), "children": [], "options": [], "_line": ln}
-                )
+                cur["options"].append(_comment_option(cmt, ln))
             continue
         clean = _strip_quoted(body)
         opens = clean.count("{")
@@ -117,9 +121,7 @@ def parse_nginx(src: str) -> tuple[dict | None, list[dict]]:
         if opens == 0 and closes == 0:
             cur["options"].append({**kvify(body), "_line": ln})
             if cmt:
-                cur["children"].append(
-                    {"scope": "comment", "header": cmt[1:].strip(), "children": [], "options": [], "_line": ln}
-                )
+                cur["options"].append(_comment_option(cmt, ln))
             continue
         if closes > 0 and opens == 0:
             pops = closes
@@ -140,9 +142,7 @@ def parse_nginx(src: str) -> tuple[dict | None, list[dict]]:
             for s in _split_terms(after):
                 child["options"].append({**kvify(s), "_line": ln})
             if cmt:
-                child["children"].append(
-                    {"scope": "comment", "header": cmt[1:].strip(), "children": [], "options": [], "_line": ln}
-                )
+                child["options"].append(_comment_option(cmt, ln))
             if closes < opens:
                 stack.append((child, ln))
             continue

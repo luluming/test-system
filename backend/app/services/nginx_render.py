@@ -136,6 +136,9 @@ def render_text(node: dict) -> list[str]:
             lines.append(ind + "# 建议少用 if")
         lines.append(ind + (n.get("header") or "") + " {")
         for o in ordered_options(n.get("options", [])):
+            if o.get("row_type") == "comment":
+                lines.append(ind + INDENT + (o.get("raw") or ("# " + (o.get("value") or ""))))
+                continue
             lines.append(ind + INDENT + _option_raw(o).rstrip(";").rstrip() + ";")
         for c in n.get("children", []):
             rb(c, depth + 1)
