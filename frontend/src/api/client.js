@@ -1,7 +1,7 @@
 import axios from "axios";
 import { clearToken, getToken } from "../store/auth";
 
-// 创建 axios 实例：所有请求以 /api 为前缀（由 Vite 代理转发到后端）
+// 创建 axios 实例：所有请求以 /api 为前缀。开发环境由 Vite 自定义代理转发到后端
 const client = axios.create({
   baseURL: "/api",
   timeout: 10000,
