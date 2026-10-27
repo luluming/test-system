@@ -240,6 +240,15 @@ function TreeNode({ node, root, sel, onPick, onPersist, kind, toast, depth, firs
     }
   };
 
+  /* 注释节点：渲染为纯注释行（非块卡片，无 +KV 容器），与兄弟块按 sort_order 交错保住文件位置 */
+  if (node.scope === "comment") {
+    return (
+      <div style={{ marginLeft: root ? 0 : 18 }}>
+        <div className="kv-row cm" title={node.header}><span className="raw"># {node.header}</span></div>
+      </div>
+    );
+  }
+
   const isSel = sel && sel._id === node.ref._id;
 
   return (

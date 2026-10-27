@@ -98,8 +98,12 @@ def _comment_option(text: str, ln: int) -> dict:
 def parse_nginx(src: str) -> tuple[dict | None, list[dict]]:
     """原文 → 块树；结构不完整返回 (None, [{line, reason}])。
 
-    行内注释（引号外的 #）一律剥离，并作为父块内的 comment 选项行保留
-    （row_type="comment"），不生成子块，避免污染指令值。
+    注释位置保真规则：
+    - 行内注释（引号外的 #）剥离为指令后的 comment 选项行（块内位置不变）；
+    - 整行注释在父块尚无子块时作 comment 选项行（处于块体 options 区，
+      render 先渲染 options 再渲染 children，块内位置不变）；
+    - 整行注释在父块已有子块时作 scope="comment" 的子节点，靠 sort_order
+      与兄弟块交错，保住「块与块之间」的文件位置。
     """
     errors: list[dict] = []
     root: dict = {"scope": "http", "header": "http", "children": [], "options": []}
@@ -111,9 +115,15 @@ def parse_nginx(src: str) -> tuple[dict | None, list[dict]]:
         body, cmt = _strip_inline_comment(trimmed)
         cur = stack[-1][0]
         if not body.strip():
-            # 整行均为注释 → 父块 comment 选项行（非子块）
+            # 整行均为注释：父块已有子块时作块间注释子节点（保住块间位置），
+            # 否则作父块 body 内的 comment 选项行（块内位置不变）
             if cmt:
-                cur["options"].append(_comment_option(cmt, ln))
+                if cur["children"]:
+                    cur["children"].append(
+                        {"scope": "comment", "header": cmt[1:].strip(), "children": [], "options": [], "_line": ln}
+                    )
+                else:
+                    cur["options"].append(_comment_option(cmt, ln))
             continue
         clean = _strip_quoted(body)
         opens = clean.count("{")
@@ -133,7 +143,7 @@ def parse_nginx(src: str) -> tuple[dict | None, list[dict]]:
             continue
         if opens > 0:
             col = body.find("{")
-            head, _ = _strip_inline_comment(body[:col])
+            head = _strip_inline_comment(body[:col])[0].strip()
             after = re.sub(r"}.*$", "", _strip_quoted(body[col + 1:]))
             after, _ = _strip_inline_comment(after)
             sc = scope_of(head)
@@ -442,10 +452,91 @@ def _sync_mirrors(db, config_id: int, touched: set[int]) -> list[dict]:
     return mirrored
 
 
+def _sync_root_level(db, config_id: int, file_root: dict) -> None:
+    """根级内容与文件对齐（diff 只覆盖 diffable 块，顶层指令/注释在此单独同步）。
+
+    - 顶层 options（含顶层注释）归并进 header="" 的根 options 块，
+      build_config_dict 会并入 root.options 渲染在最前；
+    - 顶层注释按文件序创建/保留为 parent_id=None 的 comment 块，与顶层 diffable 块
+      的 sort_order 交错，保住「块与块之间」的文件位置；
+    - 顶层 sort_order 按文件顶层序列重排，DB 独有块（keep）追加在文件序列之后。
+    """
+    rows, opt_map = _block_rows(db, config_id)
+    root_scope = file_root.get("scope", "http")
+    top_rows = [b for b in rows if b.parent_id is None]
+    root_block = next((b for b in top_rows if b.header == "" and b.scope == root_scope), None)
+
+    # 1) 顶层 options → 根 options 块（镜像文件；无文件内容则清空既有块）
+    file_opts = file_root.get("options", [])
+    if root_block is None and file_opts:
+        root_block = ConfigBlock(
+            nginx_config_id=config_id, parent_id=None, scope=root_scope,
+            header="", belongs_to_file=None, sort_order=0,
+        )
+        db.add(root_block)
+        db.flush()
+    if root_block is not None:
+        for o in opt_map.get(root_block.id, []):
+            db.delete(o)
+        for o in file_opts:
+            db.add(
+                ConfigOption(
+                    block_id=root_block.id,
+                    directive=o.get("directive", ""),
+                    value=o.get("value", ""),
+                    row_type=o.get("row_type", "kv"),
+                    is_free_text=bool(o.get("is_free_text")),
+                    sort_order=o.get("sort_order", 0),
+                )
+            )
+        db.flush()
+
+    # 2) 文件顶层项 → DB 行映射（diffable 按主键、注释按 header 贪心匹配）
+    db_index: dict = {}
+    for b in top_rows:
+        k, _ = identity_of(_node_dict(b, opt_map))
+        db_index.setdefault(k, b)
+    db_cmts = [b for b in top_rows if b.scope == "comment"]
+    used: set[int] = set()
+    file_to_row: list[tuple[dict, ConfigBlock | None]] = []
+    for c in file_root.get("children", []):
+        if c.get("scope") == "comment":
+            row = next((b for b in db_cmts if b.header == c.get("header", "") and b.id not in used), None)
+        else:
+            k, _ = identity_of(c)
+            row = db_index.get(k)
+        if row is not None:
+            used.add(row.id)
+        file_to_row.append((c, row))
+
+    # 3) 新建缺失的注释块，并按文件序重排顶层 sort_order（keep 块追加在后）
+    order = 0
+    assigned: set[int] = set()
+    for c, row in file_to_row:
+        if c.get("scope") == "comment" and row is None:
+            row = ConfigBlock(
+                nginx_config_id=config_id, parent_id=None, scope="comment",
+                header=c.get("header", ""), belongs_to_file=None, sort_order=0,
+            )
+            db.add(row)
+            db.flush()
+        if row is not None:
+            order += 1
+            row.sort_order = order
+            assigned.add(row.id)
+    for b in top_rows:
+        if b.id in assigned or b is root_block:
+            continue
+        order += 1
+        b.sort_order = order
+    db.flush()
+
+
 def perform_apply(db, config_id: int, file_root: dict, entries: list[dict]) -> dict:
     """把预览确认的差异应用到 DB（不提交，由调用方统一事务）。
 
     replace 整棵子树替换（保留 DB 位置）；new 追加到顶级末尾；
+    顶层指令/注释经 _sync_root_level 按文件序对齐（注释在块与块之间的位置不变）；
     被替换/新建的镜像母本自动同步镜像目标（保留 dst 自身 listen）。
     """
     to_apply = [e for e in entries if e["action"] in ("replace", "new")]
@@ -477,5 +568,6 @@ def perform_apply(db, config_id: int, file_root: dict, entries: list[dict]) -> d
             ndst = _create_from_file(db, config_id, fn, top_order)
         touched.add(ndst.id)
     db.flush()
+    _sync_root_level(db, config_id, file_root)
     mirrored = _sync_mirrors(db, config_id, touched)
     return {"applied": to_apply, "mirrored": mirrored}

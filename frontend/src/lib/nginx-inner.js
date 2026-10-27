@@ -151,7 +151,7 @@ export function countAll(tree) {
 export function treeNodeCount(tree) {
   const T = Array.isArray(tree) ? tree[0] : tree;
   let c = 0;
-  (function r(n) { c++; (n.children || []).forEach(r); })(T);
+  (function r(n) { if (n.scope !== "comment") c++; (n.children || []).forEach(r); })(T);
   return c;
 }
 
