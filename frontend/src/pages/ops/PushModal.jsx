@@ -101,8 +101,9 @@ export default function PushModal({ open, onClose }) {
           setPreview({ errors });
           toast("解析失败，文件整体拒绝", "err");
         } else {
+          const msg = typeof d === "string" ? d : "未知错误";
           setPreview(null);
-          toast("预览失败：" + (typeof d === "string" ? d : "未知错误"), "err");
+          toast("预览失败：" + msg + (msg.includes("token") ? "，请点击右上角重新生成后重试" : ""), "err");
         }
       });
   };
@@ -143,7 +144,7 @@ export default function PushModal({ open, onClose }) {
         // 自动回填最新 pending 任务的 task_id（若存在）
         const pending = (tasks || []).find((t) => t.status === "pending");
         if (pending) setTaskIdInput(String(pending.id));
-        toast("一次性 token 已生成（预览+提交各一枚，单次使用，10 分钟过期）", "ok");
+        toast("一次性 token 已生成（预览+提交各一枚，单次使用，30 分钟过期）", "ok");
       })
       .catch((e) => {
         setBusy(false);

@@ -674,8 +674,16 @@ def _resolve_push_actor(db: Session, config_id: int, purpose: str, authorization
             NginxPushToken.used_at.is_(None),
         )
     ).scalar_one_or_none()
-    if row is None or row.expires_at < datetime.utcnow():
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="一次性 token 无效、已使用或已过期")
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="一次性 token 无效或已使用，请在推送弹窗重新生成",
+        )
+    if row.expires_at < datetime.utcnow():
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="一次性 token 已过期（签发后 30 分钟有效），请在推送弹窗重新生成",
+        )
     row.used_at = datetime.utcnow()
     db.commit()
     return f"pushtoken:{row.id}"
@@ -703,7 +711,7 @@ def create_push_token(
         nginx_config_id=config_id,
         purpose=purpose,
         token_hash=hashlib.sha256(raw.encode()).hexdigest(),
-        expires_at=now + timedelta(minutes=10),
+        expires_at=now + timedelta(minutes=30),
     )
     db.add(row)
     db.commit()
