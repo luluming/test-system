@@ -16,7 +16,7 @@ import sys
 import urllib.error
 import urllib.request
 
-DEFAULT_BASE = "http://127.0.0.1:8000/api"
+DEFAULT_BASE = "http://127.0.0.1:8001/api"
 
 _ACTION_CN = {"replace": "替换", "new": "新建", "none": "无变化", "keep": "系统保留"}
 

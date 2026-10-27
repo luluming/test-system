@@ -3393,7 +3393,7 @@ Expected: 成功。
 启动后端（后台）：
 
 ```bash
-cd backend && .venv/Scripts/python -m uvicorn app.main:app --reload --port 8000
+cd backend && .venv/Scripts/python -m uvicorn app.main:app --reload --port 8001
 ```
 
 启动前端（后台）：

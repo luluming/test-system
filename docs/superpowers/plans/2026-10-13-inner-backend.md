@@ -3656,7 +3656,7 @@ Expected: 全绿（约 73 passed）
 
 **手工端到端（需先删库重建 schema）：**
 1. 删除开发库：`Remove-Item backend\test_system.db -ErrorAction SilentlyContinue`（PowerShell）
-2. 启动后端（`dangerouslyDisableSandbox=true`）：`.\.venv\Scripts\python -m uvicorn app.main:app --port 8000`
+2. 启动后端（`dangerouslyDisableSandbox=true`）：`.\.venv\Scripts\python -m uvicorn app.main:app --port 8001`
 3. 登录拿 token 后请求：`GET /api/nginx-configs?industry_id=1` → 拿到模板行业配置 id；`GET /api/nginx-configs/{id}/tree` → 有 blocks；`GET /api/nginx-configs/{id}/render` → 文本含 `listen 443 ssl http2;`
 
 - [ ] **Step 5: 提交**

@@ -41,10 +41,10 @@ pip install -r requirements.txt
 # 准备环境变量（复制模板并修改 SECRET_KEY）
 copy .env.example .env        # Windows
 cp .env.example .env          # Linux/macOS
-uvicorn app.main:app --reload --port 8000
+uvicorn app.main:app --reload --port 8001
 ```
 
-- OpenAPI 文档：http://localhost:8000/docs
+- OpenAPI 文档：http://localhost:8001/docs
 - 演示账号（由 seed 自动创建）：`admin / admin123`
 - 运行测试：`pytest tests -q`
 
@@ -57,7 +57,7 @@ npm run dev
 ```
 
 - 访问 http://localhost:5173 ，注册账号或使用演示账号登录
-- `/api` 请求由 Vite 代理转发至 http://localhost:8000
+- `/api` 请求由 Vite 代理转发至 http://localhost:8001
 
 ## 安全规范（新增代码必须遵守）
 

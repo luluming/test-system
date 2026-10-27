@@ -11,10 +11,10 @@
 **参考设计：** `docs/superpowers/specs/2026-10-26-industry-clone-optional-template-design.md`
 
 **环境要点：**
-- 后端启动：cwd=`backend`，`.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8000`，必须 `dangerouslyDisableSandbox: true`（沙箱阻止 socket）。用 `--reload` 便于改代码后自动生效。
+- 后端启动：cwd=`backend`，`.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8001`，必须 `dangerouslyDisableSandbox: true`（沙箱阻止 socket）。用 `--reload` 便于改代码后自动生效。
 - 前端：cwd=`frontend`，`npm run dev`（5173）。构建 `npm run build` 的 RemoteException 是噪音误报，构建实际成功。
 - 登录：admin/admin123（或 POST /api/auth/login 换新 JWT），登录凭据勿写入任何文件。
-- 前端 vite 代理 `/api` → 8000。
+- 前端 vite 代理 `/api` → 8001。
 
 ---
 
@@ -253,8 +253,8 @@ git commit -m "feat(industry): clone modal template source optional with empty-c
 
 - [ ] **Step 1: 启动后端**
 
-Run（cwd=`backend`，`dangerouslyDisableSandbox: true`，后台）：`.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload`
-Expected: 日志显示 `Uvicorn running on http://0.0.0.0:8000`。
+Run（cwd=`backend`，`dangerouslyDisableSandbox: true`，后台）：`.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload`
+Expected: 日志显示 `Uvicorn running on http://0.0.0.0:8001`。
 
 - [ ] **Step 2: 启动前端**
 
@@ -263,19 +263,19 @@ Expected: 5173 端口可访问。
 
 - [ ] **Step 3: 登录取 JWT**
 
-Run：`curl -s -X POST http://localhost:8000/api/auth/login -H "Content-Type: application/json" -d "{\"username\":\"admin\",\"password\":\"admin123\"}"`
+Run：`curl -s -X POST http://localhost:8001/api/auth/login -H "Content-Type: application/json" -d "{\"username\":\"admin\",\"password\":\"admin123\"}"`
 Expected: 返回 `access_token`。
 
 - [ ] **Step 4: 不选模板创建空行业**
 
 Run（替换 `TOKEN`）：
-`curl -s -X POST http://localhost:8000/api/industries/clone -H "Authorization: Bearer TOKEN" -H "Content-Type: application/json" -d "{\"name\":\"测试空行业\"}"`
+`curl -s -X POST http://localhost:8001/api/industries/clone -H "Authorization: Bearer TOKEN" -H "Content-Type: application/json" -d "{\"name\":\"测试空行业\"}"`
 Expected: 201，返回 `code=ce_shi_kong_hang_ye`（或类似派生值）、`cloned_from_id=null`。
 
 - [ ] **Step 5: 选模板克隆 + 镜像对**
 
-先用现有接口查询模板行业（如行业 2）：`curl -s http://localhost:8000/api/industries/2 -H "Authorization: Bearer TOKEN"`；再克隆：
-`curl -s -X POST http://localhost:8000/api/industries/clone -H "Authorization: Bearer TOKEN" -H "Content-Type: application/json" -d "{\"source_industry_id\":2,\"name\":\"克隆验证行业\"}"`
+先用现有接口查询模板行业（如行业 2）：`curl -s http://localhost:8001/api/industries/2 -H "Authorization: Bearer TOKEN"`；再克隆：
+`curl -s -X POST http://localhost:8001/api/industries/clone -H "Authorization: Bearer TOKEN" -H "Content-Type: application/json" -d "{\"source_industry_id\":2,\"name\":\"克隆验证行业\"}"`
 Expected: 201，`cloned_from_id=2`。随后查询新行业下的配置与镜像对：`GET /api/nginx-configs/industry/{new_id}` 与镜像对接口，确认镜像对已拷贝。
 
 - [ ] **Step 6: 独立性抽查**

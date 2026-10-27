@@ -305,7 +305,7 @@ OpsConfigPage          ← 配置文件主从（默认页，改造既有 OpsCons
 
 ## 8. 部署入口
 
-- 沿用 Vite 代理 `/api → localhost:8000`，受保护路由，登录沿用 JWT + 验证码
+- 沿用 Vite 代理 `/api → localhost:8001`，受保护路由，登录沿用 JWT + 验证码
 - 迁移：SQLite 现库由 `seed.py` 自动补建两张新表，无需迁移工具
 
 ## 9. 范围外（YAGNI）

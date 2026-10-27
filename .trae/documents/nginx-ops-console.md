@@ -20,7 +20,7 @@
 | 表 | 字段 |
 |----|------|
 | `nginx_configs` | id, name(String 唯一名), domain(String 可空), config_text(Text), enabled(Bool 默认 True), created_at |
-| `domain_mappings` | id, domain(String 唯一), forward_tos(String 如 "127.0.0.1:8000"), protocol(String http/https), description(String 备注/服务名), enabled(Bool), created_at |
+| `domain_mappings` | id, domain(String 唯一), forward_tos(String 如 "127.0.0.1:8001"), protocol(String http/https), description(String 备注/服务名), enabled(Bool), created_at |
 | `forward_ports` | id, listen_port(Int 索引), upstream_target(String), service_name(String 可空), protocol(String tcp/http), enabled(Bool), created_at |
 | `biz_ports` | id, service_name(String), port(Int 索引), protocol(String tcp/udp), **public_exposed(Bool 可空)**——是否开放公网, note(String 可空), created_at |
 
@@ -51,7 +51,7 @@
 
 ## 验证
 
-后端已跑在 127.0.0.1:8000、前端 5173（上个任务已启动，改动后 uvicorn `--reload` 自动重载、Vite 热更新）。
+后端已跑在 127.0.0.1:8001、前端 5173（上个任务已启动，改动后 uvicorn `--reload` 自动重载、Vite 热更新）。
 
 1. **后端**：用 `.env` 中 `SECRET_KEY` 走 `app.core.security` 生成一个 JWT（避免验证码阻碍登录），用该 Bearer token 对 `nginx-configs`/`domain-mappings`/`forward-ports`/`biz-ports` 四组 API 做一轮 `POST→GET→PUT→DELETE` 的 curl 冒烟验证；并确认 `/docs` 出现 4 组新端点。
 2. **前端**：浏览器打开 `http://localhost:5173/ops`，若未登录会被 `ProtectedLayout` 重定向到 `/login`；用 `browser_evaluate` 向 `localStorage` 写入合法 token 后导航到 `/ops`，验证 4 个 Tab 均能加载、新建/删除可用、开关可切换。
