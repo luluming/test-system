@@ -27,13 +27,13 @@ def _generate_id() -> str:
 
 
 def _build_svg(code: str) -> str:
-    """绘制验证码 SVG：随机旋转/偏移的字符 + 干扰线 + 噪点。"""
-    stroke_colors = ["#9db2c7", "#d1d5db", "#6b7280", "#4f6f8f"]
-    text_colors = ["#1e1e1e", "#3d5a75", "#4f6f8f", "#6b7280"]
+    """绘制验证码 SVG：随机旋转/偏移的字符 + 干扰线 + 噪点（暗色主题，与前端 IDE 风格一致）。"""
+    stroke_colors = ["#4a5a70", "#64748b", "#3d4a60", "#556580"]
+    text_colors = ["#cbd5e1", "#a7b6c8", "#8fa3c8", "#b8c4d4"]
     parts = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{_IMAGE_WIDTH}" '
         f'height="{_IMAGE_HEIGHT}" viewBox="0 0 {_IMAGE_WIDTH} {_IMAGE_HEIGHT}">',
-        f'<rect width="{_IMAGE_WIDTH}" height="{_IMAGE_HEIGHT}" rx="6" fill="#f1f3f5"/>',
+        f'<rect width="{_IMAGE_WIDTH}" height="{_IMAGE_HEIGHT}" rx="6" fill="#141418"/>',
     ]
     # 干扰线：2~3 条随机斜线
     for _ in range(random.randint(2, 3)):

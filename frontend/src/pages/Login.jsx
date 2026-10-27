@@ -124,14 +124,14 @@ export default function Login() {
                 maxLength={6}
                 suffix={
                   captcha ? (
-                    <img
-                      className="captcha-img"
-                      src={captcha.captcha_image}
-                      key={captcha.captcha_id}
-                      alt="验证码"
-                      title="点击刷新验证码"
-                      onClick={loadCaptcha}
-                    />
+                    <span className="captcha-box" title="点击刷新验证码" onClick={loadCaptcha}>
+                      <img
+                        className="captcha-img"
+                        src={captcha.captcha_image}
+                        key={captcha.captcha_id}
+                        alt="验证码"
+                      />
+                    </span>
                   ) : (
                     <span className="captcha-loading" onClick={loadCaptcha}>
                       点击加载验证码
