@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>本地 Nginx 配置推送 · 产品需求文档</title>
+<style>
+  :root {
+    --ink: #1f2329; --ink-2: #4b5563; --ink-3: #6b7280;
+    --line: #e5e7eb; --line-2: #f3f4f6;
+    --brand: #2563eb; --brand-bg: #eff6ff;
+    --ok: #059669; --ok-bg: #ecfdf5;
+    --warn: #d97706; --warn-bg: #fffbeb;
+    --err: #dc2626; --err-bg: #fef2f2;
+    --mono: "SF Mono", "JetBrains Mono", Consolas, Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; color: var(--ink); background: #fff; line-height: 1.65; }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 48px 32px 80px; }
+  .meta { color: var(--ink-3); font-size: 13px; }
+  h1 { font-size: 26px; margin: 8px 0 4px; }
+  h2 { font-size: 20px; margin: 44px 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+  h3 { font-size: 16px; margin: 24px 0 8px; }
+  h4 { font-size: 14px; margin: 18px 0 6px; }
+  p { margin: 8px 0; }
+  ul, ol { margin: 8px 0 12px; padding-left: 22px; }
+  li { margin: 4px 0; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0 20px; font-size: 13.5px; }
+  th { text-align: left; background: var(--line-2); padding: 8px 10px; border: 1px solid var(--line); font-weight: 600; }
+  td { padding: 8px 10px; border: 1px solid var(--line); vertical-align: top; }
+  code { font-family: var(--mono); font-size: 12.5px; background: var(--line-2); padding: 1px 5px; border-radius: 4px; }
+  pre { font-family: var(--mono); font-size: 12.5px; background: #0f172a; color: #e2e8f0; padding: 14px 16px; border-radius: 8px; overflow-x: auto; line-height: 1.5; }
+  .tag { display: inline-block; font-size: 11.5px; padding: 1px 8px; border-radius: 10px; font-weight: 600; }
+  .tag.ok { color: var(--ok); background: var(--ok-bg); }
+  .tag.warn { color: var(--warn); background: var(--warn-bg); }
+  .tag.err { color: var(--err); background: var(--err-bg); }
+  .tag.p1 { color: var(--brand); background: var(--brand-bg); }
+  .note { background: var(--brand-bg); border-left: 3px solid var(--brand); padding: 10px 14px; border-radius: 0 6px 6px 0; margin: 12px 0; font-size: 13.5px; }
+  .warn-note { background: var(--warn-bg); border-left: 3px solid var(--warn); padding: 10px 14px; border-radius: 0 6px 6px 0; margin: 12px 0; font-size: 13.5px; }
+  .card { border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; margin: 14px 0; }
+  .flow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
+  .flow .step { background: var(--brand-bg); color: var(--brand); border: 1px solid #bfdbfe; border-radius: 8px; padding: 6px 12px; font-size: 13px; font-weight: 600; }
+  .flow .arrow { color: var(--ink-3); }
+  .state { display: inline-block; background: var(--line-2); border: 1px solid var(--line); padding: 2px 10px; border-radius: 20px; font-size: 12.5px; font-weight: 600; }
+  .demo-bar { background: var(--line-2); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; font-size: 13px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .demo-bar input { font-family: var(--mono); font-size: 12.5px; border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; flex: 1; min-width: 220px; }
+  button.copy-btn { font-family: inherit; font-size: 13px; border: 1px solid var(--brand); color: var(--brand); background: #fff; border-radius: 6px; padding: 6px 14px; cursor: pointer; }
+  button.copy-btn:hover { background: var(--brand-bg); }
+  .kv { margin: 6px 0; font-size: 13.5px; }
+  .kv b { display: inline-block; min-width: 130px; color: var(--ink-2); font-weight: 600; }
+  .id { font-family: var(--mono); color: var(--brand); font-size: 12px; font-weight: 600; }
+  @media (max-width: 640px) { .wrap { padding: 28px 16px 60px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="meta">内部产品需求文档 · 版本 0.3（草稿评审） · 2026-10-26</div>
+  <h1>本地 Nginx 配置推送</h1>
+  <p class="meta">一条命令将本地 nginx 配置结构化推入系统 · 端口自动识别 · 差异先预览再确认提交 · 任何变更自动留档版本</p>
+
+  <h2>1. 背景与目标</h2>
+  <p>当前系统的配置来源与编辑入口都在 Web 端：配置以「行业 → 配置文件 → 监听点（server 块）→ 块树/指令行」的结构化模型保存在数据库中，用户通过块管理页逐块编辑。但系统外的本地服务器（测试机/生产机）上已有一份手工维护的 nginx 配置（站点 conf 文件），它通常才是「事实来源」。把这些配置搬进系统目前只能手工复制粘贴逐块录入，成本高且易遗漏。</p>
+  <p><b>产品决策</b>：提供一条推送命令，本地配置文件内容一次性结构化入库，与 Web 编辑无缝衔接；重复推送时按监听点（listen 端口）合并覆盖，而不是整树冲掉。由此形成「本地是生产事实、系统是管理入口」的双向工作流。</p>
+  <p><b>期望结果（可观察）</b>：用户在页面复制一条命令（或调用 CLI），仅指定目标配置文件与本地文件路径；命令先返回<b>差异预览</b>（各监听点：替换/新建/无变化/失败，不落库、无副作用），用户确认后二次执行提交；任何失败都不会产生半结构化脏数据；系统内有而文件内没有的监听点始终保留；已入库配置随时可再次修改、可重复推送覆盖。</p>
+
+  <h2>2. 范围</h2>
+  <h3>P0（最小完整旅程）</h3>
+  <ul>
+    <li>FR-1 获取推送命令：页面生成可复制的 curl 命令模板（仅需指定目标配置文件）；同时提供 CLI 工具两种形态。</li>
+    <li>FR-2 两阶段推送：命令（预览阶段）指定目标与本地文件路径、携带凭证，返回差异预览；确认后（提交阶段）携带预览结果 id 落库提交。</li>
+    <li>FR-3 解析与结构化入库：后端读取配置文本，自动识别全部监听点端口，解析为系统现有块树模型；解析失败全拒并返回行号清单。</li>
+    <li>FR-4 差异对比与提交：预览阶段对每个监听点判定「替换/新建/无变化」（系统内有而文件没有的始终保留）；提交阶段执行替换与新建，生成版本快照，镜像目标联动。</li>
+    <li>FR-5 查看推送结果：预览报告与提交记录（差异清单、失败行号）均可见。</li>
+    <li>FR-6 再次修改：推送入库的配置通过现有块管理页继续编辑。</li>
+  </ul>
+  <h3>P1（相关支持）</h3>
+  <ul>
+    <li>推送前自动生成一个版本快照（复用「保存=版本」机制），覆盖后可从版本对比恢复。</li>
+    <li>镜像对联动：被覆盖的监听点若是镜像源，其镜像目标自动跟随同步。</li>
+  </ul>
+  <h3>明确排除</h3>
+  <ul>
+    <li>从系统向本地服务器反向推送/部署配置（本次只做单向入库）。</li>
+    <li>本地 nginx 语法校验器、`nginx -t` 集成。</li>
+    <li>多文件目录批量推送（一次一条命令处理一个文件，可多次推送）。</li>
+  </ul>
+
+  <h2>3. 产品模型</h2>
+  <h3>3.1 对象与归属层级</h3>
+  <div class="flow">
+    <span class="step">行业</span><span class="arrow">→</span>
+    <span class="step">配置文件</span><span class="arrow">→</span>
+    <span class="step">监听点（按 listen 端口标识）</span><span class="arrow">→</span>
+    <span class="step">块树 + 指令行（options）</span>
+  </div>
+  <ul>
+    <li><b>监听点标识</b>：同一配置文件内以 listen 端口作为合并键（镜像对场景下监听点是「源端口」身份，如 443）。</li>
+    <li><b>推送任务</b>：一次推送 = 一个推送任务，包含预览与提交两阶段；任务持久保留原始文本、差异清单、提交结果与失败行号。</li>
+    <li><b>版本快照</b>：<b>所有变更来源自动留档</b>——推送提交成功、系统内修改落库，均自动生成版本记录；版本按时间递增，可任选两版对比。</li>
+  </ul>
+
+  <h3>3.2 推送任务状态机</h3>
+  <table>
+    <tr><th>状态</th><th>触发</th><th>可流转到</th></tr>
+    <tr><td><span class="state">预览中</span></td><td>预览命令已受理，开始读取/解析/对比</td><td>待确认 / 失败</td></tr>
+    <tr><td><span class="state">待确认</span></td><td>差异预览已生成，等待用户确认提交</td><td>提交中（用户二次执行）</td></tr>
+    <tr><td><span class="state">提交中</span></td><td>确认命令已受理，执行替换/新建落库</td><td>成功 / 失败</td></tr>
+    <tr><td><span class="state">成功</span></td><td>提交完成（含自动留档与镜像联动）</td><td>—（结束态）</td></tr>
+    <tr><td><span class="state">失败</span></td><td>鉴权失败 / 目标不存在 / 解析错误（全拒）/ 提交时目标已被其他操作改变</td><td>—（结束态，可修正后重推）</td></tr>
+  </table>
+  <div class="note"><b>两阶段与副作用边界</b>：预览阶段只读（解析+对比，不写库）；提交阶段才产生写入。提交时若目标配置已与预览时不一致（他人已修改），拒绝提交并提示重新预览。</div>
+
+  <h2>4. 功能需求</h2>
+
+  <h3>FR-1 获取推送命令 <span class="tag p1">P0</span></h3>
+  <p><b>用户与触发</b>：任意已登录用户，在「块管理页」需要把本地文件推入系统时。</p>
+  <p><b>处理规则</b></p>
+  <ul>
+    <li>页面提供「推送配置」入口，弹窗内：选择目标行业与目标配置文件；展示「生成预览命令」按钮。命令<b>无需指定端口</b>——端口在解析时从文件内容自动识别。</li>
+    <li>生成的 curl 命令内联：API 地址、推送专用凭证、目标配置参数与本地文件路径占位符；支持一键复制。</li>
+    <li>同屏提供 CLI 工具安装/用法说明：`nginx-push --config &lt;id&gt; --file /path/nginx.conf [--token xxx]`，CLI 与 curl 使用同一套两阶段推送接口。</li>
+    <li>凭证单独生成（见 FR-2），命令中不暴露登录密码。</li>
+  </ul>
+  <p><b>结果</b>：命令已复制/CLI 已说明，用户可离开页面到本地执行预览。</p>
+  <div class="card">
+    <h4>命令生成示意（交互演示）</h4>
+    <div class="demo-bar">
+      <span>目标：业务中心 / 配置 id 2</span>
+      <input id="demo-file" value="/etc/nginx/sites-enabled/af-ftcloud.conf">
+      <button class="copy-btn" id="demo-copy">复制命令</button>
+    </div>
+    <pre id="demo-cmd">curl -X POST 'http://&lt;api&gt;/api/nginx-push/preview' \
+  -H 'Authorization: Bearer &lt;token&gt;' \
+  -F 'config_id=2' \
+  -F 'file=@/etc/nginx/sites-enabled/af-ftcloud.conf'</pre>
+    <p style="font-size:12.5px;color:var(--ink-3)">端口无需指定：预览命令解析文件后自动识别全部监听点；示例命令随文件路径变化，复制按钮给出反馈。</p>
+  </div>
+
+  <h3>FR-2 两阶段推送（认证与受理）<span class="tag p1">P0</span></h3>
+  <p><b>用户与触发</b>：用户在本地终端执行预览命令；预览确认后执行提交命令。</p>
+  <p><b>处理规则</b></p>
+  <ul>
+    <li>接口鉴权：使用推送专用凭证（Bearer token）。凭证由登录用户在系统内生成、可吊销，与登录会话相互独立。[Assumption, TBD] 凭证生成入口与有效期策略。</li>
+    <li><b>预览命令</b>：校验目标配置存在且属于指定行业、文件非空且小于约定上限 [TBD] MB；受理后只读处理（解析+对比），返回差异预览结果，<b>不产生任何库内写入</b>。</li>
+    <li><b>提交命令</b>：携带预览结果 id 与相同凭证；校验预览结果仍有效（目标配置自预览后未被其他操作修改），否则拒绝并提示重新预览；提交执行 FR-4 的替换/新建。</li>
+    <li>任一校验失败：整次拒绝，返回错误与状态码；提交命令拒绝时不写库。</li>
+  </ul>
+  <p><b>结果与状态</b>：预览 → 待确认；提交 → 成功/失败；命令退出码非零表示失败并打印原因。</p>
+
+  <h3>FR-3 解析与结构化入库 <span class="tag p1">P0</span></h3>
+  <p><b>处理规则</b></p>
+  <ul>
+    <li>读取文件文本，按系统块树模型解析：识别 http 级块、server 级块（监听点）、location/if/limit_except 子块，以及各级指令行（options，含注释行）。</li>
+    <li>每监听点以 listen 端口为键登记；缺少 listen 的 server 块视为解析错误。</li>
+    <li><b>全拒规则（解析失败）</b>：解析遇到无法映射到块树模型的语法（如部分 include/变量插值/未知块类型），收集<b>错误位置与行号清单</b>，整次推送拒绝入库——不落任何块、不生成版本，返回清单。用户修正文件后可原命令重推。</li>
+    <li>解析通过后，块树整体落库（复用块/指令的数据结构与层级顺序）。</li>
+  </ul>
+  <p><b>结果</b>：数据库中出现结构化的目标配置内容；失败时库内无任何新增块。</p>
+  <div class="note"><b>边界说明</b>：解析覆盖范围与系统现有编辑器一致（http/server/location/if/limit_except + 指令行）。upstream/map/变量等若无法映射，落入失败清单而非被丢弃，避免静默失真。</div>
+
+  <h3>FR-4 差异对比与提交 <span class="tag p1">P0</span></h3>
+  <p><b>对比键 = listen 端口（文件内自动识别），作用域 = 命令指定的目标配置文件</b></p>
+  <p><b>预览阶段（只读，判定每个端口）</b></p>
+  <ul>
+    <li><b>替换</b>：文件与系统都有该端口，且结构化内容不同 → 标记替换。</li>
+    <li><b>新建</b>：仅文件有该端口 → 标记新建。</li>
+    <li><b>无变化</b>：文件与系统都有该端口且内容一致 → 跳过，不进入提交。</li>
+    <li><b>保留不删</b>：仅系统有该端口 → 始终保留，不进入差异、不提交删除。</li>
+    <li><b>多端口 server</b>：[Assumption] 一个 server 监听多个端口时，以第一个 listen 为对比键，其余端口随该 server 一起替换/新建。</li>
+  </ul>
+  <p><b>提交阶段（用户确认后执行）</b></p>
+  <ul>
+    <li>对「替换」端口：该监听点整棵子树（子块+指令行）替换为文件内容。</li>
+    <li>对「新建」端口：在目标配置下新建监听点。</li>
+    <li><b>镜像联动</b>：被替换的监听点是镜像源（如 443↔20551 中的 443）→ 提交完成后自动对其镜像目标执行同步（复用现有镜像机制，保留镜像目标自己的 listen 端口）。</li>
+    <li><b>自动留档</b>：提交成功后自动生成一条版本记录（本次推送的结果版本，与上一版本可对比回溯）；推送记录保留原始文本作为覆盖前保底。</li>
+  </ul>
+  <p><b>结果与状态</b>：预览 → 待确认（返回端口动作清单）；提交 → 成功，目标配置更新完成，推送任务记录逐端口动作（替换/新建/无变化）。</p>
+  <div class="warn-note"><b>确认与撤销</b>：提交是破坏性动作，但被「自动留档版本 + 推送记录保留原始文本」双重保底；任一端口提交失败则整体回滚（不落库），任务失败。</div>
+
+  <h3>FR-5 查看推送结果 <span class="tag p1">P0</span></h3>
+  <p><b>用户与触发</b>：命令执行后，用户回到系统查看预览或提交结果。</p>
+  <p><b>处理规则</b></p>
+  <ul>
+    <li>块管理页提供「推送记录」入口：按时间倒序列出推送任务（id、目标配置、端口数、状态：预览中/待确认/提交中/成功/失败、耗时）。</li>
+    <li>预览报告：每个端口的动作判定（替换/新建/无变化）+ 失败行号清单（若有），<b>并提供「确认提交」入口</b>——用户在 Web 端也可直接确认，等价于执行提交命令。</li>
+    <li>任务详情展示：原始文件文本（可折叠）、逐端口动作（替换/新建/无变化/保留）、失败清单（行号+原因，若有）。</li>
+    <li>成功任务可「跳转到配置」直接进入块管理查看/编辑；失败任务展示报错清单并提示「修正后重新预览」。</li>
+  </ul>
+  <p><b>结果</b>：用户能确认推送「将要做什么 / 做了什么」，并能从记录直达配置。</p>
+
+  <h3>FR-6 再次修改推送配置 <span class="tag p1">P0</span></h3>
+  <p>推送入库后的配置与手工编辑的配置完全同源：进入现有块管理页，可增删改监听点、子块与指令行。不新增第二套编辑逻辑（复用现有能力）。重复推送即执行 FR-4 差异对比与提交，修改不会被静默丢弃：修改过的端口再次推送会被替换（预期内，版本可回溯）。</p>
+  <p><b>自动留档（修改即自动留档）</b>：系统内任何配置内容变更落库成功后，自动生成一条版本记录——无需手动点「保存」。连续高频编辑（如逐条调整指令值）采用短窗口合并 [Assumption, TBD]（默认 5 秒内连续变更合并为一条版本），避免碎片版本堆积；每条版本仍可在版本对比中查看变更。</p>
+
+  <h2>5. 共享规则</h2>
+  <table>
+    <tr><th>规则</th><th>定义</th></tr>
+    <tr><td>对比键</td><td>配置文件内以 listen 端口唯一标识监听点（文件内自动识别）；端口缺失或重复均视为解析错误（全拒）。一个 server 多端口时取第一个 listen 为主键，其余端口跟随。</td></tr>
+    <tr><td>两阶段副作用边界</td><td>预览阶段只读（解析+对比），不写库；仅提交阶段写入。预览结果在提交时校验仍有效，否则拒绝并提示重新预览。</td></tr>
+    <tr><td>差异动作分类</td><td>同端口内容不同=替换；仅文件有=新建；同端口内容一致=无变化（跳过）；仅系统有=保留不删（永不提交删除）。</td></tr>
+    <tr><td>全拒 vs 部分成功</td><td>解析存在错误 → 整次拒绝、不落库、返回行号清单；正确才进入差异与提交。</td></tr>
+    <tr><td>自动留档</td><td>所有变更来源（推送提交成功、系统内修改落库）自动生成版本记录；高频连续编辑采用短窗口合并（默认 5 秒内合并为一条）[Assumption, TBD]。</td></tr>
+    <tr><td>覆盖保底</td><td>提交即触发自动留档版本（结果版本），与推送记录保留的原始文本共同构成双重保底，可任选版本对比回溯。</td></tr>
+    <tr><td>镜像联动</td><td>被提交替换的监听点为镜像源时，提交后自动同步镜像目标（保留目标自身 listen）。</td></tr>
+    <tr><td>凭证与记录</td><td>推送凭证可独立生成/吊销；推送任务与凭证、目标配置、时间戳绑定记录。</td></tr>
+  </table>
+
+  <h2>6. 开放问题与假设</h2>
+  <table>
+    <tr><th>项</th><th>类型</th><th>内容</th></tr>
+    <tr><td>推送凭证</td><td>[TBD]</td><td>生成入口、有效期、吊销方式，以及是否限制为只读推送专用权限。</td></tr>
+    <tr><td>CLI 工具交付</td><td>[Assumption, TBD]</td><td>采用 Python 脚本分发（复用现有后端环境）打包发布；curl 为默认形态。</td></tr>
+    <tr><td>文件大小上限</td><td>[TBD]</td><td>单文件推送上限（建议默认 2 MB）。</td></tr>
+    <tr><td>解析边界</td><td>[Assumption]</td><td>upstream/map/变量插值等语法在无法映射时进入失败清单而非静默丢弃。</td></tr>
+    <tr><td>推送来源限制</td><td>[Assumption]</td><td>仅限系统可达的本地文件（curl -F 或 CLI 直读路径）；不做远程服务器 SSH 拉取。</td></tr>
+    <tr><td>预览有效期</td><td>[Assumption]</td><td>待确认预览默认 24 小时内有效，超时需重新预览。</td></tr>
+    <tr><td>多端口 server</td><td>[Assumption]</td><td>以第一个 listen 为主键，其余端口随该 server 整体替换/新建。</td></tr>
+    <tr><td>自动留档合并窗口</td><td>[TBD]</td><td>系统内修改自动留档的合并窗口时长（建议默认 5 秒），以及是否按「单次编辑会话」而非时间窗口合并。</td></tr>
+  </table>
+
+  <div class="note" style="margin-top:32px">
+    <b>评审入口</b>：文档评审重点为 FR-2 凭证策略、FR-3 解析边界、FR-4 差异对比与提交语义三项；确认后进入技术设计。
+  </div>
+
+</div>
+<script>
+  // FR-1 命令生成演示：随文件路径实时更新命令，复制按钮反馈
+  (function () {
+    var file = document.getElementById("demo-file");
+    var cmd = document.getElementById("demo-cmd");
+    var btn = document.getElementById("demo-copy");
+    function render() {
+      cmd.textContent = "curl -X POST 'http://<api>/api/nginx-push/preview' \\\n" +
+        "  -H 'Authorization: Bearer <token>' \\\n" +
+        "  -F 'config_id=2' \\\n" +
+        "  -F 'file=@" + (file.value || "/path/nginx.conf") + "'";
+    }
+    file.addEventListener("input", render);
+    render();
+    btn.addEventListener("click", function () {
+      var text = cmd.textContent;
+      var ta = document.createElement("textarea");
+      ta.value = text; document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); } catch (e) {}
+      document.body.removeChild(ta);
+      var old = btn.textContent; btn.textContent = "已复制 ✓";
+      setTimeout(function () { btn.textContent = old; }, 1500);
+    });
+  })();
+</script>
+</body>
+</html>

@@ -167,13 +167,14 @@ export default function PushModal({ open, onClose }) {
   const previewToken = pushTokens?.preview || "<TOKEN>";
   const applyToken = pushTokens?.apply || "<TOKEN>";
   const taskIdText = taskIdInput || "<task_id>";
+  const applyCmd = preview?.apply_command || `curl -X POST "${base}/api/nginx-configs/${configId}/push/${taskIdText}/apply" \\
+  -H "Authorization: Bearer ${applyToken}" \\
+  -H "Content-Type: application/json" -d "{}"`;
   const curlCmd = `curl -X POST "${base}/api/nginx-configs/${configId}/push/preview" \\
   -H "Authorization: Bearer ${previewToken}" \\
   -F "file=@/path/to/local.conf"
-# 确认提交（task_id 取预览返回结果）：
-curl -X POST "${base}/api/nginx-configs/${configId}/push/${taskIdText}/apply" \\
-  -H "Authorization: Bearer ${applyToken}" \\
-  -H "Content-Type: application/json" -d "{}"`;
+# 确认提交（预览返回的 task_id 已填充，<APPLY_TOKEN> 替换为你的 apply token）：
+${applyCmd}`;
   const cliCmd = `python tools/nginx_push.py --industry "${industryName}" --config "${configName}" --file /path/to/local.conf
 # 预览无异议后确认提交（追加 --apply）：
 python tools/nginx_push.py --industry "${industryName}" --config "${configName}" --file /path/to/local.conf --apply`;
@@ -212,6 +213,11 @@ python tools/nginx_push.py --industry "${industryName}" --config "${configName}"
             {preview && preview.diff && (
               <div style={{ marginTop: 10 }}>
                 <div className="modal-tip" style={{ marginBottom: 6 }}>{preview.message}</div>
+                {preview.changed === false && (
+                  <div style={{ marginBottom: 6, fontSize: 12, color: "var(--ok)" }}>
+                    ✓ 无任何变更，无需提交；下方差异均为「无变化」。
+                  </div>
+                )}
                 <div style={{ maxHeight: 220, overflowY: "auto", border: "1px solid var(--border-soft)", borderRadius: 6, background: "var(--bg-deep2)", padding: "6px 4px" }}>
                   {preview.diff.map((e, i) => (
                     <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", padding: "3px 8px", fontSize: 12, fontFamily: "var(--mono)" }}>
@@ -222,7 +228,9 @@ python tools/nginx_push.py --industry "${industryName}" --config "${configName}"
                 </div>
                 <div className="modal-actions" style={{ marginTop: 10 }}>
                   <button className="btn" onClick={() => setPreview(null)}>放弃</button>
-                  <button className="btn primary" onClick={() => doApply(preview.task_id)} disabled={busy}>确认提交</button>
+                  {preview.changed !== false && (
+                    <button className="btn primary" onClick={() => doApply(preview.task_id)} disabled={busy}>确认提交</button>
+                  )}
                 </div>
               </div>
             )}

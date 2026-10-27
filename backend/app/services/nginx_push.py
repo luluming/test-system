@@ -205,10 +205,12 @@ def identity_of(node: dict) -> tuple[tuple[str, str], str]:
 
 def render_equal(a: dict, b: dict) -> bool:
     """子树内容等价：render_text 对 if 块会注入「# 建议少用 if」提示行（非幂等），
-    比较前剔除该提示行，避免同内容因往返渲染差异被误判为 replace。"""
+    比较前剔除该提示行；同时折叠连续空白，避免仅对齐空格差异（如
+    ``ssl_certificate      /path;`` 存入 KV 后渲染为单空格）被误判为 replace。"""
     def canon(node: dict) -> list[str]:
         return [
-            l for l in render_text(node)
+            re.sub(r"[ \t]+", " ", l).strip()
+            for l in render_text(node)
             if not l.strip().startswith("# 建议少用 if")
         ]
 
@@ -446,6 +448,9 @@ def _sync_mirrors(db, config_id: int, touched: set[int]) -> list[dict]:
         src = find_by_listen(p.src_listen)
         dst = find_by_listen(p.dst_listen)
         if not src or not dst or src.id not in touched:
+            continue
+        if dst.id in touched:
+            # dst 本次也被文件替换/新建：文件内容为准，镜像不覆盖（保住 dst 自身内容与注释位置）
             continue
         _rebuild_dst_from_src(db, config_id, dst.id, src.id)
         mirrored.append({"src": p.src_listen, "dst": p.dst_listen})

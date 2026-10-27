@@ -9,7 +9,7 @@ import logging
 import secrets
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, Request, UploadFile, status
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -724,9 +724,13 @@ def push_preview(
     config_id: int,
     file: UploadFile = File(...),
     authorization: str | None = Header(default=None),
+    request: Request = None,
     db: Session = Depends(get_db),
 ) -> dict:
-    """阶段一：只读解析 + 差异对比，落一条 pending 任务（不写入配置树）。
+    """阶段一：只读解析 + 差异对比。
+
+    - 有变更（替换/新建）：落一条 pending 任务，返回 task_id + 可直接执行的 apply 命令；
+    - 无变更（文件与线上一致）：不落任务，返回 changed=false 提示「无变更点」。
     认证支持 JWT 或一次性 preview token（使用即消耗）。"""
     actor = _resolve_push_actor(db, config_id, "preview", authorization)
     raw = file.file.read()
@@ -751,6 +755,15 @@ def push_preview(
     counts = {"replace": 0, "new": 0, "none": 0, "keep": 0}
     for e in entries:
         counts[e["action"]] += 1
+    if counts["replace"] == 0 and counts["new"] == 0:
+        # 无任何变更：不落任务，直接告知「无变更点」
+        return {
+            "ok": True,
+            "changed": False,
+            "diff": entries,
+            "counts": counts,
+            "message": "文件与当前配置一致，无变更点，无需提交",
+        }
     task = NginxPushTask(
         nginx_config_id=config_id,
         status="pending",
@@ -761,12 +774,20 @@ def push_preview(
     db.add(task)
     db.commit()
     db.refresh(task)
+    base = str(request.base_url).rstrip("/") if request else ""
+    apply_cmd = (
+        f'curl -X POST "{base}/api/nginx-configs/{config_id}/push/{task.id}/apply" \\\n'
+        f'  -H "Authorization: Bearer <APPLY_TOKEN>" \\\n'
+        f'  -H "Content-Type: application/json" -d "{{}}"'
+    )
     return {
         "ok": True,
+        "changed": True,
         "task_id": task.id,
         "status": task.status,
         "diff": entries,
         "counts": counts,
+        "apply_command": apply_cmd,
         "message": (
             f"预览成功：将替换 {counts['replace']} 个、新建 {counts['new']} 个、"
             f"无变化 {counts['none']} 个；系统保留 {counts['keep']} 个"
@@ -777,13 +798,20 @@ def push_preview(
 @config_tree_router.post("/{config_id}/push/{task_id}/apply")
 def push_apply(
     config_id: int,
-    task_id: int,
+    task_id: str,
     payload: PushApplyRequest,
     authorization: str | None = Header(default=None),
     db: Session = Depends(get_db),
 ) -> dict:
     """阶段二：确认提交。事务内替换/新建 + 镜像联动 + 强制新版本；失败整体回滚。
     认证支持 JWT 或一次性 apply token（使用即消耗）。"""
+    try:
+        task_id = int(task_id)
+    except (TypeError, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="task_id 必须是预览返回的任务号（数字）；请把 URL 里的 <task_id> 占位符替换为实际任务号（如 5）",
+        )
     _resolve_push_actor(db, config_id, "apply", authorization)
     task = _get_push_task(db, config_id, task_id)
     if task.status != "pending":
@@ -808,7 +836,7 @@ def push_apply(
     if not any(e["action"] in ("replace", "new") for e in entries):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="无变更可提交（仅存在无变化/保留项）",
+            detail="该任务无任何变更（文件与线上配置一致），无需提交",
         )
     task.status = "applying"
     db.flush()

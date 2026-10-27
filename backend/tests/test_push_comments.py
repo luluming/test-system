@@ -3,7 +3,7 @@
 顶层指令/注释经 apply 持久化为根 options 块与顶层 comment 块。"""
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.services.nginx_push import compute_diff, parse_nginx, perform_apply
 from app.services.nginx_render import build_config_dict, render_text
@@ -100,6 +100,52 @@ def test_interleaved_comment_becomes_child_node():
     assert "# 在块之间的注释;" not in text
 
 
+def test_mirror_does_not_clobber_file_dst(db_session_factory):
+    """文件同时含 443/20551 时，apply 后镜像不覆盖 dst：20551 保留自身内容与注释位置。"""
+    from app.models.nginx import NginxMirrorPair
+    from app.models import ConfigBlock, Industry, NginxConfig
+
+    src = """\
+server {
+    listen 443 ssl;
+    # 443专属注释
+    location /a {
+        proxy_pass http://a;
+    }
+}
+server {
+    listen 20551;
+    # 20551专属注释
+    location /b {
+        proxy_pass http://b;
+    }
+}
+"""
+    db = db_session_factory()
+    ind = Industry(code="push2", name="推送2")
+    db.add(ind)
+    db.flush()
+    cfg = NginxConfig(industry_id=ind.id, name="conf", config_text=src, version=1)
+    db.add(cfg)
+    db.flush()
+    db.add(NginxMirrorPair(nginx_config_id=cfg.id, src_listen="443", dst_listen="20551"))
+    db.flush()
+
+    root, errors = parse_nginx(src)
+    assert not errors
+    entries, dup = compute_diff(root, {"scope": "http", "header": "http", "children": [], "options": []})
+    assert not dup
+    result = perform_apply(db, cfg.id, root, entries)
+    db.commit()
+
+    assert result["mirrored"] == []  # dst 也在文件中，不被 src 覆盖
+    r = build_config_dict(db, cfg.id, context="conf")
+    text = "\n".join(render_text(r))
+    assert text.count("# 443专属注释") == 1
+    assert text.count("# 20551专属注释") == 1
+    db.close()
+
+
 def test_apply_persists_root_level_and_positions(db_session_factory):
     """apply 后：顶层指令/注释进根 options 块；块间注释按文件序成块，渲染位置保真。"""
     from app.models import ConfigBlock, Industry, NginxConfig
@@ -162,3 +208,112 @@ def test_apply_persists_root_level_and_positions(db_session_factory):
     )
     assert len(rb) == 1 and not list(db.execute(select(ConfigBlock).where(ConfigBlock.parent_id == rb[0].id)).scalars().all())
     db.close()
+
+
+def test_render_equal_ignores_alignment_whitespace():
+    """仅对齐空格差异（ssl_certificate 后多空格）应判为 none，而非 replace。"""
+    from app.services.nginx_push import diffable_nodes, identity_of, render_equal
+
+    src = """http {
+    server {
+        listen 443 ssl;
+        ssl_certificate      /iotp/network/nginx/platform.pem;
+        ssl_certificate_key  /iotp/network/nginx/platform.key;
+        location / {
+            proxy_pass http://127.0.0.1:8000;
+        }
+    }
+}
+"""
+    # file 侧保留多空格对齐
+    file_root, errs = parse_nginx(src)
+    assert not errs
+    # db 侧模拟 KV 归一化：同一指令渲染为单空格
+    db_root = {
+        "scope": "http",
+        "header": "http",
+        "children": [
+            {
+                "scope": "server",
+                "header": "server",
+                "children": [
+                    {"scope": "location", "header": "location /", "children": [], "options": [
+                        {"directive": "proxy_pass", "value": "http://127.0.0.1:8000;", "row_type": "kv"}
+                    ]},
+                ],
+                "options": [
+                    {"directive": "listen", "value": "443 ssl;", "row_type": "kv"},
+                    {"directive": "ssl_certificate", "value": "/iotp/network/nginx/platform.pem;", "row_type": "kv"},
+                    {"directive": "ssl_certificate_key", "value": "/iotp/network/nginx/platform.key;", "row_type": "kv"},
+                ],
+            }
+        ],
+        "options": [],
+    }
+    f_node = next(n for n in diffable_nodes(file_root) if identity_of(n)[0] == ("server", "443"))
+    d_node = next(n for n in diffable_nodes(db_root) if identity_of(n)[0] == ("server", "443"))
+    assert render_equal(f_node, d_node)
+
+    # 真实内容差异仍判为 replace
+    d_node["options"][1]["value"] = "/other/platform.pem;"
+    assert not render_equal(f_node, d_node)
+
+
+def test_preview_same_file_reports_no_change(client, auth_headers, db_session_factory):
+    """重复推送同一文件：preview 返回 changed=false 提示「无变更点」，且不落 pending 任务。"""
+    from app.models import Industry, NginxConfig
+    from app.models.nginx import NginxPushTask
+
+    db = db_session_factory()
+    ind = Industry(code="pushnone", name="无变更推送")
+    db.add(ind)
+    db.flush()
+    cfg = NginxConfig(industry_id=ind.id, name="conf", config_text="", version=1)
+    db.add(cfg)
+    db.flush()
+    cfg_id = cfg.id
+    db.close()
+
+    src = "http {\n    server {\n        listen 80;\n    }\n}\n"
+    url = f"/api/nginx-configs/{cfg_id}/push/preview"
+    files = {"file": ("t.conf", src, "text/plain")}
+
+    # 首次推送：有变更 → 落任务并返回 apply 命令
+    r1 = client.post(url, headers=auth_headers, files=files)
+    assert r1.status_code == 200
+    b1 = r1.json()
+    assert b1["changed"] is True
+    assert b1["task_id"]
+    assert f"/push/{b1['task_id']}/apply" in b1["apply_command"]
+
+    # 提交该任务，使线上与文件一致
+    ap = client.post(
+        f"/api/nginx-configs/{cfg_id}/push/{b1['task_id']}/apply",
+        headers=auth_headers, json={},
+    )
+    assert ap.status_code == 200, ap.text
+
+    # 重复推送同一文件：无变更 → 不落任务
+    r2 = client.post(url, headers=auth_headers, files=files)
+    assert r2.status_code == 200
+    b2 = r2.json()
+    assert b2["changed"] is False
+    assert "无变更" in b2["message"]
+    assert "task_id" not in b2
+
+    db2 = db_session_factory()
+    n = db2.execute(
+        select(func.count()).select_from(NginxPushTask).where(NginxPushTask.nginx_config_id == cfg_id)
+    ).scalar_one()
+    db2.close()
+    assert n == 1  # 仅首次预览落的任务，重复推送未新增
+
+
+def test_apply_literal_placeholder_friendly_error(client, auth_headers):
+    """apply 用字面 <task_id> 占位符：返回友好中文提示而非原生 int_parsing。"""
+    r = client.post(
+        "/api/nginx-configs/999/push/<task_id>/apply",
+        headers=auth_headers, json={},
+    )
+    assert r.status_code == 422
+    assert "占位符" in r.json()["detail"]
