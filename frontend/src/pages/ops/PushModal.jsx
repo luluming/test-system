@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Modal } from "antd";
 import { useOps } from "./OpsContext";
 import * as inner from "../../api/nginxInner";
 
@@ -109,23 +110,28 @@ export default function PushModal({ open, onClose }) {
   };
 
   const doApply = (taskId) => {
-    if (!window.confirm("确认提交该差异到系统？提交后将自动生成版本快照，失败会整体回滚。")) return;
-    setBusy(true);
-    inner.applyPush(configId, taskId)
-      .then((r) => {
-        setBusy(false);
-        setPreview(null);
-        setFile(null);
-        setDetail(null);
-        loadTasks();
-        loadTree(configId, ctx);
-        toast(r.data.message || "提交成功", "ok");
-      })
-      .catch((e) => {
-        setBusy(false);
-        const d = e.response?.data?.detail;
-        toast("提交失败：" + (typeof d === "string" ? d : "未知错误"), "err");
-      });
+    Modal.confirm({
+      title: "提交确认",
+      content: "确认提交该差异到系统？提交后将自动生成版本快照，失败会整体回滚。",
+      okText: "提交",
+      okType: "danger",
+      cancelText: "取消",
+      onOk: () => inner.applyPush(configId, taskId)
+        .then((r) => {
+          setBusy(false);
+          setPreview(null);
+          setFile(null);
+          setDetail(null);
+          loadTasks();
+          loadTree(configId, ctx);
+          toast(r.data.message || "提交成功", "ok");
+        })
+        .catch((e) => {
+          setBusy(false);
+          const d = e.response?.data?.detail;
+          toast("提交失败：" + (typeof d === "string" ? d : "未知错误"), "err");
+        }),
+    });
   };
 
   const genTokens = () => {

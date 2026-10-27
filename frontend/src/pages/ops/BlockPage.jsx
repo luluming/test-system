@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Modal } from "antd";
 import { useOps } from "./OpsContext";
 import * as lib from "../../lib/nginx-inner";
 const { treeNodeCount } = lib;
@@ -140,10 +141,16 @@ export function MirrorModal({ open, onClose }) {
   };
 
   const remove = (p) => {
-    if (!window.confirm(`解除镜像关系「${p.src_listen} → ${p.dst_listen}」？双方内容不会被修改。`)) return;
-    inner.deleteMirrorPair(configId, p.id)
-      .then(() => { toast("已解除镜像关系", "ok"); refreshMirrors && refreshMirrors(); })
-      .catch((e) => toast("解除失败：" + (e.response?.data?.detail || "未知错误"), "err"));
+    Modal.confirm({
+      title: "解除镜像关系",
+      content: `解除镜像关系「${p.src_listen} → ${p.dst_listen}」？双方内容不会被修改。`,
+      okText: "解除",
+      okType: "danger",
+      cancelText: "取消",
+      onOk: () => inner.deleteMirrorPair(configId, p.id)
+        .then(() => { toast("已解除镜像关系", "ok"); refreshMirrors && refreshMirrors(); })
+        .catch((e) => toast("解除失败：" + (e.response?.data?.detail || "未知错误"), "err")),
+    });
   };
 
   if (!open) return null;

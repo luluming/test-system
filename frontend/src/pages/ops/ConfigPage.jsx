@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Modal } from "antd";
 import { useOps } from "./OpsContext";
 import * as lib from "../../lib/nginx-inner";
 import * as nginx from "../../api/nginx";
@@ -232,12 +233,18 @@ function TreeNode({ node, root, sel, onPick, onPersist, kind, toast, depth, firs
   const handleDeleteBlock = () => {
     if (root && !node.ref.parent) { toast("根节点不可删除", "warn"); return; }
     if (!node.ref.id) { node.ref.parent.children = node.ref.parent.children.filter((x) => x !== node.ref); lib.setTree(lib.getTree()); onPersist && onPersist(); return; }
-    if (window.confirm(`删除块「${node.header}」及其全部子块？`)) {
-      inner.deleteBlock(node.ref.id).then(() => {
-        node.ref.parent.children = node.ref.parent.children.filter((x) => x !== node.ref);
-        lib.setTree(lib.getTree()); onPersist && onPersist(); toast("已删除", "ok");
-      }).catch(() => toast("删除失败", "err"));
-    }
+    Modal.confirm({
+      title: "删除确认",
+      content: `删除块「${node.header}」及其全部子块？此操作不可恢复。`,
+      okText: "删除",
+      okType: "danger",
+      cancelText: "取消",
+      onOk: () =>
+        inner.deleteBlock(node.ref.id).then(() => {
+          node.ref.parent.children = node.ref.parent.children.filter((x) => x !== node.ref);
+          lib.setTree(lib.getTree()); onPersist && onPersist(); toast("已删除", "ok");
+        }).catch(() => toast("删除失败", "err")),
+    });
   };
 
   /* 注释节点：渲染为纯注释行（非块卡片，无 +KV 容器），与兄弟块按 sort_order 交错保住文件位置 */

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Modal } from "antd";
 import { useParams } from "react-router-dom";
 import { getIndustry } from "../api/industry";
 import { listConfigsByIndustry, createNginxConfig } from "../api/nginx";
@@ -135,16 +136,22 @@ export default function IndustryDetail() {
   const deleteSide = (node) => {
     const kind = node.scope === "server" ? "监听点" : "共性块";
     const label = node.scope === "server" ? lib.listenPlain(node) : lib.upNameOf(node);
-    if (!window.confirm(`确认删除该${kind}「${label}」？此操作不可恢复。`)) return;
     const bid = node.id || (node.ref && node.ref.id);
     if (!bid) { toast("该块缺少数据库 id，无法删除", "err"); return; }
-    deleteBlock(bid)
-      .then(() => {
-        if (selected && selected._id === node._id) setSelected(null);
-        loadTree(configId, ctx);
-        toast(`已删除${kind}「${label}」`, "ok");
-      })
-      .catch((e) => toast("删除失败：" + (e.response?.data?.detail || "未知错误"), "err"));
+    Modal.confirm({
+      title: "删除确认",
+      content: `确认删除该${kind}「${label}」？此操作不可恢复。`,
+      okText: "删除",
+      okType: "danger",
+      cancelText: "取消",
+      onOk: () => deleteBlock(bid)
+        .then(() => {
+          if (selected && selected._id === node._id) setSelected(null);
+          loadTree(configId, ctx);
+          toast(`已删除${kind}「${label}」`, "ok");
+        })
+        .catch((e) => toast("删除失败：" + (e.response?.data?.detail || "未知错误"), "err")),
+    });
   };
 
   // 监听点顺序调整（▲▼）：在顶层 children 中交换相邻 server，全量落库重排
