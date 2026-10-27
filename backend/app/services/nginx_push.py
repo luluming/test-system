@@ -447,6 +447,9 @@ def _sync_mirrors(db, config_id: int, touched: set[int]) -> list[dict]:
         dst = find_by_listen(p.dst_listen)
         if not src or not dst or src.id not in touched:
             continue
+        if dst.id in touched:
+            # dst 本次也被文件替换/新建：文件内容为准，镜像不覆盖（保住 dst 自身内容与注释位置）
+            continue
         _rebuild_dst_from_src(db, config_id, dst.id, src.id)
         mirrored.append({"src": p.src_listen, "dst": p.dst_listen})
     return mirrored
