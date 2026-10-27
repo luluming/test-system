@@ -34,6 +34,34 @@ def _strip_quoted(s: str) -> str:
     return "".join(out)
 
 
+def _strip_inline_comment(s: str) -> tuple[str, str]:
+    """剔除引号外的行内注释（nginx 语义：# 在外层引号外即开始注释）。
+
+    返回 (代码部分, 注释部分含 #)；整行均为注释时代码部分为空串。
+    例如 ``add_header X; # 备注`` → (``add_header X;``, ``# 备注``)。
+    """
+    out, in_q, cmt = [], None, []
+    in_comment = False
+    for ch in s:
+        if in_comment:
+            cmt.append(ch)
+            continue
+        if in_q:
+            out.append(ch)
+            if ch == in_q:
+                in_q = None
+        else:
+            if ch in "\"'":
+                in_q = ch
+                out.append(ch)
+            elif ch == "#":
+                in_comment = True
+                cmt.append(ch)
+            else:
+                out.append(ch)
+    return "".join(out), "".join(cmt)
+
+
 def _split_terms(s: str) -> list[str]:
     """按分号切分（忽略引号内的分号），丢弃空段。"""
     out, buf, in_q = [], [], None
@@ -62,7 +90,11 @@ def _split_terms(s: str) -> list[str]:
 # ---- 解析：原文 → 规范化块树（与 build_config_dict 同形）----
 
 def parse_nginx(src: str) -> tuple[dict | None, list[dict]]:
-    """原文 → 块树；结构不完整返回 (None, [{line, reason}])。"""
+    """原文 → 块树；结构不完整返回 (None, [{line, reason}])。
+
+    行内注释（引号外的 #）一律剥离：整行注释 → comment 块；
+    指令/块头行带尾注 → 代码部分正常解析，注释另存为 comment 子块，避免污染指令值。
+    """
     errors: list[dict] = []
     root: dict = {"scope": "http", "header": "http", "children": [], "options": []}
     stack: list[tuple[dict, int]] = [(root, 0)]
@@ -70,17 +102,24 @@ def parse_nginx(src: str) -> tuple[dict | None, list[dict]]:
         trimmed = line.strip()
         if not trimmed:
             continue
-        clean = _strip_quoted(trimmed)
+        body, cmt = _strip_inline_comment(trimmed)
+        cur = stack[-1][0]
+        if not body.strip():
+            # 整行均为注释
+            if cmt:
+                cur["children"].append(
+                    {"scope": "comment", "header": cmt[1:].strip(), "children": [], "options": [], "_line": ln}
+                )
+            continue
+        clean = _strip_quoted(body)
         opens = clean.count("{")
         closes = clean.count("}")
-        cur = stack[-1][0]
         if opens == 0 and closes == 0:
-            if trimmed.startswith("#"):
+            cur["options"].append({**kvify(body), "_line": ln})
+            if cmt:
                 cur["children"].append(
-                    {"scope": "comment", "header": trimmed[1:].strip(), "children": [], "options": [], "_line": ln}
+                    {"scope": "comment", "header": cmt[1:].strip(), "children": [], "options": [], "_line": ln}
                 )
-            else:
-                cur["options"].append({**kvify(trimmed), "_line": ln})
             continue
         if closes > 0 and opens == 0:
             pops = closes
@@ -91,14 +130,19 @@ def parse_nginx(src: str) -> tuple[dict | None, list[dict]]:
                 errors.append({"line": ln, "reason": "多余的右括号 }（无对应的块头）"})
             continue
         if opens > 0:
-            col = trimmed.find("{")
-            head = trimmed[:col].strip()
-            after = re.sub(r"}.*$", "", _strip_quoted(trimmed[col + 1:]))
+            col = body.find("{")
+            head, _ = _strip_inline_comment(body[:col])
+            after = re.sub(r"}.*$", "", _strip_quoted(body[col + 1:]))
+            after, _ = _strip_inline_comment(after)
             sc = scope_of(head)
             child: dict = {"scope": sc or "raw", "header": head, "children": [], "options": [], "_line": ln}
             cur["children"].append(child)
             for s in _split_terms(after):
                 child["options"].append({**kvify(s), "_line": ln})
+            if cmt:
+                child["children"].append(
+                    {"scope": "comment", "header": cmt[1:].strip(), "children": [], "options": [], "_line": ln}
+                )
             if closes < opens:
                 stack.append((child, ln))
             continue
