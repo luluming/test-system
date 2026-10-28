@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { cloneIndustry } from "../api/industry";
 
-export default function IndustryCloneModal({ templates, open, onClose, onCreated }) {
+export default function IndustryCloneModal({ templates, open, onClose, onCreated, cloneScope = "both" }) {
   const [sourceId, setSourceId] = useState("");
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
@@ -11,7 +11,8 @@ export default function IndustryCloneModal({ templates, open, onClose, onCreated
 
   const hasSource = templates.some((t) => t.id === Number(sourceId));
   const canSubmit = useMemo(() => name.trim().length > 0, [name]);
-  const btnLabel = hasSource ? "创建并克隆" : "创建空行业";
+  const scopeLabel = cloneScope === "yml" ? "仅 YAML" : cloneScope === "nginx" ? "仅 Nginx" : "Nginx + YAML";
+  const btnLabel = hasSource ? `创建并克隆（${scopeLabel}）` : "创建空行业";
 
   // code 本地校验：字母/数字/下划线/连字符（输入时已转小写并去空格）
   const codeErr = !hasSource && code.trim() !== "" && !/^[a-z0-9_-]+$/.test(code.trim());
@@ -27,8 +28,13 @@ export default function IndustryCloneModal({ templates, open, onClose, onCreated
   return (
     <div className="modal-mask" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h3>新建行业（模板克隆）</h3>
-        <p className="meta">选择模板源可深拷贝整套配置，克隆后与源完全独立；不选则创建空行业。</p>
+        <h3>新建行业（模板克隆 · {scopeLabel}）</h3>
+        <p className="meta">
+          {cloneScope !== "both"
+            ? `当前处于 ${cloneScope === "yml" ? "YML" : "Nginx"} 行业管理模式，克隆将只拷贝 ${scopeLabel} 配置。`
+            : "克隆将同时拷贝 Nginx 和 YAML 两套配置。"}
+          不选模板源则创建空行业。
+        </p>
         <label>模板源行业（可选）</label>
         <select value={sourceId} onChange={(e) => setSourceId(e.target.value)}>
           <option value="">不选，创建空行业…</option>
@@ -60,7 +66,7 @@ export default function IndustryCloneModal({ templates, open, onClose, onCreated
             onClick={async () => {
               setLoading(true); setErr("");
               try {
-                const payload = { name: name.trim(), owner: owner.trim() || null };
+                const payload = { name: name.trim(), owner: owner.trim() || null, clone_scope: cloneScope };
                 if (hasSource) payload.source_industry_id = Number(sourceId);
                 else if (code.trim()) payload.code = code.trim();
                 const created = await cloneIndustry(payload);

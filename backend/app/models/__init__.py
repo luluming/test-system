@@ -14,6 +14,12 @@ from app.models.nginx import (
     UpstreamServer,
 )
 from app.models.user import User
+from app.models.yaml import (
+    YamlConfig,
+    YamlConfigVersion,
+    YamlPushTask,
+    YamlPushToken,
+)
 
 __all__ = [
     "Base",
@@ -28,4 +34,8 @@ __all__ = [
     "DomainMapping",
     "ForwardPort",
     "BizPort",
+    "YamlConfig",
+    "YamlConfigVersion",
+    "YamlPushTask",
+    "YamlPushToken",
 ]

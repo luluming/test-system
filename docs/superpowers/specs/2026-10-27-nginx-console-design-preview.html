@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Nginx 配置管理系统 · 方案 C+ 前端设计效果图</title>
+<style>
+  :root {
+    /* —— 6 层背景（IDE 深色主题 tokens）—— */
+    --bg0: #0b0f17;
+    --bg1: #10141f;
+    --bg2: #141926;
+    --bg3: #1a2131;
+    --bg4: #212b40;
+    --bg5: #2a3550;
+    --line: #26304a;
+    --line-soft: #1d2740;
+    /* —— 文本 —— */
+    --t1: #cdd6ea;
+    --t2: #93a0bd;
+    --t3: #5d688a;
+    /* —— 语义色 —— */
+    --brand: #4a8af4;
+    --brand-soft: rgba(74,138,244,.14);
+    --ok: #3ecf8e;
+    --warn: #e8b339;
+    --err: #e5534b;
+    --purple: #9d7bf3;
+    --mono: "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
+    --sans: "PingFang SC", "Microsoft YaHei", "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body { background: var(--bg0); color: var(--t1); font-family: var(--sans); font-size: 13px; overflow: hidden; }
+
+  /* ============ 全局外壳 ============ */
+  #titlebar { height: 36px; background: var(--bg1); border-bottom: 1px solid var(--line-soft); display: flex; align-items: center; padding: 0 12px; gap: 10px; }
+  .tb-icon { color: var(--t2); font-size: 14px; cursor: pointer; }
+  .tb-file { display: flex; align-items: center; gap: 7px; font-family: var(--mono); font-size: 12px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 6px var(--ok); }
+  .tb-file span { color: var(--t2); }
+  .tb-file b { font-weight: 600; color: var(--t1); }
+  .tb-right { margin-left: auto; display: flex; gap: 6px; color: var(--t3); }
+  .tb-right i { font-style: normal; width: 22px; height: 22px; display: grid; place-items: center; border-radius: 5px; }
+  .tb-right i:hover { background: var(--bg3); color: var(--t1); }
+
+  #menubar { height: 38px; background: var(--bg1); border-bottom: 1px solid var(--line-soft); display: flex; align-items: stretch; padding: 0 12px; gap: 4px; }
+  .menu-item { position: relative; display: flex; align-items: center; padding: 0 16px; font-size: 13px; color: var(--t2); cursor: pointer; transition: color .18s ease; }
+  .menu-item:hover { color: var(--t1); }
+  .menu-item.active { color: var(--t1); font-weight: 600; }
+  .menu-item.active::after { content: ""; position: absolute; left: 10px; right: 10px; bottom: 0; height: 2px; border-radius: 2px 2px 0 0; background: var(--brand); }
+  .menu-item .cnt { margin-left: 6px; font-size: 11px; background: var(--bg3); color: var(--t2); border-radius: 999px; padding: 1px 7px; }
+
+  #workspace { display: flex; height: calc(100% - 36px - 38px - 28px); }
+
+  /* ============ 左侧资源树 ============ */
+  #sidetree { width: 210px; min-width: 210px; background: var(--bg2); border-right: 1px solid var(--line-soft); display: flex; flex-direction: column; }
+  .tree-title { padding: 10px 12px 6px; font-size: 11px; letter-spacing: .08em; color: var(--t3); text-transform: uppercase; }
+  .tree-grp { padding: 2px 0; }
+  .tree-grp-head { display: flex; align-items: center; gap: 6px; padding: 5px 12px; color: var(--t2); font-size: 12px; cursor: pointer; }
+  .tree-grp-head:hover { color: var(--t1); }
+  .tree-grp-head .arr { transition: transform .2s; font-size: 10px; }
+  .tree-grp-head .n { margin-left: auto; font-size: 11px; color: var(--t3); }
+  .tree-node { display: flex; align-items: center; gap: 6px; padding: 5px 12px 5px 24px; font-family: var(--mono); font-size: 12px; color: var(--t2); cursor: pointer; position: relative; }
+  .tree-node:hover { background: var(--bg3); color: var(--t1); }
+  .tree-node.sel { background: var(--brand-soft); color: var(--t1); box-shadow: inset 2px 0 0 var(--brand); }
+  .tree-node .port { color: var(--brand); }
+  .tree-node .warn-bar { margin-left: auto; width: 4px; height: 14px; border-radius: 2px; background: var(--err); }
+  .tree-node .hover-ops { display: none; margin-left: auto; gap: 4px; }
+  .tree-node:hover .hover-ops { display: flex; }
+  .hop { width: 18px; height: 18px; display: grid; place-items: center; border-radius: 4px; font-size: 11px; color: var(--t2); }
+  .hop:hover { background: var(--bg5); color: var(--t1); }
+  .tree-foot { margin-top: auto; border-top: 1px solid var(--line-soft); padding: 8px 12px; display: flex; align-items: center; gap: 8px; }
+  .ctxseg { display: flex; background: var(--bg1); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .ctxseg div { padding: 3px 12px; font-family: var(--mono); font-size: 11px; color: var(--t2); cursor: pointer; }
+  .ctxseg div.on { background: var(--brand); color: #fff; }
+
+  /* ============ 中间主从 ============ */
+  #center { flex: 1; display: flex; min-width: 0; }
+  #listpanel { width: 300px; min-width: 260px; background: var(--bg2); border-right: 1px solid var(--line-soft); display: flex; flex-direction: column; }
+  .lp-search { padding: 10px; }
+  .lp-search input { width: 100%; background: var(--bg1); border: 1px solid var(--line); color: var(--t1); border-radius: 6px; padding: 6px 10px; font-size: 12px; outline: none; }
+  .lp-search input:focus { border-color: var(--brand); }
+  .lp-list { flex: 1; overflow: auto; }
+  .lp-row { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line-soft); cursor: pointer; }
+  .lp-row:hover { background: var(--bg3); }
+  .lp-row.sel { background: var(--brand-soft); box-shadow: inset 3px 0 0 var(--brand); }
+  .lp-row .nm { font-family: var(--mono); font-size: 12px; color: var(--t1); flex: 1; }
+  .lp-row .meta { font-size: 11px; color: var(--t3); }
+  .lp-row .flag { font-size: 10px; padding: 1px 6px; border-radius: 4px; }
+  .flag.up { background: rgba(62,207,142,.15); color: var(--ok); }
+  .flag.err { background: rgba(229,83,75,.15); color: var(--err); }
+
+  /* —— 详情区 —— */
+  #detail { flex: 1; min-width: 0; background: var(--bg1); display: flex; flex-direction: column; }
+  .tabbar { display: flex; align-items: center; height: 40px; border-bottom: 1px solid var(--line-soft); padding: 0 10px; gap: 2px; }
+  .tab { padding: 8px 14px; font-size: 12.5px; color: var(--t2); cursor: pointer; border-radius: 6px 6px 0 0; border-bottom: 2px solid transparent; }
+  .tab:hover { color: var(--t1); }
+  .tab.on { color: var(--t1); border-bottom-color: var(--brand); background: var(--bg2); font-weight: 600; }
+  .d-toolbar { display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-bottom: 1px solid var(--line-soft); }
+  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 6px; font-size: 12px; border: 1px solid var(--line); background: var(--bg3); color: var(--t1); cursor: pointer; transition: all .15s; }
+  .btn:hover { border-color: var(--brand); background: var(--brand-soft); }
+  .btn:active { transform: scale(.97); }
+  .btn.primary { background: var(--brand); border-color: var(--brand); color: #fff; }
+  .btn.primary:hover { background: #3a76d8; }
+  .btn.ghost { background: transparent; }
+  .d-body { flex: 1; overflow: auto; padding: 14px; }
+
+  /* —— 统计看板 —— */
+  .statbanner { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px; }
+  .stat-card { background: var(--bg2); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; position: relative; overflow: hidden; }
+  .stat-card::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 2px; }
+  .stat-card.s1::before { background: var(--brand); } .stat-card.s2::before { background: var(--purple); }
+  .stat-card.s3::before { background: var(--ok); } .stat-card.s4::before { background: var(--warn); }
+  .stat-card .k { font-size: 11px; color: var(--t3); }
+  .stat-card .v { font-family: var(--mono); font-size: 22px; font-weight: 700; margin-top: 2px; }
+
+  /* —— 表格 —— */
+  table.tbl { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .tbl th { text-align: left; font-weight: 600; font-size: 11px; color: var(--t3); padding: 8px 10px; border-bottom: 1px solid var(--line); background: var(--bg2); position: sticky; top: 0; }
+  .tbl td { padding: 8px 10px; border-bottom: 1px solid var(--line-soft); color: var(--t2); }
+  .tbl tr:hover td { background: var(--bg3); }
+  .tbl .mono { font-family: var(--mono); color: var(--t1); }
+  .tag { display: inline-flex; align-items: center; gap: 4px; padding: 1px 7px; border-radius: 999px; font-size: 11px; }
+  .tag.ok { background: rgba(62,207,142,.14); color: var(--ok); }
+  .tag.err { background: rgba(229,83,75,.14); color: var(--err); }
+  .tag.warn { background: rgba(232,179,57,.14); color: var(--warn); }
+  .tag.ghost { background: var(--bg4); color: var(--t2); }
+
+  /* —— 块树 —— */
+  .brow { font-family: var(--mono); font-size: 12.5px; }
+  .blk { border-left: 2px solid var(--line); margin: 2px 0; }
+  .blk.d0 { margin-left: 0; border-color: var(--brand); }
+  .blk.d1 { margin-left: 14px; border-color: var(--purple); }
+  .blk.d2 { margin-left: 32px; border-color: var(--ok); }
+  .blk.d3 { margin-left: 50px; border-color: var(--warn); }
+  .bhead { display: flex; align-items: center; gap: 8px; padding: 4px 8px; background: var(--bg2); border-radius: 6px; cursor: pointer; }
+  .bhead:hover { background: var(--bg3); }
+  .bhead .srv { color: var(--brand); font-weight: 700; }
+  .bhead .ops { margin-left: auto; display: none; gap: 4px; }
+  .bhead:hover .ops { display: flex; }
+  .bhead .ops i { font-style: normal; width: 18px; height: 18px; display: grid; place-items: center; border-radius: 4px; font-size: 11px; color: var(--t2); cursor: pointer; }
+  .bhead .ops i:hover { background: var(--bg5); color: var(--t1); }
+  .bhead .ops i.del:hover { background: rgba(229,83,75,.2); color: var(--err); }
+  .kv { display: flex; align-items: center; gap: 6px; padding: 3px 8px 3px 12px; border-radius: 5px; position: relative; }
+  .kv:hover { background: var(--bg3); }
+  .kv .dir { color: var(--t2); }
+  .kv .val { color: var(--t1); }
+  .kv .c { color: var(--t3); }
+  .kv .mini { margin-left: auto; display: none; gap: 4px; }
+  .kv:hover .mini { display: flex; }
+  .kv .mini i { font-style: normal; font-size: 11px; cursor: pointer; width: 17px; height: 17px; display: grid; place-items: center; border-radius: 4px; color: var(--t3); }
+  .kv .mini i:hover { background: var(--bg5); color: var(--t1); }
+  .kv.raw { background: var(--bg4); border-radius: 5px; }
+  .kv.default { background: rgba(62,207,142,.1); border-radius: 5px; }
+  .kv.default .badge { font-size: 10px; color: var(--ok); }
+
+  /* —— 拓扑 —— */
+  .topo-wrap { padding: 18px; }
+  .topo-global { display: flex; align-items: stretch; gap: 6px; background: var(--bg2); border: 1px solid var(--line); border-radius: 12px; padding: 16px; overflow-x: auto; }
+  .tnode { display: flex; flex-direction: column; gap: 6px; min-width: 140px; }
+  .tcard { background: var(--bg3); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; cursor: pointer; transition: all .15s; }
+  .tcard:hover { border-color: var(--brand); transform: translateY(-1px); }
+  .tcard .h { font-size: 10.5px; color: var(--t3); letter-spacing: .05em; }
+  .tcard .m { font-family: var(--mono); font-size: 12.5px; color: var(--t1); margin-top: 3px; word-break: break-all; }
+  .tcard .s { font-size: 11px; color: var(--t2); margin-top: 2px; }
+  .tcard .badge { position: absolute; }
+  .tcard.has-badge { position: relative; }
+  .tcard .corner { position: absolute; top: -5px; right: -5px; width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--bg2); }
+  .corner.err { background: var(--err); }
+  .corner.ok { background: var(--ok); }
+  .tarrow { display: flex; align-items: center; color: var(--t3); font-size: 16px; }
+  .trow { display: flex; gap: 10px; align-items: center; }
+  .tnode .stack { display: flex; flex-direction: column; gap: 4px; }
+  .tnode .stack .tcard { padding: 5px 10px; }
+
+  /* —— PathChain —— */
+  .pchain { display: flex; align-items: center; gap: 8px; background: var(--bg2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; margin-bottom: 8px; font-family: var(--mono); font-size: 12.5px; }
+  .pc-seg { display: flex; align-items: center; gap: 5px; }
+  .pc-seg .lbl { font-size: 10.5px; color: var(--t3); }
+  .pc-seg b { color: var(--t1); }
+  .pc-seg .arr { color: var(--t3); margin: 0 4px; }
+  .pc-seg .tag { font-size: 10.5px; }
+
+  /* ============ 右侧 upstream 池 ============ */
+  #rightpool { width: 300px; min-width: 280px; background: var(--bg2); border-left: 1px solid var(--line-soft); display: flex; flex-direction: column; }
+  .rp-head { padding: 10px 12px; font-size: 12px; color: var(--t2); border-bottom: 1px solid var(--line-soft); display: flex; align-items: center; gap: 8px; }
+  .rp-head .n { font-family: var(--mono); color: var(--t1); }
+  .up-list { flex: 1; overflow: auto; }
+  .up-row { padding: 8px 12px; border-bottom: 1px solid var(--line-soft); cursor: pointer; }
+  .up-row:hover { background: var(--bg3); }
+  .up-row.sel { background: var(--brand-soft); box-shadow: inset 3px 0 0 var(--brand); }
+  .up-row .nm { font-family: var(--mono); font-size: 12px; color: var(--t1); display: flex; align-items: center; gap: 6px; }
+  .up-row .strat { font-size: 11px; color: var(--t3); margin-top: 2px; }
+
+  /* ============ 状态栏 ============ */
+  #statusbar { height: 28px; background: var(--bg1); border-top: 1px solid var(--line-soft); display: flex; align-items: center; padding: 0 12px; gap: 14px; font-size: 11.5px; color: var(--t2); font-family: var(--mono); }
+  #statusbar .ok-dot { color: var(--ok); }
+  #statusbar .err-cnt { color: var(--err); }
+  #statusbar .warn-cnt { color: var(--warn); }
+  #statusbar .right { margin-left: auto; display: flex; gap: 14px; color: var(--t3); }
+
+  /* ============ 导出中心弹窗 ============ */
+  .mask { position: fixed; inset: 0; background: rgba(5,8,14,.66); backdrop-filter: blur(3px); display: none; place-items: center; z-index: 50; }
+  .mask.show { display: grid; }
+  .modal { width: 860px; max-width: 94vw; max-height: 86vh; background: var(--bg2); border: 1px solid var(--line); border-radius: 14px; display: flex; flex-direction: column; box-shadow: 0 24px 64px rgba(0,0,0,.5); animation: pop .22s ease; }
+  @keyframes pop { from { transform: translateY(10px) scale(.985); opacity: 0; } to { transform: none; opacity: 1; } }
+  .m-head { padding: 14px 18px; border-bottom: 1px solid var(--line-soft); display: flex; align-items: center; }
+  .m-head b { font-size: 14px; }
+  .m-head .close { margin-left: auto; cursor: pointer; color: var(--t3); width: 26px; height: 26px; display: grid; place-items: center; border-radius: 6px; }
+  .m-head .close:hover { background: var(--bg4); color: var(--t1); }
+  .m-body { flex: 1; overflow: auto; padding: 16px 18px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .ex-col h4 { font-size: 12px; color: var(--t3); letter-spacing: .05em; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+  .ex-col h4 .switch { margin-left: auto; }
+  .switch { position: relative; width: 34px; height: 18px; background: var(--bg5); border-radius: 999px; cursor: pointer; transition: background .2s; }
+  .switch.on { background: var(--brand); }
+  .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: transform .2s; }
+  .switch.on::after { transform: translateX(16px); }
+  .inp { width: 100%; background: var(--bg1); border: 1px solid var(--line); color: var(--t1); border-radius: 6px; padding: 6px 10px; font-size: 12px; font-family: var(--mono); outline: none; }
+  .inp:focus { border-color: var(--brand); }
+  .textarea { width: 100%; background: var(--bg1); border: 1px solid var(--line); color: var(--t1); border-radius: 6px; padding: 8px 10px; font-size: 12px; font-family: var(--mono); min-height: 64px; resize: vertical; outline: none; }
+  .ex-card { background: var(--bg1); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin-top: 8px; position: relative; }
+  .ex-card .x { position: absolute; top: 6px; right: 8px; cursor: pointer; color: var(--t3); }
+  .ex-card .x:hover { color: var(--err); }
+  .ex-card .lbl { font-size: 11px; color: var(--t3); margin-bottom: 4px; }
+  .ex-rows { margin-top: 8px; }
+  .add-ex { display: inline-flex; align-items: center; gap: 4px; margin-top: 8px; color: var(--brand); cursor: pointer; font-size: 12px; }
+  .add-ex:hover { text-decoration: underline; }
+  .preview-box { background: var(--bg1); border: 1px solid var(--line); border-radius: 8px; overflow: auto; height: 100%; max-height: 340px; }
+  .pv-line { font-family: var(--mono); font-size: 11.5px; padding: 2px 10px; white-space: pre; color: var(--t2); display: flex; }
+  .pv-line .ln { width: 30px; color: var(--t3); text-align: right; margin-right: 10px; user-select: none; }
+  .pv-line.subst { background: rgba(232,179,57,.09); color: var(--t1); }
+  .pv-line.subst .orig { color: var(--warn); font-size: 11px; margin-left: 10px; }
+  .m-foot { padding: 12px 18px; border-top: 1px solid var(--line-soft); display: flex; align-items: center; gap: 10px; }
+  .m-foot .stat { font-size: 11.5px; color: var(--t3); font-family: var(--mono); }
+  .m-foot .sp { flex: 1; }
+  .m-foot .btn.copy { border-color: var(--brand); color: var(--brand); }
+  .m-foot .btn.copy:hover { background: var(--brand-soft); }
+
+  /* toast */
+  .toast { position: fixed; right: 16px; bottom: 40px; background: var(--bg3); border-left: 4px solid var(--ok); border-radius: 8px; padding: 10px 16px; font-size: 12.5px; box-shadow: 0 8px 24px rgba(0,0,0,.4); display: none; z-index: 60; }
+  .toast.show { display: block; animation: pop .25s ease; }
+  .toast.err { border-left-color: var(--err); }
+
+  /* view switching */
+  .view { display: none; height: 100%; }
+  .view.on { display: flex; animation: fadein .3s ease; }
+  @keyframes fadein { from { opacity: 0; } to { opacity: 1; } }
+
+  /* scrollbar */
+  ::-webkit-scrollbar { width: 9px; height: 9px; }
+  ::-webkit-scrollbar-thumb { background: var(--bg5); border-radius: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+</style>
+</head>
+<body>
+
+<!-- ======== 标题栏 ======== -->
+<div id="titlebar">
+  <span class="tb-icon">☰</span>
+  <div class="tb-file"><span class="dot"></span><b>businesscenter_nginx_CD_master.conf</b><span>·</span><span>nginx-card-console</span></div>
+  <div class="tb-right"><i>—</i><i>□</i><i>✕</i></div>
+</div>
+
+<!-- ======== 顶级菜单 ======== -->
+<div id="menubar">
+  <div class="menu-item active" data-view="config">配置文件</div>
+  <div class="menu-item" data-view="blocks">块管理</div>
+  <div class="menu-item" data-view="topology">全局拓扑</div>
+  <div class="menu-item" data-view="ports">业务端口</div>
+  <span style="flex:1"></span>
+  <div style="display:flex;align-items:center;gap:8px">
+    <span class="btn primary" style="font-size:11.5px;padding:4px 10px" onclick="openExport()">导出配置</span>
+  </div>
+</div>
+
+<!-- ======== 工作区 ======== -->
+
+<!-- ===== 视图一：配置文件（主从） ===== -->
+<div id="view-config" class="view on">
+  <div id="sidetree">
+    <div class="tree-title">nginx 资源树</div>
+    <div class="tree-grp">
+      <div class="tree-grp-head"><span class="arr">▾</span> 监听点 <span class="n">8</span></div>
+      <div class="tree-node sel"><span class="port">443</span><span class="hover-ops"><i class="hop">⚡</i><i class="hop">⏻</i><i class="hop">↻</i></span></div>
+      <div class="tree-node"><span class="port">20551</span><span class="warn-bar"></span><span class="hover-ops"><i class="hop">⚡</i><i class="hop">⏻</i><i class="hop">↻</i></span></div>
+      <div class="tree-node"><span class="port">20050</span></div>
+      <div class="tree-node"><span class="port">20501</span></div>
+      <div class="tree-node"><span class="port">20051</span></div>
+      <div class="tree-node"><span class="port">20998</span></div>
+      <div class="tree-node"><span class="port">20035</span></div>
+      <div class="tree-node"><span class="port">22001</span></div>
+    </div>
+    <div class="tree-grp">
+      <div class="tree-grp-head"><span class="arr">▾</span> 共性块 <span class="n">12</span></div>
+      <div class="tree-node">map $http_cookie…</div>
+      <div class="tree-node">sub_backstage_web</div>
+      <div class="tree-node">saas_web</div>
+      <div class="tree-node">base_mobile_web</div>
+      <div class="tree-node">asset_engine</div>
+    </div>
+    <div class="tree-foot">
+      <div class="ctxseg"><div class="on">conf</div><div>stream</div></div>
+      <span style="font-size:11px;color:var(--t3);margin-left:auto">⌘⇧F</span>
+    </div>
+  </div>
+
+  <div id="center">
+    <div id="listpanel">
+      <div class="lp-search"><input placeholder="🔍  搜索配置 / 端口 / 域名…" /></div>
+      <div class="lp-list">
+        <div class="lp-row sel"><span class="nm">CD_master.conf</span><span class="flag up">启用</span><span class="meta">v12</span></div>
+        <div class="lp-row"><span class="nm">CD_stage.conf</span><span class="flag err">异常</span><span class="meta">v9</span></div>
+        <div class="lp-row"><span class="nm">CD_test.conf</span><span class="flag up">启用</span><span class="meta">v5</span></div>
+      </div>
+    </div>
+
+    <div id="detail">
+      <div class="tabbar">
+        <div class="tab on">概览</div><div class="tab">域名映射</div><div class="tab">转发规则</div><div class="tab">业务端口</div><div class="tab">块树</div>
+        <span style="flex:1"></span>
+        <span class="btn ghost" style="font-size:11.5px">⚡ 测试</span>
+        <span class="btn ghost" style="font-size:11.5px">⏻ 启用</span>
+        <span class="btn ghost" style="font-size:11.5px">↻ reload</span>
+        <span class="btn" style="font-size:11.5px">＋ 块</span>
+        <span class="btn primary" style="font-size:11.5px">保存</span>
+      </div>
+      <div class="d-body">
+        <div class="statbanner">
+          <div class="stat-card s1"><div class="k">server</div><div class="v">8</div></div>
+          <div class="stat-card s2"><div class="k">location</div><div class="v">26</div></div>
+          <div class="stat-card s3"><div class="k">upstream</div><div class="v">31</div></div>
+          <div class="stat-card s4"><div class="k">if</div><div class="v">2</div></div>
+        </div>
+
+        <table class="tbl">
+          <tr><th>监听端口</th><th>server_name</th><th>主要上游（proxy_pass 关联）</th><th>状态</th></tr>
+          <tr><td class="mono">443</td><td class="mono">za.visionai.unityaiot.com</td><td><span class="tag ok">✓ 已匹配 · saas_web</span></td><td><span class="tag ok">● 运行</span></td></tr>
+          <tr><td class="mono">20551</td><td class="mono">api.za.visionai.unityaiot.com</td><td><span class="tag ok">✓ 已匹配 · base_gateway_service</span></td><td><span class="tag ok">● 运行</span></td></tr>
+          <tr><td class="mono">20050</td><td class="mono">asset.za.visionai.unityaiot.com</td><td><span class="tag ok">✓ 已匹配 · asset_engine</span></td><td><span class="tag ok">● 运行</span></td></tr>
+          <tr><td class="mono">20998</td><td class="mono">ws.za.visionai.unityaiot.com</td><td><span class="tag err">✗ 未匹配</span></td><td><span class="tag warn">● 告警</span></td></tr>
+          <tr><td class="mono">20035</td><td class="mono">intra.dpcs.za…</td><td><span class="tag warn">↗ 直连 10.192.9.101</span></td><td><span class="tag ok">● 运行</span></td></tr>
+          <tr><td class="mono">22001</td><td class="mono">media.za.visionai.unityaiot.com</td><td><span class="tag ok">✓ 已匹配 · wsIntercom22001</span></td><td><span class="tag ok">● 运行</span></td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div id="rightpool">
+    <div class="rp-head">Upstream 池 <span class="n">31 组</span></div>
+    <div class="up-list">
+      <div class="up-row sel"><div class="nm">saas_web</div><div class="strat">round_robin · keepalive 32</div></div>
+      <div class="up-row"><div class="nm">base_gateway_service</div><div class="strat">ip_hash · keepalive 16</div></div>
+      <div class="up-row"><div class="nm">asset_engine</div><div class="strat">least_conn · keepalive 32</div></div>
+      <div class="up-row"><div class="nm">wsIntercom22001</div><div class="strat">round_robin</div></div>
+      <div class="up-row"><div class="nm">sub_backstage_web</div><div class="strat">round_robin · keepalive 32</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 视图二：块管理 ===== -->
+<div id="view-blocks" class="view">
+  <div id="sidetree">
+    <div class="tree-title">nginx 资源树</div>
+    <div class="tree-grp">
+      <div class="tree-grp-head"><span class="arr">▾</span> 监听点 <span class="n">8</span></div>
+      <div class="tree-node sel"><span class="port">443</span></div>
+      <div class="tree-node"><span class="port">20551</span></div>
+      <div class="tree-node"><span class="port">20050</span></div>
+      <div class="tree-node"><span class="port">20998</span></div>
+    </div>
+    <div class="tree-grp">
+      <div class="tree-grp-head"><span class="arr">▾</span> 共性块 <span class="n">12</span></div>
+      <div class="tree-node">map $http_cookie…</div>
+      <div class="tree-node">sub_backstage_web</div>
+      <div class="tree-node">saas_web</div>
+    </div>
+    <div class="tree-foot">
+      <div class="ctxseg"><div class="on">conf</div><div>stream</div></div>
+    </div>
+  </div>
+  <div id="center" style="border-right:1px solid var(--line-soft)">
+    <div id="detail">
+      <div class="d-toolbar">
+        <span style="font-family:var(--mono);color:var(--t1)">server 443</span>
+        <span style="font-size:11px;color:var(--t3)">镜像 → 20551</span>
+        <span style="flex:1"></span>
+        <span class="btn" style="font-size:11.5px">＋ 子块</span>
+        <span class="btn" style="font-size:11.5px">＋ KV</span>
+        <span class="btn ghost" style="font-size:11.5px">预览</span>
+      </div>
+      <div class="d-body">
+        <div class="brow">
+          <div class="blk d0">
+            <div class="bhead"><span class="srv">server</span><span style="color:var(--t2)">{</span>
+              <span class="ops"><i>▲</i><i>▼</i><i>＋</i><i class="del">✕</i></span></div>
+            <div class="kv"><span class="dir">listen</span><span class="val">443;</span><span class="c"># http2</span><span class="mini"><i>✎</i><i>▲</i><i>▼</i><i>✕</i></span></div>
+            <div class="kv"><span class="dir">server_name</span><span class="val">za.visionai.unityaiot.com;</span><span class="mini"><i>✎</i><i>▲</i><i>▼</i><i>✕</i></span></div>
+            <div class="blk d1">
+              <div class="bhead"><span class="srv">location</span><span style="color:var(--t2)">/gateway/ {</span>
+                <span class="ops"><i>▲</i><i>▼</i><i>＋</i><i class="del">✕</i></span></div>
+              <div class="kv"><span class="dir">proxy_pass</span><span class="val">http://saas_web;</span><span class="tag ok">✓ 已匹配</span><span class="mini"><i>✎</i><i>▲</i><i>▼</i><i>✕</i></span></div>
+              <div class="kv"><span class="dir">proxy_set_header</span><span class="val">Host $host;</span><span class="mini"><i>✎</i><i>▲</i><i>▼</i><i>✕</i></span></div>
+            </div>
+            <div class="blk d1">
+              <div class="bhead"><span class="srv">location</span><span style="color:var(--t2)">/asset-engine/ {</span>
+                <span class="ops"><i>▲</i><i>▼</i><i>＋</i><i class="del">✕</i></span></div>
+              <div class="kv"><span class="dir">proxy_pass</span><span class="val">http://asset_engine;</span><span class="tag ok">✓ 已匹配</span></div>
+            </div>
+            <div class="blk d1">
+              <div class="bhead"><span class="srv">location</span><span style="color:var(--t2)">/static-file/ {</span>
+                <span class="ops"><i>▲</i><i>▼</i><i>＋</i><i class="del">✕</i></span></div>
+              <div class="kv"><span class="dir">proxy_pass</span><span class="val">http://20998;</span><span class="tag err">✗ 未匹配</span></div>
+            </div>
+          </div>
+
+          <div class="blk d0">
+            <div class="bhead"><span class="srv">map</span><span style="color:var(--t2)">$http_cookie $cookie_to_delete {</span>
+              <span class="ops"><i>▲</i><i>▼</i><i>＋</i><i class="del">✕</i></span></div>
+            <div class="kv raw"><span class="dir">~^.*g_cluster=([\w\d_]+)</span><span class="c"># 正则键原样</span><span class="mini"><i>✎</i><i>▲</i><i>▼</i><i>✕</i></span></div>
+            <div class="kv"><span class="dir">default</span><span class="val">"-";</span><span class="mini"><i>✎</i><i>▲</i><i>▼</i><i>✕</i></span></div>
+            <div class="kv default"><span class="badge">◈ default 恒置底</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div id="rightpool">
+    <div class="rp-head">渲染预览</div>
+    <div class="up-list" style="padding:12px;font-family:var(--mono);font-size:11.5px;line-height:1.7;color:var(--t2)">
+      server {<br/>&nbsp;&nbsp;listen 443;<br/>&nbsp;&nbsp;server_name za.visionai.unityaiot.com;<br/>&nbsp;&nbsp;location /gateway/ {<br/>&nbsp;&nbsp;&nbsp;&nbsp;proxy_pass http://saas_web;<br/>&nbsp;&nbsp;}<br/>}<br/><span style="color:var(--t3)">map $http_cookie $cookie_to_delete {<br/>&nbsp;&nbsp;~^.*g_cluster=… "<br/>&nbsp;&nbsp;default "-";<br/>}</span>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 视图三：全局拓扑 ===== -->
+<div id="view-topology" class="view">
+  <div style="flex:1;display:flex;flex-direction:column;min-width:0">
+    <div class="topo-wrap" style="flex:1;overflow:auto">
+      <div style="font-size:11px;color:var(--t3);letter-spacing:.06em;margin-bottom:10px">全局链路 · 双击任意节点跳转对应配置视图</div>
+      <div class="topo-global">
+        <div class="tnode">
+          <div class="tcard"><div class="h">业务域名</div><div class="m">za.visionai.unityaiot.com</div><div class="s">HTTPS · 主域名</div></div>
+        </div>
+        <div class="tarrow">→</div>
+        <div class="tnode">
+          <div class="tcard has-badge"><div class="h">监听点</div><div class="m">443</div><div class="s">listen · 8 servers</div><span class="corner ok"></span></div>
+        </div>
+        <div class="tarrow">→</div>
+        <div class="tnode">
+          <div class="tcard"><div class="h">path</div><div class="m">/gateway/</div><div class="s">location</div></div>
+          <div class="tcard"><div class="h">path</div><div class="m">/asset-engine/</div><div class="s">location</div></div>
+          <div class="tcard"><div class="h">path</div><div class="m">/login</div><div class="s">location</div></div>
+        </div>
+        <div class="tarrow">→</div>
+        <div class="tnode">
+          <div class="tcard has-badge"><div class="h">upstream 组</div><div class="m">saas_web</div><div class="s">round_robin · 3 节点</div><span class="corner ok"></span></div>
+        </div>
+        <div class="tarrow">→</div>
+        <div class="tnode">
+          <div class="tcard has-badge"><div class="h">后端节点</div><div class="m">10.192.8.97:20690</div><div class="s">weight 5 · up</div><span class="corner ok"></span></div>
+          <div class="tcard has-badge"><div class="h">后端节点</div><div class="m">10.192.8.66:20690</div><div class="s">weight 5 · up</div><span class="corner ok"></span></div>
+          <div class="tcard has-badge"><div class="h">后端节点</div><div class="m">10.192.8.90:20690</div><div class="s">weight 5 · <b style="color:var(--err)">down</b></div><span class="corner err"></span></div>
+        </div>
+      </div>
+
+      <div style="font-size:11px;color:var(--t3);letter-spacing:.06em;margin:18px 0 10px">upstream 组详情 · sub_backstage_web（被引用 2 处 · 后端节点 3）</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="tcard" style="background:var(--bg2)">
+          <div class="h">被引用</div>
+          <div style="font-family:var(--mono);font-size:12px;color:var(--t1);margin-top:6px;line-height:1.8">
+            <span class="tag ok">✓</span> server 443 → /gateway/<br/>
+            <span class="tag ok">✓</span> server 20551 → /api/<br/>
+            <span class="tag warn">↗</span> server 20050 → 直连（未引用组）
+          </div>
+        </div>
+        <div class="tcard" style="background:var(--bg2)">
+          <div class="h">后端节点</div>
+          <table class="tbl" style="margin-top:6px">
+            <tr><td class="mono">10.192.8.97:20690</td><td><span class="tag ok">up</span></td><td>w=5</td></tr>
+            <tr><td class="mono">10.192.8.66:20690</td><td><span class="tag ok">up</span></td><td>w=5</td></tr>
+            <tr><td class="mono">10.192.8.90:20690</td><td><span class="tag err">down</span></td><td>w=5</td></tr>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 视图四：业务端口 ===== -->
+<div id="view-ports" class="view">
+  <div style="flex:1;min-width:0;background:var(--bg1);padding:14px;overflow:auto">
+    <div class="statbanner" style="grid-template-columns:repeat(3,1fr)">
+      <div class="stat-card s1"><div class="k">转发规则</div><div class="v">18</div></div>
+      <div class="stat-card s2"><div class="k">公网暴露</div><div class="v">12</div></div>
+      <div class="stat-card s3"><div class="k">已启用</div><div class="v">16</div></div>
+    </div>
+    <div style="font-size:12px;color:var(--t2);margin:12px 0 8px">访问路径链路（PathChain）</div>
+    <div class="pchain">
+      <div class="pc-seg"><span class="lbl">公网</span><b>https://za.visionai.unityaiot.com:443</b><span class="arr">→</span></div>
+      <div class="pc-seg"><b>/gateway/</b><span class="arr">→</span></div>
+      <div class="pc-seg"><b>saas_web</b> <span class="tag ok">✓</span></div>
+      <div class="pc-seg" style="margin-left:auto"><span class="tag ok">● 启用</span><span class="btn ghost" style="font-size:11px">⚡ 测试</span></div>
+    </div>
+    <div class="pchain">
+      <div class="pc-seg"><span class="lbl">公网</span><b>https://api.za.visionai.unityaiot.com:20551</b><span class="arr">→</span></div>
+      <div class="pc-seg"><b>/api/</b><span class="arr">→</span></div>
+      <div class="pc-seg"><b>base_gateway_service</b> <span class="tag ok">✓</span></div>
+      <div class="pc-seg" style="margin-left:auto"><span class="tag ok">● 启用</span><span class="btn ghost" style="font-size:11px">⚡ 测试</span></div>
+    </div>
+    <div class="pchain">
+      <div class="pc-seg"><span class="lbl">内网</span><b>10.192.9.101:20035</b><span class="arr">→</span></div>
+      <div class="pc-seg"><b>/north/</b><span class="arr">→</span></div>
+      <div class="pc-seg"><b>10.192.8.97:20035</b> <span class="tag warn">↗ 直连</span></div>
+      <div class="pc-seg" style="margin-left:auto"><span class="tag err">● 已停用</span></div>
+    </div>
+    <div class="pchain">
+      <div class="pc-seg"><span class="lbl">公网</span><b>wss://ws.za.visionai.unityaiot.com:20998</b><span class="arr">→</span></div>
+      <div class="pc-seg"><b>/ws</b><span class="arr">→</span></div>
+      <div class="pc-seg"><b>—— 未匹配组</b> <span class="tag err">✗</span></div>
+      <div class="pc-seg" style="margin-left:auto"><span class="tag warn">● 告警</span><span class="btn ghost" style="font-size:11px">⚡ 测试</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ======== 状态栏 ======== -->
+<div id="statusbar">
+  <span>main</span><span class="ok-dot">● clean</span>
+  <span style="display:flex;gap:4px"><span class="err-cnt">✗ 0</span><span class="warn-cnt">⚠ 2</span></span>
+  <span class="right"><span>conf</span><span>12:34</span><span>YAML</span><span id="exportStat">导出：未设置</span></span>
+</div>
+
+<!-- ======== 导出中心弹窗 ======== -->
+<div class="mask" id="exportMask" onclick="if(event.target===this)closeExport()">
+  <div class="modal">
+    <div class="m-head"><b>导出配置</b><span style="font-size:11.5px;color:var(--t3);margin-left:8px">businesscenter_nginx_CD_master.conf</span>
+      <span class="close" onclick="closeExport()">✕</span></div>
+    <div class="m-body">
+      <div class="ex-col">
+        <h4>SSL 导出 <span class="switch on" id="sslSwitch" onclick="this.classList.toggle('on')"></span></h4>
+        <div style="font-size:11.5px;color:var(--t2);line-height:1.6">关闭时丢弃 <code style="font-family:var(--mono);color:var(--t3)">ssl_*</code> 指令行，<br/>改写 <code style="font-family:var(--mono);color:var(--t3)">listen X ssl http2;</code> → <code style="font-family:var(--mono);color:var(--t3)">listen X http2;</code></div>
+
+        <h4 style="margin-top:16px">域名替换（server_name → 新域名）</h4>
+        <input class="inp" placeholder="如 za-new.visionai.unityaiot.com（留空不替换）" oninput="document.getElementById('exportStat').textContent='导出：域名 1 条 · upstream 2 组'" />
+
+        <h4 style="margin-top:16px">upstream 后端整组替换（默认 + 例外）</h4>
+        <div class="ex-card">
+          <div class="lbl">默认 IP（应用到未例外交代的全部组；一个 IP = 一个节点）</div>
+          <textarea class="textarea" placeholder="10.8.8.1&#10;10.8.8.2&#10;10.8.8.3">10.8.8.1
+10.8.8.2
+10.8.8.3</textarea>
+        </div>
+        <div class="ex-card">
+          <span class="x">✕</span>
+          <div class="lbl">例外 · upstream 组（datalist 自动补全）</div>
+          <input class="inp" list="upGroups" placeholder="选择单个 upstream 组" value="sub_backstage_web" />
+          <datalist id="upGroups">
+            <option>saas_web</option><option>sub_backstage_web</option><option>base_gateway_service</option>
+            <option>asset_engine</option><option>wsIntercom22001</option><option>base_mobile_web</option>
+          </datalist>
+          <div style="height:6px"></div>
+          <textarea class="textarea" placeholder="目标纯 IP，每行一个">10.8.8.9</textarea>
+        </div>
+        <div class="add-ex" onclick="addEx()">＋ 添加例外</div>
+      </div>
+
+      <div class="ex-col">
+        <h4>实时预览</h4>
+        <div class="preview-box" id="pv">
+          <div class="pv-line"><span class="ln">1</span>server {</div>
+          <div class="pv-line"><span class="ln">2</span>&nbsp;&nbsp;listen 443 http2;</div>
+          <div class="pv-line"><span class="ln">3</span>&nbsp;&nbsp;server_name za.visionai.unityaiot.com;<span class="orig">← 原值：za.visionai.unityaiot.com</span></div>
+          <div class="pv-line subst"><span class="ln">3</span>&nbsp;&nbsp;server_name za-new.visionai.unityaiot.com;<span class="orig">← 原值：za.visionai.unityaiot.com</span></div>
+          <div class="pv-line"><span class="ln">4</span>&nbsp;&nbsp;location /gateway/ {</div>
+          <div class="pv-line"><span class="ln">5</span>&nbsp;&nbsp;&nbsp;&nbsp;proxy_pass http://saas_web;</div>
+          <div class="pv-line"><span class="ln">6</span>&nbsp;&nbsp;}</div>
+          <div class="pv-line"><span class="ln">7</span>}</div>
+          <div class="pv-line"><span class="ln">8</span>upstream sub_backstage_web {</div>
+          <div class="pv-line subst"><span class="ln">9</span>&nbsp;&nbsp;server 10.8.8.9:20690 weight=5 max_fails=2 fail_timeout=30s;<span class="orig">← 原值：server 10.192.8.97:20690 weight=5 …</span></div>
+          <div class="pv-line"><span class="ln">10</span>}</div>
+        </div>
+      </div>
+    </div>
+    <div class="m-foot">
+      <span class="stat" id="pvStat">1 条域名(server_name)替换 · 2 组 upstream 整组替换</span>
+      <span class="sp"></span>
+      <span class="btn ghost">重新预览</span>
+      <span class="btn copy">复制</span>
+      <span class="btn primary" onclick="toast('已生成 businesscenter_nginx_CD_master.conf 并下载', 'ok')">下载 .conf</span>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  // 视图切换
+  document.querySelectorAll('.menu-item').forEach(function (el) {
+    el.addEventListener('click', function () {
+      var v = el.dataset.view;
+      document.querySelectorAll('.menu-item').forEach(function (m) { m.classList.remove('active'); });
+      el.classList.add('active');
+      document.querySelectorAll('.view').forEach(function (sec) { sec.classList.remove('on'); });
+      document.getElementById('view-' + v).classList.add('on');
+    });
+  });
+
+  // 导出中心
+  function openExport() {
+    document.getElementById('exportMask').classList.add('show');
+  }
+  function closeExport() {
+    document.getElementById('exportMask').classList.remove('show');
+  }
+  function addEx() {
+    toast('已添加例外卡（单组替换）', 'ok');
+  }
+
+  // toast
+  var toastTimer = null;
+  function toast(msg, type) {
+    var t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = 'toast show' + (type === 'err' ? ' err' : '');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { t.className = 'toast'; }, 2600);
+  }
+
+  // Esc 关闭导出
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') closeExport();
+  });
+</script>
+</body>
+</html>

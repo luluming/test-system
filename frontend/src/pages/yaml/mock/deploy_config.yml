@@ -1,0 +1,1213 @@
+hosts:
+  -
+    ip: "10.192.8.97"
+    ssh-port: 22
+  -
+    ip: "10.192.8.66"
+    ssh-port: 22
+  -
+    ip: "10.192.8.90"
+    ssh-port: 22
+  -
+    ip: "10.192.8.73"
+    ssh-port: 22
+  -
+    ip: "10.192.8.102"
+    ssh-port: 22
+  -
+    ip: "10.192.10.31"
+    ssh-port: 22
+  -
+    ip: "10.192.10.43"
+    ssh-port: 22
+  -
+    ip: "10.192.9.101"
+  -
+    ip: "10.192.9.36"
+service_mode:
+  -
+    name: "cluster"
+
+clusters:
+  -
+    name: "jdk"
+      #cluster-variables:
+      #version: "oraclejdk"
+    instances:
+      -
+        ip: "10.192.8.97"
+      -
+        ip: "10.192.8.66"
+      -
+        ip: "10.192.8.90"
+      -
+        ip: "10.192.8.73"
+      -
+        ip: "10.192.8.102"
+      -
+        ip: "10.192.10.31"
+      -
+        ip: "10.192.10.43"
+      -
+        ip: "10.192.9.101"
+      -
+        ip: "10.192.9.36"
+
+  -
+    name: "node"
+    instances:
+      -
+        ip: "10.192.8.97"
+      -
+        ip: "10.192.8.66"
+      -
+        ip: "10.192.8.90"
+
+  -
+    name: "skywalking-agent"
+    instances:
+      -
+        ip: "10.192.8.97"
+      -
+        ip: "10.192.8.66"
+      -
+        ip: "10.192.8.90"
+
+  -
+    name: "cloud-toolbox"
+    instances:
+      -
+        ip: "10.192.8.97"
+      -
+        ip: "10.192.8.66"
+      -
+        ip: "10.192.8.90"
+  -
+    name: "docker"             #node软件包，请在需要运行H5前端服务的服务器上，安装此包
+    group: "enviroment"
+    instances:
+      - ip: "10.192.10.31"
+  -
+    name: "docker-compose"             #node软件包，请在需要运行H5前端服务的服务器上，安装此包
+    group: "enviroment"
+    instances:
+      - ip: "10.192.10.31"
+  -
+    name: "mariadb"
+    group: "TencentCloud"
+    cluster-variables:
+      service_addr: "ft-86041-rocky-za-mysql8.cyvzkdjbonpp.eu-west-1.rds.amazonaws.com:3306"
+      mariadb_user: "admin"
+      mariadb_password: "DSw437ubaUWgzPH8hs6nj2"
+      ansible_master: "10.192.8.97"
+  -
+    name: "milvus"             #node软件包，请在需要运行H5前端服务的服务器上，安装此包
+    group: "enviroment"
+    instances:
+      - ip: "10.192.10.31"
+  -
+    name: "nacos"
+    group: "enviroment"
+    cluster-variables:
+        nacos_jvm: "-Xms256m -Xmx768m -Xmn256m"
+    instances:
+      -
+        ip: "10.192.8.97"
+      -
+        ip: "10.192.8.66"
+      -
+        ip: "10.192.8.90"
+
+  -
+    name: "zookeeper"
+    group: "enviroment"
+    instances:
+      -
+        ip: "10.192.8.97"
+      -
+        ip: "10.192.8.66"
+      -
+        ip: "10.192.8.90"
+  -
+    name: "kafka"
+    group: "enviroment"
+    cluster-variables:
+        kafka_jvm: "-Xmx936m -Xms512m"
+    instances:
+      -
+        ip: "10.192.8.97"
+      -
+        ip: "10.192.8.66"
+      -
+        ip: "10.192.8.90"
+
+  -
+    name: "redis"
+    group: "enviroment"
+    cluster-variables:
+        redis_memory: "2G"                #redis内存大小，单位为M或G，默认参数大小为：1G
+        redis_master_name: "redis-master"
+        redis_port: 16379
+        service_addrs: "10.192.8.97:26380,10.192.8.66:26380,10.192.8.90:26380"
+    instances:
+      -
+        ip: "10.192.8.73"
+      -
+        ip: "10.192.8.102"
+
+  -
+    name: "redis-sentinel"
+    group: "enviroment"
+    instances:
+      -
+        ip: "10.192.8.97"
+      -
+        ip: "10.192.8.66"
+      -
+        ip: "10.192.8.90"
+
+  -
+   name: "clickhouse"
+   group: "enviroment"
+   cluster-variables:
+     service_addrs: "FT-86041-ZA-rocky-private-nlb-8a7b18d627bc453f.elb.eu-west-1.amazonaws.com:18123"
+   instances:
+      -
+        ip: "10.192.8.73"
+      -
+        ip: "10.192.8.102"
+  -
+    name: "nginx"
+    group: "enviroment"
+    instances:
+       -
+         ip: "10.192.8.97"
+       -
+         ip: "10.192.8.66"
+       -
+         ip: "10.192.8.90"
+  -
+    name: "assets-engine"
+    group: "enviroment"
+    instances:
+      -
+        ip: "10.192.8.97"
+      -
+        ip: "10.192.8.66"
+      -
+        ip: "10.192.8.90"
+  -
+     name: "minio"
+     group: "enviroment"
+     instances:
+      -
+        ip: "10.192.10.43"
+
+  -
+    name: "flink"
+    group: "enviroment"
+    instances:
+      -
+        ip: "10.192.10.43"
+
+#安装S17
+  -
+    name: "fms"               #S17的fms服务集群
+    extra-variables:
+      jvm_min: 512               # 单位MB，必须填写为整数
+      jvm_max: 1024                # 单位MB，必须填写为整数
+    cluster-variables:
+      redis.sentinel.master: "redis-master"
+      s17.network.pfx.key-store-password: "ENC#s2MMded5kjQ93RLYVYyzZqixtkI=#"
+      s17.network.pfx.key-password: "ENC#s2MMded5kjQ93RLYVYyzZqixtkI=#"
+      s17.network.pfx.key-alias: "${DOMAIN_NAME}" #pfx里面的别名
+      #management.server.port: -1 #java服务集群acuator端口配置，-1表示不启用，如需使用acuator业务监控模块，请修改为一个可用的内网端口,S17_3.0.12版本以后支持配置
+      #文件系统类型 1:minio[自建云存储] 2:S3存储[亚马逊云存储] 3:OSS存储[阿里云存储] 4:COS存储[腾讯云存储] 5:本地磁盘存储 6:OBS存储[华为云存储] 7:GCS存储[谷歌云存储] 8:OCI存储[oracle云存储] 9:DOS存储[digitalOcean云存储] 10:ABS存储[微软云存储]
+      storage.intranet.type: 2
+      #存储桶命名生成规则：租户ID-应用ID-平台名(缩写，如：mta、saas)-环境标识(DEV、)-APPID，目前不支持手动配置桶名
+      storage.intranet.app.id: "2024"       #存储桶APPID
+      common.env: "PRD"                     #存储桶环境标识
+      common.platform: "s17"                #平台名称
+      system.intranet.custom-bucket-enable: "1"
+      system.intranet.default-bucket-name: 86041-za-rcoky-public-s3
+      s3.public.accessKey: "your-s3-access-key"    #使用S3存储时，请填写具体S3的accesskey
+      s3.public.secretKey: "your-s3-secret-key"    #使用S3存储时，请填写具体S3的secretKey
+      s3.public.region: "eu-west-1"          #使用S3存储时，请填写具体S3的region
+
+      oci.api-config-path: "/iotp/oci/config"   #使用oci对象存储时，
+      oci.access-key: "dc8db623c0ac54676f364807a774810ee9876543"        #使用oci存储时，请填写具体oci的accesskey
+      oci.secret-key: "EGlOhnstaSj3/5pGkJ1xbAVR6zge80987654D6M+3QE="        #使用oci存储时，请填写具体oci的secretKey
+      oci.name-space: "work"                    #使用oci存储时，请填写具体oci的namespace
+      #修改minio的访问地址为公网访问地址
+      minio.public.ip.port: "34.251.251.65:21186"
+      fms.server.https.enable: "false"
+    instances:
+      -
+        ip: "10.192.8.97"
+        instance-variables:            #实例参数配置
+          north.public.ip: "34.251.251.65"   #外网IP填写，请修改为具体内网对应的外网IP
+      -
+        ip: "10.192.8.66"
+        instance-variables:            #实例参数配置
+          north.public.ip: "34.251.251.65"   #外网IP填写，请修改为具体内网对应的外网IP
+      -
+        ip: "10.192.8.90"
+        instance-variables:            #实例参数配置
+          north.public.ip: "34.251.251.65"   #外网IP填写，请修改为具体内网对应的外网IP
+
+  -
+    name: "dcs"               #S17的dcs服务集群，设备接入集群
+    extra-variables:
+      jvm_min: 512                # 单位MB，必须填写为整数
+      jvm_max: 1268                # 单位MB，必须填写为整数
+    cluster-variables:
+      redis.sentinel.master: "redis-master"
+        #dcs.n9m.port: 20001
+      #time_zone: UTC          #集群服务时区配置,S17_3.0.12版本以后支持配置
+      #management.server.port: -1 #java服务集群acuator端口配置，-1表示不启用，如需使用acuator业务监控模块，请修改为一个可用的内网端口,S17_3.0.12版本以后支持配置
+    instances:
+      -
+        ip: "10.192.8.97"
+        instance-variables:            #实例参数配置
+          south.public.ip: "52.209.247.17"   #外网IP填写，请修改为具体内网对应的外网IP
+      -
+        ip: "10.192.8.66"
+        instance-variables:            #实例参数配置
+          south.public.ip: "54.247.125.44"   #外网IP填写，请修改为具体内网对应的外网IP
+      -
+        ip: "10.192.8.90"
+        instance-variables:            #实例参数配置
+          south.public.ip: "54.78.78.144"   #外网IP填写，请修改为具体内网对应的外网IP
+
+  -
+    name: "dgw"               #S17的dgw服务集群
+    extra-variables:
+      jvm_min: 512                # 单位MB，必须填写为整数
+      jvm_max: 884                # 单位MB，必须填写为整数
+    cluster-variables:
+      s17.network.pfx.path: "/iotp/network/nginx/platform.pfx"
+      s17.network.pfx.key-store-password: "ENC#s2MMded5kjQ93RLYVYyzZqixtkI=#"
+      s17.network.pfx.key-password: "ENC#s2MMded5kjQ93RLYVYyzZqixtkI=#"
+      s17.network.pfx.key-alias: "alias" #pfx里面的别名
+      #management.server.port: -1 #java服务集群acuator端口配置，-1表示不启用，如需使用acuator业务监控模块，请修改为一个可用的内网端口，S17_3.0.12版本以后支持配置
+    instances:
+      -
+        ip: "10.192.8.97"
+      -
+        ip: "10.192.8.66"
+      -
+        ip: "10.192.8.90"
+
+  -
+    name: "mts"               #S17的mts服务集群
+    cluster-variables:
+      redis.sentinel.master: "redis-master"
+      #time_zone: UTC          #集群服务时区配置,S17_3.0.12版本以后支持配置
+      #skywalking.ip:          #skywalking服务器ip(不启用:值为空; 启用:填写实际ip),S17_3.0.12版本以后支持配置
+    instances:
+      -
+        ip: "10.192.8.97"
+      -
+        ip: "10.192.8.66"
+      -
+        ip: "10.192.8.90"
+
+  -
+    name: "dfds"              #S17的dfds服务集群
+    extra-variables:
+      jvm_min: 512                # 单位MB，必须填写为整数
+      jvm_max: 1024                # 单位MB，必须填写为整数
+    cluster-variables:
+      #time_zone: UTC          #集群服务时区配置,S17_3.0.12版本以后支持配置
+      #management.server.port: -1 #java服务集群acuator端口配置，-1表示不启用，如需使用acuator业务监控模块，请修改为一个可用的内网端口,S17_3.0.13版本以后支持配置
+      s17.network.key.path: "/iotp/network/nginx/platform.key"
+      s17.network.pem.path: "/iotp/network/nginx/platform.pem"
+      s17.network.pfx.path: "/iotp/network/nginx/platform.pfx"
+      redis.sentinel.master: "redis-master"
+      s17.network.pfx.key-store-password: "ENC#s2MMded5kjQ93RLYVYyzZqixtkI=#"
+      s17.network.pfx.key-password: "ENC#s2MMded5kjQ93RLYVYyzZqixtkI=#"
+      s17.network.pfx.key-alias: "alias" #pfx里面的别名
+      #文件系统类型 1:minio[自建云存储] 2:S3存储[亚马逊云存储] 3:OSS存储[阿里云存储] 4:COS存储[腾讯云存储] 5:本地磁盘存储 6:OBS存储[华为云存储] 7:GCS存储[谷歌云存储] 8:OCI存储[oracle云存储] 9:DOS存储[digitalOcean云存储] 10:ABS存储[微软云存储]
+      storage.intranet.type: 2
+      #存储桶命名生成规则：租户ID-应用ID-平台名(缩写，如：mta、saas)-环境标识(DEV、)-APPID，目前不支持手动配置桶名
+      storage.intranet.app.id: "2024"       #存储桶APPID
+      common.env: "PRD"                     #存储桶环境标识
+      common.platform: "s17"                #平台名称
+      system.intranet.custom-bucket-enable: "1"
+      system.intranet.default-bucket-name: 86041-za-rcoky-public-s3
+      s3.public.accessKey: "your-s3-access-key"    #使用S3存储时，请填写具体S3的accesskey
+      s3.public.secretKey: "your-s3-secret-key"    #使用S3存储时，请填写具体S3的secretKey
+      s3.public.region: "eu-west-1"          #使用S3存储时，请填写具体S3的region
+      oci.api-config-path: "/iotp/oci/config"   #使用oci对象存储时，
+      oci.access-key: "dc8db623c0ac54676f364807a774810ee9876543"        #使用oci存储时，请填写具体oci的accesskey
+      oci.secret-key: "EGlOhnstaSj3/5pGkJ1xbAVR6zge80987654D6M+3QE="        #使用oci存储时，请填写具体oci的secretKey
+      oci.name-space: "work"                     #使用oci存储时，请填写具体oci的namespace
+      #修改minio的访问地址为公网访问地址
+      minio.public.ip.port: "34.251.251.65:21186"
+    instances:
+      -
+        ip: "10.192.8.97"
+        instance-variables:            #实例参数配置
+          south.public.ip: "52.209.247.17"   #外网IP填写，请修改为具体内网对应的外网IP
+      -
+        ip: "10.192.8.66"
+        instance-variables:            #实例参数配置
+          south.public.ip: "54.247.125.44"   #外网IP填写，请修改为具体内网对应的外网IP
+      -
+        ip: "10.192.8.90"
+        instance-variables:            #实例参数配置
+          south.public.ip: "54.78.78.144"   #外网IP填写，请修改为具体内网对应的外网IP
+  -
+    name: "djms"              #S17的djms服务集群
+    extra-variables:
+      jvm_min: 512                # 单位MB，必须填写为整数
+      jvm_max: 1024                # 单位MB，必须填写为整数
+    cluster-variables:
+      redis.sentinel.master: "redis-master"
+      #time_zone: UTC          #集群服务时区配置,S17_3.0.12版本以后支持配置
+      #management.server.port: -1 #java服务集群acuator端口配置，-1表示不启用，如需使用acuator业务监控模块，请修改为一个可用的内网端口,S17_3.0.12版本以后支持配置
+    instances:
+      -
+        ip: "10.192.8.97"
+      -
+        ip: "10.192.8.66"
+      -
+        ip: "10.192.8.90"
+  -
+    name: "mrs"               #S17的mrs服务集群
+    cluster-variables:
+      redis.sentinel.master: "redis-master"
+      #time_zone: UTC          #集群服务时区配置,S17_3.0.12版本以后支持配置
+      #skywalking.ip:          #skywalking服务器ip(不启用:值为空; 启用:填写实际ip),S17_3.0.12版本以后支持配置
+    instances:
+      -
+        ip: "10.192.8.97"
+      -
+        ip: "10.192.8.66"
+      -
+        ip: "10.192.8.90"
+  -
+    name: "ms"                #S17的ms服务集群
+    cluster-variables:
+      #接入设备规模：tiny:0-2000设备，small：2000-10000设备，middle：10000-30000设备量，large：30000以上
+      device.scale: "small"
+      #ms.intranet.http.proxy.port: 21250                 #api-gw 网关端口
+      #ms.intranet.http.proxy.ip: "10.1.1.224"            #api-gw 网关ip
+      #time_zone: UTC          #集群服务时区配置,S17_3.0.12以后版本支持配置
+      #skywalking.ip:          #skywalking服务器ip(不启用:值为空; 启用:填写实际ip),S17_3.0.12以后版本支持配置
+      redis.sentinel.master: "redis-master"
+      s17.network.key.path: "/iotp/network/nginx/platform.key"
+      s17.network.pem.path: "/iotp/network/nginx/platform.pem"
+      ms.mdm.gt.enable.tls: "false"   #媒体https开关，30153版本新增
+      ms.mdm.h5.enable.https: "false" #媒体https开关，30153版本新增
+      ms.mgm.n9m.enable.tls: "false"  #媒体https开关，30153版本新增
+    instances:
+      -
+        ip: "10.192.8.97"
+        instance-variables:            #实例参数配置
+          north.public.ip: "34.251.251.65"   #外网IP填写，请修改为具体内网对应的外网IP
+          south.public.ip: "52.209.247.17"   #外网IP填写，请修改为具体内网对应的外网IP
+          ms.intranet.tcp.gt.mapping.port: 21000
+          ms.intranet.http.flv.mapping.ports: "22001-22002"
+          ms.intranet.http.hls.mapping.port: 22011
+          ms.intranet.http.ws.mapping.port: 22012
+      -
+        ip: "10.192.8.66"
+        instance-variables:            #实例参数配置
+          north.public.ip: "34.251.251.65"   #外网IP填写，请修改为具体内网对应的外网IP
+          south.public.ip: "54.247.125.44"   #外网IP填写，请修改为具体内网对应的外网IP
+          ms.intranet.tcp.gt.mapping.port: 22000
+          ms.intranet.http.flv.mapping.ports: "22001-22002"
+          ms.intranet.http.hls.mapping.port: 22011
+          ms.intranet.http.ws.mapping.port: 22012
+      -
+        ip: "10.192.8.90"
+        instance-variables:            #实例参数配置
+          north.public.ip: "34.251.251.65"   #外网IP填写，请修改为具体内网对应的外网IP
+          south.public.ip: "54.78.78.144"   #外网IP填写，请修改为具体内网对应的外网IP
+          ms.intranet.tcp.gt.mapping.port: 23000
+          ms.intranet.http.flv.mapping.ports: "22001-22002"
+          ms.intranet.http.hls.mapping.port: 22011
+          ms.intranet.http.ws.mapping.port: 22012
+  -
+    name: "mms"                #S17的mms服务集群
+    cluster-variables:
+      redis.sentinel.master: "redis-master"
+      #接入设备规模：tiny:0-2000设备，small：2000-10000设备，middle：10000-30000设备量，large：30000以上
+      device.scale: "small"
+      #time_zone: UTC          #集群服务时区配置,S17_3.0.12以后版本支持配置
+      #skywalking.ip:          #skywalking服务器ip(不启用:值为空; 启用:填写实际ip),S17_3.0.12以后版本支持配置
+      mms.media.h5.enable.https: "false"
+    instances:
+      -
+        ip: "10.192.8.97"
+      -
+        ip: "10.192.8.66"
+      -
+        ip: "10.192.8.90"
+  -
+    name: "dpcs"               #S17的dpcs服务集群
+    cluster-variables:
+      #time_zone: UTC          #集群服务时区配置,S17_3.0.12以后版本支持配置
+      #skywalking.ip:          #skywalking服务器ip(不启用:值为空; 启用:填写实际ip),S17_3.0.12以后版本支持配置
+      #servers.north.url.https.enable: "true"
+      redis.sentinel.master: "redis-master"
+      s17.network.key.path: "/iotp/network/nginx/platform.key"
+      s17.network.pem.path: "/iotp/network/nginx/platform.pem"
+    instances:
+      -
+        ip: "10.192.8.97"
+        instance-variables:            #实例参数配置
+          north.public.ip: "34.251.251.65"   #外网IP填写，请修改为具体内网对应的外网IP
+          south.public.ip: "52.209.247.17"   #外网IP填写，请修改为具体内网对应的外网IP
+            #dpcs.intranet.north.http.port: 20035
+            #dpcs.intranet.nginx.mapping.port: 20038
+      -
+        ip: "10.192.8.66"
+        instance-variables:            #实例参数配置
+          north.public.ip: "34.251.251.65"   #外网IP填写，请修改为具体内网对应的外网IP
+          south.public.ip: "54.247.125.44"   #外网IP填写，请修改为具体内网对应的外网IP
+            #dpcs.intranet.north.http.port: 20035
+            #dpcs.intranet.nginx.mapping.port: 20038
+      -
+        ip: "10.192.8.90"
+        instance-variables:            #实例参数配置
+          north.public.ip: "34.251.251.65"   #外网IP填写，请修改为具体内网对应的外网IP
+          south.public.ip: "54.78.78.144"   #外网IP填写，请修改为具体内网对应的外网IP
+            #dpcs.intranet.north.http.port: 20035
+            #dpcs.intranet.nginx.mapping.port: 20038
+
+#安装中台服务
+  -
+    name: "base-gateway-service"
+    extra-variables:
+      jvm_min: 256                # 单位MB，必须填写为整数
+      jvm_max: 768                # 单位MB，必须填写为整数
+      gc_mode: -XX:+UseG1GC   # 指定java的GC模式。目前支持的值有：-XX:+UseSerialGC  -XX:+UseG1GC
+    cluster-variables:
+          server_addr: "https://za.visionai.unityaiot.com" #主要解决协议上传的问题，s17需要通过这个地址去回调server服务（此地内网地址和外网地址都可以）
+          server_proxy_port: 20551
+          allow_url: "ALLOW-FROM https://my1492.geotab.com"
+          #allow_url_switch
+          allow_url_switch: "true"
+          #deny_cache
+          deny_cache: "true"
+          #allow_origin
+          allow_origin: "true"
+          #allow_origin_url
+          allow_origin_url: "https://za.visionai.unityaiot.com:*,http://34.251.251.65:*,http://localhost:*,https://exp-prd.streamax.com:20002/,https://ftcloud.streamax.com:20002/,https://apdomaintest.streamax.com:*" #提供跨域
+            #allow_method: "POST,GET,OPTIONS,DELETE,PUT"
+          allow_header: "Content-Type,content-type,token,_token,_tenantid,tenantId,_appid,appId,_langtype,langType"
+          allow_max_age: "3600"
+          redis_sentinel_master: "redis-master"
+    group: "businesscenter"
+    instances:
+      -
+        ip: "10.192.8.97"
+      -
+        ip: "10.192.8.66"
+      -
+        ip: "10.192.8.90"
+
+  -
+    name: "base-server-service"
+    extra-variables:
+      jvm_min: 2048                 # 单位MB，必须填写为整数
+      jvm_max: 4096                # 单位MB，必须填写为整数
+      #gc_mode: -XX:UseG1GC         # 指定java的GC模式。目前支持的值有：-XX:+UseSerialGC  -XX:+UseG1GC
+      gc_mode: -XX:+UseG1GC        # 指定java的GC模式。目前支持的值有：-XX:+UseSerialGC  -XX:+UseG1GC
+    cluster-variables:
+         redis_sentinel_master: "redis-master"
+         mariadb_password: "1qaz2WSX!"
+         mariadb_username: "base_server"
+         default_domain_port: "20551"
+         default_domain_name: "za.visionai.unityaiot.com"
+         license_service_point_code: "1384568576341451391"
+         sms_account: "admin"
+         sms_password: "1qaz2WSX!"
+         rsa_pub_key: "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0VIjjNNY93vCmjuGqTteFHdt5rDFtca56v9oTFXormfQRTgjPtsr5tzCvpThcC8eY4UgeJfQT3zGcDnaKAONJQKHD2Q2w12RraazY0WDZcrooqoLGx8hImpuGLOxc9ttXFDftDskrmcKNb8c20d9tB1v8qVE/pwKQF/8dfzI7sbgGkSZkCfuXHJNtDRt5+97i6scaCMtwma3N7dy3bPg6GYlqGPrzcBdYjiaFfHUK82pEKSo7xK8/e80wtUvwjuRSMvaD+PcX/noSdiGO4oN3JqPioGnwv6DjntktbudJ9iayK0sWl/DZ/qf90GQwcpH6Snigo8LymZOFD4/4BaFgwIDAQAB"
+         rsa_private_key: "MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDRUiOM01j3e8KaO4apO14Ud23msMW1xrnq/2hMVeiuZ9BFOCM+2yvm3MK+lOFwLx5jhSB4l9BPfMZwOdooA40lAocPZDbDXZGtprNjRYNlyuiiqgsbHyEiam4Ys7Fz221cUN+0OySuZwo1vxzbR320HW/ypUT+nApAX/x1/MjuxuAaRJmQJ+5cck20NG3n73uLqxxoIy3CZrc3t3Lds+DoZiWoY+vNwF1iOJoV8dQrzakQpKjvErz97zTC1S/CO5FIy9oP49xf+ehJ2IY7ig3cmo+KgafC/oOOe2S1u50n2JrIrSxaX8Nn+p/3QZDBykfpKeKCjwvKZk4UPj/gFoWDAgMBAAECggEABZr4fr3uJPp4dJ7hdUi0tUGZfNMBCGQg+G0MgvbN+1WmWyQstXMzEsSYpnfgLZvlaW7YNsKB/o7t1XWHJQkrT3Fo4n2hhcvMqeTL6v2ijihH4ItDLt+/iGdnOVwehWa73/v+cZof2lfCCzxp7mlUsW0UYWARn+vXzm+DmDlDvDkkwtjGsw/x17fWWTcg1TWPOf1pUM5tLJPczbUMNRCl/INq890PXmmk7W6clzvMZWKAMqazO3imwiCIZv7Rpr/9yFhoOK23KohFDQVUBSbewzA/hr7Bi13y+SkIigjjfoXddRe7ZyEEjIjUpWaoXrFWHemSlEaB3Dof91gBS1MhuQKBgQDrXDOcucq1eQOdNy3sXMg6EeIT+NrtnlHJ64ghCD4wkRTYqiwm5bYVAo2MXbHDpyHpUsEGHrcdgFTVwkkmXbeOsrfxIJZkQyEPo4SAIywof6hSviBycCuXIZHMWjI11COhiN29DOQTbijrodWlk5VJnq4wQqiCXJQh/jrAm9t6jQKBgQDjrVvidWnH45/7v8OLjy4xpEk1CfDgvffX6ul1/i2fQDYZ5dsbxn0ILiPUanIBd47ILhPKLGsNN2XH82L0A0XwKFtNkmSvXGHgxqfkea1oMu83QZ3+UCBUj1YqXMmCQLEJvRWGhB9mO0JJ9h/0UbItOXY6OL2HIkNWnIJPX5eETwKBgEaIQw9cvlrUATlEKAcFZxu/8Dh8A1/iajBQ3WLIzZpQYCbuGH0vqflx4mmGSpePpqH9osrquYWlx8anirRssW2aMXWZhnhVhbriDfs4jysz1oW1ZJPm+ak47jCHdzSadnMaSRk2m8MW6Dx1K0mLiNmfLCRaVZV7mQj23zSJgKShAoGADlEDWx0Y9rnIgJMRX8A0Hmj/NXeXjvpDEG+0GHhQNBhcjopWmcuEZzRHin7bBl6XOt0y316lqKIYI1eZnFBsYGqZOyp+bEx51yGGwyYnkkrJogbdQXWWYtrUhztobGlW+I7MQLYkJ1CInY/9eGZ+trtLROP2fv3XkCWtSAJxy58CgYEAgAnywmLsDwmpKFU5JUjiCJK5nNKuVAfPE7HLNm3HU6EmiyzHkyNgvO/HxANvcR7HzClbzwfgWpPmflgdO0t1SvBGZy2Gy79OkBHvHh3tiHah8o0shSApdIWvHW62yMGxlCmQwqMxRPFJXY9ovy8UbDJ4QfL+CnFwlx4pZ9P8ZrA="
+    instances:
+      #-
+      #  ip: "10.192.8.97"
+      #-
+      #  ip: "10.192.8.66"
+      #-
+      #  ip: "10.192.8.90"
+      -
+        ip: "10.192.9.101"
+      -
+        ip: "10.192.9.36"
+
+  -
+    name: "base-business-service"
+    extra-variables:
+      jvm_min: 512                # 单位MB，必须填写为整数
+      jvm_max: 2048                # 单位MB，必须填写为整数
+      gc_mode: -XX:+UseG1GC        # 指定java的GC模式。目前支持的值有：-XX:+UseSerialGC  -XX:+UseG1GC
+      #gc_mode: -XX:UseG1GC      # 指定java的GC模式。目前支持的值有：-XX:+UseSerialGC  -XX:+UseG1GC
+    cluster-variables:
+         redis_sentinel_master: "redis-master"
+         mariadb_password: "1qaz2WSX!"
+         mariadb_username: "base_config"
+    instances:
+      #-
+      #  ip: "10.192.8.97"
+      #-
+      #  ip: "10.192.8.66"
+      #-
+      #  ip: "10.192.8.90"
+      -
+        ip: "10.192.9.101"
+      -
+        ip: "10.192.9.36"
+
+  -
+    name: "base-alarm-service"
+    extra-variables:
+      jvm_min: 512                # 单位MB，必须填写为整数
+      jvm_max: 2048                # 单位MB，必须填写为整数
+      #gc_mode: -XX:+UseG1GC        # 指定java的GC模式。目前支持的值有：-XX:+UseSerialGC  -XX:+UseG1GC
+      gc_mode: -XX:+UseG1GC        # 指定java的GC模式。目前支持的值有：-XX:+UseSerialGC  -XX:+UseG1GC
+    cluster-variables:
+         redis_sentinel_master: "redis-master"
+         mariadb_password: "1qaz2WSX!"
+         mariadb_username: "base_alarm"
+         alarm_cache_expire_time: 1440
+         alarm_duration_time: 30
+           #map_gps_analysis_streamax_url: "https://worldmap.streamax.com"
+         evidence_forbid_download_types: "3,4,10,11"
+         streamax_global_config_map_domain: "https://worldmap.streamax.com/streamap-service/"
+    instances:
+      #-
+      #  ip: "10.192.8.97"
+      #-
+      #  ip: "10.192.8.66"
+      #-
+      #  ip: "10.192.8.90"
+      -
+        ip: "10.192.9.101"
+      -
+        ip: "10.192.9.36"
+
+  -
+    name: "base-gps-service"
+    extra-variables:
+      jvm_min: 512                 # 单位MB，必须填写为整数
+      jvm_max: 2048                # 单位MB，必须填写为整数
+      #gc_mode: -XX:UseG1GC         # 指定java的GC模式。目前支持的值有：-XX:+UseSerialGC  -XX:+UseG1GC
+      gc_mode: -XX:+UseG1GC        # 指定java的GC模式。目前支持的值有：-XX:+UseSerialGC  -XX:+UseG1GC
+    cluster-variables:
+         redis_sentinel_master: "redis-master"
+         mariadb_password: "1qaz2WSX!"
+           #alarm_cache_expire_time: 1440
+           #alarm_duration_time: 30
+           #map_gps_analysis_streamax_url: "https://worldmap.streamax.com"
+    instances:
+      #-
+      #  ip: "10.192.8.97"
+      #-
+      #  ip: "10.192.8.66"
+      #-
+      #  ip: "10.192.8.90"
+      -
+        ip: "10.192.9.101"
+      -
+        ip: "10.192.9.36"
+  -
+    name: "base-stats-service"
+    extra-variables:
+      jvm_min: 512                 # 单位MB，必须填写为整数
+      jvm_max: 2048                # 单位MB，必须填写为整数
+      #gc_mode: -XX:UseG1GC         # 指定java的GC模式。目前支持的值有：-XX:+UseSerialGC  -XX:+UseG1GC
+      gc_mode: -XX:+UseG1GC        # 指定java的GC模式。目前支持的值有：-XX:+UseSerialGC  -XX:+UseG1GC
+    cluster-variables:
+         redis_sentinel_master: "redis-master"
+         mariadb_password: "D!jjkkiiTTG!u1"
+           #alarm_cache_expire_time: 1440
+           #alarm_duration_time: 30
+           #map_gps_analysis_streamax_url: "https://worldmap.streamax.com"
+    instances:
+      #-
+      #  ip: "10.192.8.97"
+      #-
+      #  ip: "10.192.8.66"
+      #-
+      #  ip: "10.192.8.90"
+      -
+        ip: "10.192.9.101"
+      -
+        ip: "10.192.9.36"
+
+  -
+    name: "base-flow-service"
+    extra-variables:
+      jvm_min: 512                # 单位MB，必须填写为整数
+      jvm_max: 2048                # 单位MB，必须填写为整数
+      #  gc_mode: -XX:UseG1GC       # 指定java的GC模式。目前支持的值有：-XX:+UseSerialGC  -XX:+UseG1GC
+      gc_mode: -XX:+UseG1GC        # 指定java的GC模式。目前支持的值有：-XX:+UseSerialGC  -XX:+UseG1GC
+    cluster-variables:
+        redis_sentinel_master: "redis-master"
+        streamax_global_config_map_domain: "https://worldmap.streamax.com/streamap-service/"
+    instances:
+      #  -
+      #    ip: "10.192.8.97"
+      #  -
+      #    ip: "10.192.8.66"
+      #  -
+      #    ip: "10.192.8.90"
+      -
+        ip: "10.192.9.101"
+      -
+        ip: "10.192.9.36"
+
+  -
+    name: "base-msg-service"
+    extra-variables:
+      jvm_min: 256                 # 单位MB，必须填写为整数
+      jvm_max: 768                 # 单位MB，必须填写为整数
+      gc_mode: -XX:UseG1GC        # 指定java的GC模式。目前支持的值有：-XX:+UseSerialGC  -XX:+UseG1GC
+    cluster-variables:
+          redis_sentinel_master: "redis-master"
+          mariadb_username: "base_msg"
+          mariadb_password: "1qaz2WSX!"
+    instances:
+      -
+        ip: "10.192.8.97"
+      -
+        ip: "10.192.8.66"
+      -
+        ip: "10.192.8.90"
+  -
+    name: "base-face-service"
+    extra-variables:
+      jvm_min: 512                # 单位MB，必须填写为整数
+      jvm_max: 1792                # 单位MB，必须填写为整数
+      gc_mode: -XX:+UseSerialGC   # 指定java的GC模式。目前支持的值有：-XX:+UseSerialGC  -XX:+UseG1GC
+    cluster-variables:
+         mariadb_password: "1qaz2WSX!"
+         vector_ip: "10.192.10.31"
+         vector_port: 19530
+    instances:
+          -
+            ip: "10.192.10.31"
+
+  -
+    name: "base-face-algorithm"
+    extra-variables:
+         jvm_min: 2048                # 单位MB，必须填写为整数
+         jvm_max: 5632                # 单位MB，必须填写为整数
+         gc_mode: -XX:+UseSerialGC   # 指定java的GC模式。目前支持的值有：-XX:+UseSerialGC  -XX:+UseG1GC
+    cluster-variables:
+         mariadb_password: "1qaz2WSX!"
+    instances:
+          -
+            ip: "10.192.10.31"
+            instance-variables:
+                face_algorithm_type: "-1"
+                face_algorithm_threadCount: "2"
+#安装前端web服务
+  -
+    name: "backstage-web"
+    cluster-variables:
+      static.public.url: "https://za.visionai.unityaiot.com/asset-engine"
+      gateway.public.url: "https://za.visionai.unityaiot.com/gateway"
+        #password.rsa2048.public.key: "-----BEGIN%20PUBLIC%20KEY-----%0AMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0VIjjNNY93vCmjuGqTteFHdt5rDFtca5%0A6v9oTFXormfQRTgjPtsr5tzCvpThcC8eY4UgeJfQT3zGcDnaKAONJQKHD2Q2w12RraazY0WDZcro%0AoqoLGx8hImpuGLOxc9ttXFDftDskrmcKNb8c20d9tB1v8qVE%2FpwKQF%2F8dfzI7sbgGkSZkCfuXHJN%0AtDRt5%2B97i6scaCMtwma3N7dy3bPg6GYlqGPrzcBdYjiaFfHUK82pEKSo7xK8%2Fe80wtUvwjuRSMva%0AD%2BPcX%2FnoSdiGO4oN3JqPioGnwv6DjntktbudJ9iayK0sWl%2FDZ%2Fqf90GQwcpH6Snigo8LymZOFD4%2F%0A4BaFgwIDAQAB%0A-----END%20PUBLIC%20KEY-----"
+    instances:
+      -
+        ip: "10.192.8.97"
+      -
+        ip: "10.192.8.66"
+      -
+        ip: "10.192.8.90"
+  -
+    name: "sub-backstage-web"
+    cluster-variables:
+      static.public.url: "https://za.visionai.unityaiot.com/asset-engine"
+      gateway.public.url: "https://za.visionai.unityaiot.com/gateway"
+        #password.rsa2048.public.key: "-----BEGIN%20PUBLIC%20KEY-----%0AMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0VIjjNNY93vCmjuGqTteFHdt5rDFtca5%0A6v9oTFXormfQRTgjPtsr5tzCvpThcC8eY4UgeJfQT3zGcDnaKAONJQKHD2Q2w12RraazY0WDZcro%0AoqoLGx8hImpuGLOxc9ttXFDftDskrmcKNb8c20d9tB1v8qVE%2FpwKQF%2F8dfzI7sbgGkSZkCfuXHJN%0AtDRt5%2B97i6scaCMtwma3N7dy3bPg6GYlqGPrzcBdYjiaFfHUK82pEKSo7xK8%2Fe80wtUvwjuRSMva%0AD%2BPcX%2FnoSdiGO4oN3JqPioGnwv6DjntktbudJ9iayK0sWl%2FDZ%2Fqf90GQwcpH6Snigo8LymZOFD4%2F%0A4BaFgwIDAQAB%0A-----END%20PUBLIC%20KEY-----"
+    instances:
+      -
+        ip: "10.192.8.97"
+      -
+        ip: "10.192.8.66"
+      -
+        ip: "10.192.8.90"
+
+  -
+    name: "base-login-web"
+    cluster-variables:
+      static.public.url: "https://za.visionai.unityaiot.com/asset-engine"
+      gateway.public.url: "https://za.visionai.unityaiot.com/gateway"
+        #password.rsa2048.public.key: "-----BEGIN%20PUBLIC%20KEY-----%0AMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0VIjjNNY93vCmjuGqTteFHdt5rDFtca5%0A6v9oTFXormfQRTgjPtsr5tzCvpThcC8eY4UgeJfQT3zGcDnaKAONJQKHD2Q2w12RraazY0WDZcro%0AoqoLGx8hImpuGLOxc9ttXFDftDskrmcKNb8c20d9tB1v8qVE%2FpwKQF%2F8dfzI7sbgGkSZkCfuXHJN%0AtDRt5%2B97i6scaCMtwma3N7dy3bPg6GYlqGPrzcBdYjiaFfHUK82pEKSo7xK8%2Fe80wtUvwjuRSMva%0AD%2BPcX%2FnoSdiGO4oN3JqPioGnwv6DjntktbudJ9iayK0sWl%2FDZ%2Fqf90GQwcpH6Snigo8LymZOFD4%2F%0A4BaFgwIDAQAB%0A-----END%20PUBLIC%20KEY-----"
+      system.component.style: "abroad"
+      customer.login.page.app.id: "10001"
+    instances:
+      -
+        ip: "10.192.8.97"
+      -
+        ip: "10.192.8.66"
+      -
+        ip: "10.192.8.90"
+
+  -
+    name: "base-mobile-web"
+    cluster-variables:
+      static.public.url: "https://za.visionai.unityaiot.com/asset-engine"
+      gateway.public.url: "https://za.visionai.unityaiot.com/gateway"
+    instances:
+      -
+        ip: "10.192.8.97"
+      -
+        ip: "10.192.8.66"
+      -
+        ip: "10.192.8.90"
+
+  -
+    name: "runtime-starry-docs-pages"
+    cluster-variables:
+      static.public.url: /asset-engine
+    instances:
+      -
+        ip: "10.192.8.97"
+      -
+        ip: "10.192.8.66"
+      -
+        ip: "10.192.8.90"
+  -
+    name: "runtime-starry-config-dashboard-pages"
+    cluster-variables:
+      static.public.url: /asset-engine
+    instances:
+      -
+        ip: "10.192.8.97"
+      -
+        ip: "10.192.8.66"
+      -
+        ip: "10.192.8.90"
+
+  -
+    name: "streamax-player"
+    cluster-variables:
+      static.public.url: /asset-engine
+    instances:
+      -
+        ip: "10.192.8.97"
+      -
+        ip: "10.192.8.66"
+      -
+        ip: "10.192.8.90"
+
+  -
+    name: "streamax-player-version-manager"
+    cluster-variables:
+      static.public.url: /asset-engine
+    instances:
+      -
+        ip: "10.192.8.97"
+      -
+        ip: "10.192.8.66"
+      -
+        ip: "10.192.8.90"
+  -
+    name: "nova-player"
+    cluster-variables:
+      static.public.url: /asset-engine
+    instances:
+      -
+        ip: "10.192.8.97"
+      -
+        ip: "10.192.8.66"
+      -
+        ip: "10.192.8.90"
+
+  -
+    name: "nova-player-version-manager"
+    cluster-variables:
+      static.public.url: /asset-engine
+    instances:
+      -
+        ip: "10.192.8.97"
+      -
+        ip: "10.192.8.66"
+      -
+        ip: "10.192.8.90"
+  -
+    name: "material"
+    cluster-variables:
+      static.public.url: /asset-engine
+    instances:
+      -
+        ip: "10.192.8.97"
+      -
+        ip: "10.192.8.66"
+      -
+        ip: "10.192.8.90"
+
+  -
+    name: "saas-web"
+    cluster-variables:
+        static.public.url: /asset-engine
+        gateway.public.url: /gateway
+        gateway.websocket.url: wss://za.visionai.unityaiot.com
+        gateway.websocket.port: 20998
+        login.web.public.url: /login
+        mobile.web.public.url: /mobile
+        s17.server.h5.url: /gateway
+        s17.server.url: za.visionai.unityaiot.com
+        s17.server.h5.port: 443
+        s17.server.port: 443
+        videoplayer.version: 1.3.4.13
+        videoplayer.url: /static-file
+        videoplayer.protocol: http
+        download.apps: DiskTool_v1.1.0.21.exe,LocalPlayer_V2.5.9.exe
+          #password.rsa2048.public.key: -----BEGIN%20PUBLIC%20KEY-----%0AMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0VIjjNNY93vCmjuGqTteFHdt5rDFtca5%0A6v9oTFXormfQRTgjPtsr5tzCvpThcC8eY4UgeJfQT3zGcDnaKAONJQKHD2Q2w12RraazY0WDZcro%0AoqoLGx8hImpuGLOxc9ttXFDftDskrmcKNb8c20d9tB1v8qVE%2FpwKQF%2F8dfzI7sbgGkSZkCfuXHJN%0AtDRt5%2B97i6scaCMtwma3N7dy3bPg6GYlqGPrzcBdYjiaFfHUK82pEKSo7xK8%2Fe80wtUvwjuRSMva%0AD%2BPcX%2FnoSdiGO4oN3JqPioGnwv6DjntktbudJ9iayK0sWl%2FDZ%2Fqf90GQwcpH6Snigo8LymZOFD4%2F%0A4BaFgwIDAQAB%0A-----END%20PUBLIC%20KEY-----
+        seek.timeout: "30"
+        video.buffer.time: "0.5"
+        use.lr.components: "1"
+        realtime.monitoring.time: "10"
+        # 指定播放完成的历史缓存数据最大缓存量
+        h5.player.history.cache.size: "1024"
+        # 设置当前播放时间点的未来未播放视频数据的缓冲时间
+        h5.player.future.cache.time: "60"
+        # 表示初始化player后，未到达配置时间前仅展示加载中，到达配置时间后才展示百分比loading
+        h5.player.start.loading.timeout: "2"
+        # 是否启用中国境内纠偏，0：会纠偏，1：不纠偏
+        # Google分析衡量ID ---- 2122P2新增
+        google.analytics.measure.id: "0"
+        system.component.style: "abroad"
+        page.iframe.render.ports: "443"
+        streamap.env: "PRD-AWS"
+    instances:
+      -
+        ip: "10.192.8.97"
+      -
+        ip: "10.192.8.66"
+      -
+        ip: "10.192.8.90"
+
+#安装运维服务
+  -
+    name: "base-crocus-service"
+    cluster-variables:
+      #gateway_public_url: "http://127.0.0.1:20500/base-crocus-service"
+      #rsa_pub_key: "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0VIjjNNY93vCmjuGqTteFHdt5rDFtca56v9oTFXormfQRTgjPtsr5tzCvpThcC8eY4UgeJfQT3zGcDnaKAONJQKHD2Q2w12RraazY0WDZcrooqoLGx8hImpuGLOxc9ttXFDftDskrmcKNb8c20d9tB1v8qVE/pwKQF/8dfzI7sbgGkSZkCfuXHJNtDRt5+97i6scaCMtwma3N7dy3bPg6GYlqGPrzcBdYjiaFfHUK82pEKSo7xK8/e80wtUvwjuRSMvaD+PcX/noSdiGO4oN3JqPioGnwv6DjntktbudJ9iayK0sWl/DZ/qf90GQwcpH6Snigo8LymZOFD4/4BaFgwIDAQAB"
+      #rsa_private_key: "MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDRUiOM01j3e8KaO4apO14Ud23msMW1xrnq/2hMVeiuZ9BFOCM+2yvm3MK+lOFwLx5jhSB4l9BPfMZwOdooA40lAocPZDbDXZGtprNjRYNlyuiiqgsbHyEiam4Ys7Fz221cUN+0OySuZwo1vxzbR320HW/ypUT+nApAX/x1/MjuxuAaRJmQJ+5cck20NG3n73uLqxxoIy3CZrc3t3Lds+DoZiWoY+vNwF1iOJoV8dQrzakQpKjvErz97zTC1S/CO5FIy9oP49xf+ehJ2IY7ig3cmo+KgafC/oOOe2S1u50n2JrIrSxaX8Nn+p/3QZDBykfpKeKCjwvKZk4UPj/gFoWDAgMBAAECggEABZr4fr3uJPp4dJ7hdUi0tUGZfNMBCGQg+G0MgvbN+1WmWyQstXMzEsSYpnfgLZvlaW7YNsKB/o7t1XWHJQkrT3Fo4n2hhcvMqeTL6v2ijihH4ItDLt+/iGdnOVwehWa73/v+cZof2lfCCzxp7mlUsW0UYWARn+vXzm+DmDlDvDkkwtjGsw/x17fWWTcg1TWPOf1pUM5tLJPczbUMNRCl/INq890PXmmk7W6clzvMZWKAMqazO3imwiCIZv7Rpr/9yFhoOK23KohFDQVUBSbewzA/hr7Bi13y+SkIigjjfoXddRe7ZyEEjIjUpWaoXrFWHemSlEaB3Dof91gBS1MhuQKBgQDrXDOcucq1eQOdNy3sXMg6EeIT+NrtnlHJ64ghCD4wkRTYqiwm5bYVAo2MXbHDpyHpUsEGHrcdgFTVwkkmXbeOsrfxIJZkQyEPo4SAIywof6hSviBycCuXIZHMWjI11COhiN29DOQTbijrodWlk5VJnq4wQqiCXJQh/jrAm9t6jQKBgQDjrVvidWnH45/7v8OLjy4xpEk1CfDgvffX6ul1/i2fQDYZ5dsbxn0ILiPUanIBd47ILhPKLGsNN2XH82L0A0XwKFtNkmSvXGHgxqfkea1oMu83QZ3+UCBUj1YqXMmCQLEJvRWGhB9mO0JJ9h/0UbItOXY6OL2HIkNWnIJPX5eETwKBgEaIQw9cvlrUATlEKAcFZxu/8Dh8A1/iajBQ3WLIzZpQYCbuGH0vqflx4mmGSpePpqH9osrquYWlx8anirRssW2aMXWZhnhVhbriDfs4jysz1oW1ZJPm+ak47jCHdzSadnMaSRk2m8MW6Dx1K0mLiNmfLCRaVZV7mQj23zSJgKShAoGADlEDWx0Y9rnIgJMRX8A0Hmj/NXeXjvpDEG+0GHhQNBhcjopWmcuEZzRHin7bBl6XOt0y316lqKIYI1eZnFBsYGqZOyp+bEx51yGGwyYnkkrJogbdQXWWYtrUhztobGlW+I7MQLYkJ1CInY/9eGZ+trtLROP2fv3XkCWtSAJxy58CgYEAgAnywmLsDwmpKFU5JUjiCJK5nNKuVAfPE7HLNm3HU6EmiyzHkyNgvO/HxANvcR7HzClbzwfgWpPmflgdO0t1SvBGZy2Gy79OkBHvHh3tiHah8o0shSApdIWvHW62yMGxlCmQwqMxRPFJXY9ovy8UbDJ4QfL+CnFwlx4pZ9P8ZrA="
+      ftp_server_public_ip: "52.209.247.17"
+      ftp_master_ip: "10.192.8.97"
+    extra-variables:
+      jvm_min: 256                # 单位MB，必须填写为整数
+      jvm_max: 768                # 单位MB，必须填写为整数
+      gc_mode: -XX:UseG1GC
+    instances:
+          -
+            ip: "10.192.8.97"
+            instance-variables:
+                crocus.public.ip: "52.209.247.17"
+          -
+            ip: "10.192.8.66"
+            instance-variables:
+                crocus.public.ip: "54.247.125.44"
+          -
+            ip: "10.192.8.90"
+            instance-variables:
+                crocus.public.ip: "54.78.78.144"
+
+  -
+    name: "base-crocus-web"
+    cluster-variables:
+      static.public.url: "https://za.visionai.unityaiot.com/asset-engine"
+      gateway.public.url: "https://za.visionai.unityaiot.com/gateway"
+      password.rsa2048.public.key: "-----BEGIN%20PUBLIC%20KEY-----%0AMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0VIjjNNY93vCmjuGqTteFHdt5rDFtca5%0A6v9oTFXormfQRTgjPtsr5tzCvpThcC8eY4UgeJfQT3zGcDnaKAONJQKHD2Q2w12RraazY0WDZcro%0AoqoLGx8hImpuGLOxc9ttXFDftDskrmcKNb8c20d9tB1v8qVE%2FpwKQF%2F8dfzI7sbgGkSZkCfuXHJN%0AtDRt5%2B97i6scaCMtwma3N7dy3bPg6GYlqGPrzcBdYjiaFfHUK82pEKSo7xK8%2Fe80wtUvwjuRSMva%0AD%2BPcX%2FnoSdiGO4oN3JqPioGnwv6DjntktbudJ9iayK0sWl%2FDZ%2Fqf90GQwcpH6Snigo8LymZOFD4%2F%0A4BaFgwIDAQAB%0A-----END%20PUBLIC%20KEY-----"
+    instances:
+      -
+        ip: "10.192.8.97"
+      -
+        ip: "10.192.8.66"
+      -
+        ip: "10.192.8.90"
+
+
+  -
+    name: "dev-ops-backstage-web"
+    cluster-variables:
+      static.public.url: "https://za.visionai.unityaiot.com/asset-engine"
+      gateway.public.url: "https://za.visionai.unityaiot.com/gateway"
+      password.rsa2048.public.key: "-----BEGIN%20PUBLIC%20KEY-----%0AMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0VIjjNNY93vCmjuGqTteFHdt5rDFtca5%0A6v9oTFXormfQRTgjPtsr5tzCvpThcC8eY4UgeJfQT3zGcDnaKAONJQKHD2Q2w12RraazY0WDZcro%0AoqoLGx8hImpuGLOxc9ttXFDftDskrmcKNb8c20d9tB1v8qVE%2FpwKQF%2F8dfzI7sbgGkSZkCfuXHJN%0AtDRt5%2B97i6scaCMtwma3N7dy3bPg6GYlqGPrzcBdYjiaFfHUK82pEKSo7xK8%2Fe80wtUvwjuRSMva%0AD%2BPcX%2FnoSdiGO4oN3JqPioGnwv6DjntktbudJ9iayK0sWl%2FDZ%2Fqf90GQwcpH6Snigo8LymZOFD4%2F%0A4BaFgwIDAQAB%0A-----END%20PUBLIC%20KEY-----"
+    instances:
+      -
+        ip: "10.192.8.97"
+      -
+        ip: "10.192.8.66"
+      -
+        ip: "10.192.8.90"
+  -
+    name: "runtime-starry-crocus-mix-pages"
+    cluster-variables:
+      static.public.url: /asset-engine
+    instances:
+      -
+        ip: "10.192.8.97"
+      -
+        ip: "10.192.8.66"
+      -
+        ip: "10.192.8.90"
+#安装FT服务
+  -
+    name: "ft-manager"
+    extra-variables:
+      jvm_min: 128                # 单位MB，必须填写为整数
+      jvm_max: 768                # 单位MB，必须填写为整数
+      gc_mode: -XX:+UseG1GC   # 指定java的GC模式。目前支持的值有：-XX:+UseSerialGC  -XX:+UseG1GC
+    cluster-variables:
+      #redis_sentinel_master: "redis-master"
+       init_installSwitch: "true"
+       init_appId: "10001"
+       ft_http_request_type: "https"
+       tenant_name: "ftcloud"
+       default_language: "en_US"
+       streamap_server_url: "https://worldmap.streamax.com/streamap-service"
+    group: "freight"
+    instances:
+      -
+        ip: "10.192.8.97"
+      -
+        ip: "10.192.8.66"
+      -
+        ip: "10.192.8.90"
+
+  -
+    name: "ft-openapi"
+    server_port: 20052
+    extra-variables:
+      jvm_min: 128                # 单位MB，必须填写为整数
+      jvm_max: 768                # 单位MB，必须填写为整数
+      gc_mode: -XX:+UseG1GC   # 指定java的GC模式。目前支持的值有：-XX:+UseSerialGC  -XX:+UseG1GC
+    cluster-variables:
+      #redis_sentinel_master: "redis-master"
+       ft_http_request_type: "https"
+       streamap_server_url: "https://worldmap.streamax.com/streamap-service"
+    group: "freight"
+    instances:
+      -
+        ip: "10.192.8.97"
+      -
+        ip: "10.192.8.66"
+      -
+        ip: "10.192.8.90"
+
+  -
+    name: "ft-report"
+    extra-variables:
+        jvm_min: 128                # 单位MB，必须填写为整数
+        jvm_max: 1560               # 单位MB，必须填写为整数
+        gc_mode: -XX:+UseSerialGC   # 指定java的GC模式。目前支持的值有：-XX:+UseSerialGC  -XX:+UseG1GC
+    cluster-variables:
+      # redis_sentinel_master: "redis-master"
+          #streamax_global_config_map_domain: "https://worldmap.streamax.com/streamap-service"
+        ft_http_request_type: "https"
+    group: "freight"
+    instances:
+        -
+          ip: "10.192.8.97"
+        -
+          ip: "10.192.8.66"
+        -
+          ip: "10.192.8.90"
+  -
+    name: "ft-entry-web"
+    group: "ft-entry-web"
+    cluster-variables:
+      static.public.url: /asset-engine
+      gateway.public.url: /gateway
+      streamap.server.url: "https://map.streamax.com/streamap-service/"
+      system.component.style: "abroad"
+      streamap.ncc: "0"
+    instances:
+      -
+        ip: "10.192.8.97"
+      -
+        ip: "10.192.8.66"
+      -
+        ip: "10.192.8.90"
+  -
+    name: "ft-app-web"
+    group: "ft-app-web"
+    cluster-variables:
+      static.public.url: /asset-engine
+      gateway.public.url: /gateway
+      streamap.ncc: "0"
+    instances:
+      -
+        ip: "10.192.8.97"
+      -
+        ip: "10.192.8.66"
+      -
+        ip: "10.192.8.90"
+
+
+  -
+    name: "runtime-starry-ft-pages"
+    cluster-variables:
+      static.public.url: "/asset-engine"
+    instances:
+      -
+        ip: "10.192.8.97"
+      -
+        ip: "10.192.8.66"
+      -
+        ip: "10.192.8.90"
+  -
+    name: "runtime-starry-ai-pages"
+    cluster-variables:
+      static.public.url: "/asset-engine"
+    instances:
+      -
+        ip: "10.192.8.97"
+      -
+        ip: "10.192.8.66"
+      -
+        ip: "10.192.8.90"
+
+  -
+    name: "runtime-starry-login-pages"
+    cluster-variables:
+      static.public.url: "/asset-engine"
+    instances:
+      -
+        ip: "10.192.8.97"
+      -
+        ip: "10.192.8.66"
+      -
+        ip: "10.192.8.90"
+
+#人因
+  -
+    name: "hf-driver-portrait"
+    extra-variables:
+        jvm_min: 1024                # 单位MB，必须填写为整数
+        jvm_max: 2048               # 单位MB，必须填写为整数
+    cluster-variables:
+      #map.http.url.prefix: "https://worldmap.streamax.com"
+    instances:
+      - ip: "10.192.10.43"
+  -
+    name: "hf-powerjob-server"
+    instances:
+      - ip: "10.192.10.43"
+  -
+    name: "ai-hws"
+    cluster-variables:
+      #map.http.client.secret: "703SIK8YQhhyK5CXMcws9HvsJ3dUNO9B"
+      # map.http.project.name: "hf_86041ZA"
+      # map.http.client.url.prefix: "https://worldmap.streamax.com"
+      # map.http.client.identify.key: "b7c54167-4225-4cd0-8dc4-e336e8a55606"
+       #saas.api.switch: "true"
+    instances:
+      - ip: "10.192.10.43"
+  -
+    name: "ai-hbs"
+    instances:
+      - ip: "10.192.10.43"
+
+  -
+    name: "human-backstage-web"
+    cluster-variables:
+      static.public.url: "https://za.visionai.unityaiot.com/asset-engine"
+      gateway.public.url: "https://za.visionai.unityaiot.com/gateway"
+        #password.rsa2048.public.key: "-----BEGIN%20PUBLIC%20KEY-----%0AMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0VIjjNNY93vCmjuGqTteFHdt5rDFtca5%0A6v9oTFXormfQRTgjPtsr5tzCvpThcC8eY4UgeJfQT3zGcDnaKAONJQKHD2Q2w12RraazY0WDZcro%0AoqoLGx8hImpuGLOxc9ttXFDftDskrmcKNb8c20d9tB1v8qVE%2FpwKQF%2F8dfzI7sbgGkSZkCfuXHJN%0AtDRt5%2B97i6scaCMtwma3N7dy3bPg6GYlqGPrzcBdYjiaFfHUK82pEKSo7xK8%2Fe80wtUvwjuRSMva%0AD%2BPcX%2FnoSdiGO4oN3JqPioGnwv6DjntktbudJ9iayK0sWl%2FDZ%2Fqf90GQwcpH6Snigo8LymZOFD4%2F%0A4BaFgwIDAQAB%0A-----END%20PUBLIC%20KEY-----"
+    instances:
+      -
+        ip: "10.192.8.97"
+      -
+        ip: "10.192.8.66"
+      -
+        ip: "10.192.8.90"
+  -
+    name: "runtime-starry-human-factors-pages"
+    cluster-variables:
+      static.public.url: /asset-engine
+    instances:
+      -
+        ip: "10.192.8.97"
+      -
+        ip: "10.192.8.66"
+      -
+        ip: "10.192.8.90"
+  -
+    name: "migrate-tool"
+    cluster-variables:
+      #face_vector_ip: "10.192.10.31"
+      #    face_vector_port: "19530"
+      #    mariadb_user: "admin"
+          mariadb_password: "DSw437ubaUWgzPH8hs6nj2"
+            #    redis_sentinel_master: "redis-master"
+            #optional_service_face: "true"
+            #optional_service_flow: "true"
+            #face_vector_switch: "true"
+    instances:
+      -
+        ip: "10.192.8.97"
+  -
+     name: "crocus-migrate-tool"
+     cluster-variables:
+          mariadb_password: "DSw437ubaUWgzPH8hs6nj2"
+     instances:
+       -
+         ip: "10.192.8.97"
+  -
+     name: "ft-upgrade-tool"
+     cluster-variables:
+          mariadb_password: "DSw437ubaUWgzPH8hs6nj2"
+     instances:
+       -
+         ip: "10.192.8.97"
+  -
+     name: "hf-upgrade-tool"
+     cluster-variables:
+       #mariadb_password: "DSw437ubaUWgzPH8hs6nj2"
+     instances:
+       -
+         ip: "10.192.8.97"
+
+# 最后安装
+  -
+    name: "indicator"
+    group: "enviroment"
+    instances:
+      -
+        ip: "10.192.8.97"
+      -
+        ip: "10.192.8.66"
+      -
+        ip: "10.192.8.90"
+
+
+#网络相关的关键信息
+networking:
+  #IP地址映射信息
+  #注意：请在此处配置所有做了IP地址映射的信息!
+  #自动化部署时，需要填写为外网映射地址的参数，会自动查找此表。如果有找到，则自动填写为映射后的地址，否则自动填写为内网地址)
+  napts:
+    #单个IP地址映射信息
+    #-
+    #  cluster: "ms"                    #地址映射对应的服务器的集群
+    #  src-ip: "172.31.6.17"        #映射的内网IP
+    #  src-port: 21710                   #映射的内网端口
+    #  dst-ip: "55.55.55.55"            #映射的外网IP
+    #  dst-port: 21777                   #映射的外网端口
+    #  protocol: "tcp"                  #映射的协议类型，取值为tcp或udp，缺省为tcp
+
+  #虚拟IP映射信息
+  #注意：请在此处配置所有的虚拟IP映射的信息!
+  #自动化部署时，需要填写为虚拟IP的参数，会自动查找此表。如果有找到，则自动填写为映射后的虚拟IP，否则自动填写为集群的第一个IP)
+  vips:
+    #单个虚拟IP的映射信息
+    # -
+    #   virtual-ip: "10.160.10.200"     #虚拟IP
+    #   cluster: "mariadb"         #虚拟IP对应服务器的集群
+    #   #虚拟IP的类型，取值如下：
+    #   #  keepalived——由自动化部署工具自动进行keepalived的配置(待实现)
+    #   #  program——由其它的程序进行虚拟IP的维护
+    #   #  manual(缺省值)——通过手工的途径进行虚拟IP的维护
+    #   type: "program"

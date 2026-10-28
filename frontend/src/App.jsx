@@ -4,6 +4,7 @@ import Register from "./pages/Register";
 import ResetPassword from "./pages/ResetPassword";
 import IndustryDashboard from "./pages/IndustryDashboard";
 import IndustryDetail from "./pages/IndustryDetail";
+import YamlConfigPage from "./pages/yaml/YamlConfigPage";
 import AppShell from "./components/AppShell";
 import { clearToken, getToken } from "./store/auth";
 
@@ -31,6 +32,7 @@ export default function App() {
       <Route element={<ProtectedLayout />}>
         <Route path="/" element={<IndustryDashboard />} />
         <Route path="/ops/:industryId" element={<IndustryDetail />} />
+        <Route path="/ops/:industryId/yaml" element={<YamlConfigPage />} />
       </Route>
       {/* 兜底：未匹配路径重定向到行业管理首页 */}
       <Route path="*" element={<Navigate to="/" replace />} />

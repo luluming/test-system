@@ -23,6 +23,8 @@ class Industry(Base):
     cloned_from_id: Mapped[int | None] = mapped_column(
         ForeignKey("industries.id"), nullable=True
     )
+    # 行业归属范围：both（Nginx+YAML 都显示）/ nginx（仅 Nginx 行业管理可见）/ yml（仅 YML 行业管理可见）
+    scope: Mapped[str] = mapped_column(String(10), default="both", nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )

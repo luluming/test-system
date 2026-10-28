@@ -26,12 +26,19 @@ class IndustryCreate(BaseModel):
 
 
 class CloneIndustryRequest(BaseModel):
-    """从模板行业克隆请求；source_industry_id 可选，不填则创建空行业。"""
+    """从模板行业克隆请求；source_industry_id 可选，不填则创建空行业。
+
+    clone_scope 决定从源行业拷贝哪些配置：
+      both  — 同时克隆 Nginx + YAML（默认，保持兼容）
+      nginx — 仅克隆 Nginx 配置块树/Upstream/映射/端口等行业内运维配置
+      yml   — 仅克隆 YAML 配置及其版本快照
+    """
 
     source_industry_id: int | None = None
     name: str = Field(min_length=1, max_length=50)
     owner: str | None = Field(default=None, max_length=50)
     code: str | None = Field(default=None, max_length=50)
+    clone_scope: str = Field(default="both", pattern=r"^(both|nginx|yml)$")
 
     @field_validator("code")
     @classmethod
@@ -48,6 +55,8 @@ class IndustryUpdate(BaseModel):
     owner: str | None = Field(default=None, max_length=50)
     remark: str | None = Field(default=None, max_length=255)
     is_template: bool | None = None
+    # 归属菜单：both | nginx | yml，用于在 Nginx / YML 行业管理之间迁移行业
+    scope: str | None = Field(default=None, pattern=r"^(both|nginx|yml)$")
 
     @field_validator("name", "owner", mode="before")
     @classmethod
@@ -65,6 +74,7 @@ class IndustryOut(BaseModel):
     remark: str | None
     is_template: bool
     cloned_from_id: int | None
+    scope: str
     created_at: datetime
     updated_at: datetime
 

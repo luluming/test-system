@@ -25,6 +25,7 @@ from app.api.nginx_inner import (
     topology_router,
     upstream_router,
 )
+from app.api.yaml import router as yaml_router
 from app.config import settings
 from app.core.logging import setup_logging
 from app.middleware.security_headers import SecurityHeadersMiddleware
@@ -74,3 +75,4 @@ app.include_router(config_tree_router)
 app.include_router(config_actions_router)
 app.include_router(topology_router)
 app.include_router(directives_router)
+app.include_router(yaml_router)

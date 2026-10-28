@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>YAML 部署配置文件管理功能 · PRD</title>
+<style>
+  :root {
+    --ink: #1a202c; --sub: #4a5568; --line: #e2e8f0;
+    --brand: #2f6fed; --brand-soft: #eef4ff;
+    --ok: #0a7a3d; --ok-soft: #e6f6ec;
+    --warn: #8a4b00; --warn-soft: #fdf0dd;
+    --danger: #b42318; --danger-soft: #fdecec;
+    --code-bg: #f7f9fc;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #f5f7fb; color: var(--ink); font: 15px/1.75 "PingFang SC","Microsoft YaHei",system-ui,sans-serif; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 48px 32px 80px; }
+  .cover { background: linear-gradient(135deg,#2f6fed,#1e40af); color:#fff; border-radius: 16px; padding: 36px 40px; margin-bottom: 36px; }
+  .cover h1 { margin: 0 0 8px; font-size: 26px; }
+  .cover .meta { opacity: .85; font-size: 13px; }
+  h2 { font-size: 20px; margin: 40px 0 14px; padding-bottom: 8px; border-bottom: 2px solid var(--line); }
+  h3 { font-size: 16px; margin: 26px 0 10px; color: var(--brand); }
+  h4 { font-size: 14px; margin: 18px 0 8px; }
+  p { margin: 8px 0; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 13.5px; background:#fff; }
+  th, td { border: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top; }
+  th { background: #f1f5fb; font-weight: 600; white-space: nowrap; }
+  code { background: var(--code-bg); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; font-size: 13px; font-family: "SF Mono",Consolas,monospace; }
+  pre { background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; overflow-x: auto; font-size: 13px; line-height: 1.6; }
+  .card { background:#fff; border:1px solid var(--line); border-radius: 12px; padding: 18px 22px; margin: 14px 0; }
+  .tag { display:inline-block; border-radius: 999px; padding: 2px 10px; font-size: 12px; margin-right: 6px; }
+  .tag.p0 { background: var(--danger-soft); color: var(--danger); }
+  .tag.p1 { background: var(--warn-soft); color: var(--warn); }
+  .tag.dec { background: var(--brand-soft); color: var(--brand); }
+  .note { background: var(--ok-soft); border-left: 4px solid var(--ok); border-radius: 4px; padding: 10px 14px; margin: 10px 0; font-size: 13.5px; }
+  .warn { background: var(--warn-soft); border-left: 4px solid var(--warn); border-radius: 4px; padding: 10px 14px; margin: 10px 0; font-size: 13.5px; }
+  .flow { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 12px 0; font-size: 13.5px; }
+  .flow .step { background: var(--brand-soft); border: 1px solid var(--brand); color: var(--brand); border-radius: 8px; padding: 6px 12px; font-weight: 600; }
+  .flow .arrow { color: var(--sub); }
+  .kpi { display: grid; grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); gap: 14px; margin: 16px 0; }
+  .kpi .box { background:#fff; border:1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+  .kpi .num { font-size: 22px; font-weight: 700; color: var(--brand); }
+  .kpi .lab { font-size: 12.5px; color: var(--sub); }
+  ul, ol { margin: 8px 0 8px 24px; padding: 0; }
+  li { margin: 4px 0; }
+  .foot { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--line); color: var(--sub); font-size: 12.5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="cover">
+  <h1>YAML 部署配置文件管理功能</h1>
+  <div class="meta">产品需求文档（PRD）｜Test-System · Nginx 运维控制台二期延伸｜2026-10-27</div>
+</div>
+
+<div class="kpi">
+  <div class="box"><div class="num">通用 YAML</div><div class="lab">任意结构，树形入库</div></div>
+  <div class="box"><div class="num">推送→入库</div><div class="lab">preview + apply 两阶段</div></div>
+  <div class="box"><div class="num">版本快照</div><div class="lab">对比 / 回滚 / 导出</div></div>
+  <div class="box"><div class="num">一键回推</div><div class="lab">curl 命令自动生成</div></div>
+</div>
+
+<h2>1. 背景与目标</h2>
+<p>团队使用形如 <code>deploy_config.yml</code> 的部署配置文件（主机清单 <code>hosts</code>、服务模式 <code>service_mode</code>、集群清单 <code>clusters</code>、网络映射 <code>networking</code>）驱动自动化部署工具。这类文件目前散落在各服务器与本地，存在三个问题：</p>
+<ol>
+  <li><b>没有集中版本管理</b>：谁改了什么、当前生产用的是哪个版本，无从查证；</li>
+  <li><b>无法追溯变更</b>：集群、实例、变量的增删改没有 diff 记录与回滚手段；</li>
+  <li><b>与 Nginx 配置管理割裂</b>：系统已具备成熟的"推送→结构化入库→内容管理→版本快照"能力，但只服务 Nginx 文本，无法覆盖 YAML 文件。</li>
+</ol>
+<p>因此，将同一套"配置管理"范式扩展到 <b>通用 YAML 文件</b>：运维可在任意服务器用 curl 命令把 YAML 推送入库，系统校验、结构化、留版本，并在 Web 界面完成浏览、编辑、对比、回滚与导出。</p>
+<p><b>期望的可观察结果</b>：运维完成一次推送后，能在系统中看到该文件的结构化内容与完整原文、变更 diff、历史版本，并能一键重新导出与推送命令相同的原始文本；任何被采纳的改动都自动留下可回滚的版本快照。</p>
+
+<h2>2. 范围</h2>
+<h3>2.1 最小完整旅程（P0）</h3>
+<div class="flow">
+  <span class="step">选择归属行业</span><span class="arrow">→</span>
+  <span class="step">上传 / curl 推送 YAML</span><span class="arrow">→</span>
+  <span class="step">语法校验 + 结构预览（diff）</span><span class="arrow">→</span>
+  <span class="step">确认提交（apply）</span><span class="arrow">→</span>
+  <span class="step">结构化树 + 全文双视图浏览</span><span class="arrow">→</span>
+  <span class="step">编辑 / 版本对比 / 回滚 / 导出</span>
+</div>
+<ul>
+  <li><b>进入条件</b>：登录用户处于某个行业工作台，行业下存在"配置文件"入口；或用户手持有 YAML 文件与推送 token。</li>
+  <li><b>完成证据</b>：文件出现在该行业配置列表中，结构化树可浏览、全文可查看/编辑，存在 ≥1 个版本快照，可导出与入库内容一致的原文。</li>
+  <li><b>主要失败恢复路径</b>：推送内容不合法 YAML 或发生校验错误时，preview 阶段即拦截并给出定位提示，不产生任何入库副作用；apply 失败时任务标记失败且不生成新版本，系统保留最近一次成功版本供回滚。</li>
+</ul>
+<h3>2.2 P1 支持（本次一并规划）</h3>
+<ul>
+  <li>YAML 语法错误定位（行号 + 建议）；重复键检测；</li>
+  <li>注释保真：独立注释行与行内注释在重新导出时回到原位置；</li>
+  <li>全文编辑支持语法高亮与"跳转到树节点对应行"；</li>
+  <li>版本对比：任意两版本全文 diff。</li>
+</ul>
+<h3>2.3 明确排除</h3>
+<ul>
+  <li><span class="tag dec">决策</span>不绑定 <code>deploy_config.yml</code> 的固定 schema（hosts/clusters/networking 等字段校验、集群/实例业务化卡片均不在本期）。本期按<b>通用 YAML</b>管理，样例文件只是验证载体。</li>
+  <li><span class="tag dec">决策</span>敏感值（密码、私钥、云厂商密钥）不做脱敏/加密等特殊处理，与普通配置同等展示与存储。</li>
+  <li>YAML 的语义级校验（如引用的集群是否存在）、跨文件引用解析，本期不做。</li>
+</ul>
+
+<h2>3. 产品模型与核心流程</h2>
+<h3>3.1 业务对象</h3>
+<table>
+  <tr><th>对象</th><th>职责</th><th>关键属性</th></tr>
+  <tr><td>YAML 配置（YamlConfig）</td><td>一个被管理的 YAML 文件实体，归属于某个行业</td><td>所属行业、名称、描述、启用状态、完整原文 <code>content_text</code>、乐观版本号、最近操作时间</td></tr>
+  <tr><td>YAML 节点（YamlNode）</td><td>配置树的最小结构单元，表达任意嵌套层级</td><td>父节点、类型（映射/列表/标量/注释）、键路径、值、原始行号范围、排序</td></tr>
+  <tr><td>推送任务（PushTask）</td><td>一次推送的 preview→apply 两阶段记录</td><td>状态（pending/applied/failed）、上传原文、解析结果、diff 明细、错误信息</td></tr>
+  <tr><td>推送令牌（PushToken）</td><td>允许在无界面环境下提交的一次性凭证</td><td>用途（preview/apply）、哈希值、有效期、是否已用</td></tr>
+  <tr><td>版本快照（Version）</td><td>apply 成功时刻的完整原文快照，供对比与回滚</td><td>归属配置、生成时刻、完整文本、操作人</td></tr>
+</table>
+<h3>3.2 推送生命周期</h3>
+<pre>
+上传/提交 YAML
+    │
+    ▼
+语法校验 ──失败──► 返回定位信息（行号/重复键），任务置 failed，不落库
+    │成功
+    ▼
+结构解析（容错 + 注释保真）→ 生成结构化树
+    │
+    ▼
+preview：与库中最近版本按键路径做 diff → 产出 {replace/new/delete/keep} 明细 + task_id
+    │
+    ▼
+apply（需一次性 apply token）：落库为 YamlConfig + YamlNode 树 → 生成版本快照
+    │
+    ▼
+界面可见：树浏览 / 全文 / 版本列表 / 导出
+</pre>
+<p class="note">阶段与现有 Nginx 配置推送一致：<b>preview 只算不改，apply 才落库留痕</b>。preview 返回的 <code>task_id</code> 是 apply 的入参，防止"无预览直接提交"。</p>
+
+<h2>4. 功能需求</h2>
+
+<h3>FR-01 推送与导入（preview / apply）<span class="tag p0">P0</span></h3>
+<div class="card">
+  <h4>目的与触发</h4>
+  <p>运维在任意能访问系统的服务器上，用 curl 携带 YAML 内容与一次性 token，将该文件纳入系统管理。支持两种入口：界面内选择文件上传；命令行 <code>curl -F file=@…</code> 推送。</p>
+  <h4>处理规则</h4>
+  <ol>
+    <li>preview 接口接收文件与 preview token，先做语法校验（见 FR-02），通过后解析为结构化树并与当前库内版本按<b>键路径</b>计算 diff，返回：变更节点清单（键路径 + 动作 + 类型）、计数统计、<code>task_id</code>、apply 命令示例。</li>
+    <li>diff 的动作语义：<code>new</code>（库中不存在）、<code>replace</code>（键路径相同、值或结构变化）、<code>delete</code>（库中存在、新文件已移除）、<code>keep</code>（无变化）。</li>
+    <li>apply 接口必须以 preview 返回的 <code>task_id</code> 为入参，并校验一次性 apply token；成功后任务置 <code>applied</code>，生成版本快照；失败置 <code>failed</code> 并记录错误，不产生新版本。</li>
+    <li>同一配置同时只允许一个进行中的推送任务；冲突时提示"已有待提交任务，请先完成或取消"。</li>
+  </ol>
+  <h4>结果与状态</h4>
+  <p>推送成功 → 配置列表出现新条目（或原文更新），版本数 +1；preview 阶段任何校验失败都不产生副作用。任务状态机：<code>pending → applied | failed</code>。</p>
+  <h4>异常</h4>
+  <p>文件为空、超出大小上限、token 过期/已用、task_id 非数字或与预览不一致、目标行业不存在——均返回明确中文错误，不落库。</p>
+</div>
+
+<h3>FR-02 语法校验与错误定位<span class="tag p1">P1</span></h3>
+<div class="card">
+  <h4>处理规则</h4>
+  <ol>
+    <li>推送与全文编辑保存时均执行 YAML 语法校验。</li>
+    <li>错误定位：返回<b>行号 + 列位置 + 可读说明</b>（例如"第 1143 行缩进层级不一致：mariadb_password 与同级键未对齐"、"重复键：clusters 下出现两次 name=jdk"）。</li>
+    <li>校验失败时：推送场景在 preview 阶段拦截；编辑场景允许用户选择"放弃保存"或"仍以原文保存为草稿（标记为非法）"。非法配置不参与 apply 与版本快照，列表中带"语法异常"标记。</li>
+  </ol>
+  <p class="warn"><b>样例启示</b>：所附 <code>deploy_config.yml</code> 存在缩进层级不整齐、行内注释密集、个别键未加引号等写法，严格解析有风险。因此产品必须提供"严格校验 + 错误定位"，而不是静默失败或静默改写原文。</p>
+</div>
+
+<h3>FR-03 结构化解析与注释保真<span class="tag p0">P0</span></h3>
+<div class="card">
+  <h4>处理规则</h4>
+  <ol>
+    <li>解析器把 YAML 文本转换为节点树，节点类型至少覆盖：<b>根文档、映射、列表、列表项、标量值、独立注释行、行内注释</b>。</li>
+    <li>每个非注释节点记录<b>键路径</b>（如 <code>clusters[3].cluster-variables.redis.sentinel.master</code>），作为 diff、定位、导航的统一标识；同时记录<b>行号范围</b>用于前后端联动。</li>
+    <li>注释保真：独立注释行作为注释节点保留在原位置；行内注释（如 <code>name: "docker" #node软件包</code>）附着在所在节点上。重新导出时按节点顺序与附着关系还原，保证原文可近似无损回退。</li>
+    <li>解析失败但不致命的结构问题（如个别缩进歧义）不中断流程，进入"宽松模式"：仍保存原文，树只呈现可解析部分，并提示"部分内容未能结构化"。<span class="tag dec">决策</span></li>
+  </ol>
+</div>
+
+<h3>FR-04 内容浏览：全文 + 树双视图联动<span class="tag p0">P0</span></h3>
+<div class="card">
+  <h4>布局</h4>
+  <p>配置详情页左侧为<b>结构化树</b>（可折叠，展示键路径层级与类型徽标），右侧为<b>全文视图</b>（语法高亮、行号）。两者联动：点击树节点，右侧全文滚动并高亮该节点对应的行区间；在全文选中某行，树自动展开并定位到对应节点。</p>
+  <h4>处理规则</h4>
+  <ol>
+    <li>树节点显示：映射键名、列表项序号、标量值（超长值截断显示并可在全文查看完整值）。</li>
+    <li>支持按关键词在树中过滤节点（命中键名或值），支持在全文视图搜索并高亮所有命中。</li>
+    <li>视图仅展示，编辑入口见 FR-05。</li>
+  </ol>
+  <h4>样例参考</h4>
+  <p>对 <code>deploy_config.yml</code>，树顶层呈现 <code>hosts</code>、<code>service_mode</code>、<code>clusters</code>、<code>networking</code>；点击 <code>clusters[14].cluster-variables.s3.public.secretKey</code> 时，全文定位到第 234 行并高亮该键值对。</p>
+</div>
+
+<h3>FR-05 内容编辑<span class="tag p0">P0</span></h3>
+<div class="card">
+  <h4>目的与触发</h4>
+  <p>用户需要修正或调整配置内容，而不重新推送整个文件。</p>
+  <h4>处理规则</h4>
+  <ol>
+    <li><b>全文编辑（主方式）</b>：右侧全文视图进入编辑态，保存前执行语法校验（FR-02），成功后整树按新原文重新解析并更新节点，同时生成新版本快照。</li>
+    <li><b>节点级操作（辅助）</b>：在树中对单个标量节点支持改值；对映射/列表项支持重命名键、删除节点（危险操作需确认）、新增子节点。保存后同样走"重新解析 → 更新树 → 生成版本"。</li>
+    <li>两种编辑共用同一落库通道，任何一次成功保存都产生一个版本快照；保存操作记录操作人与时间。</li>
+    <li>并发保护：采用乐观锁，保存时版本号不匹配则提示"内容已被他人修改，请刷新后重试"，不做自动合并。</li>
+  </ol>
+  <h4>异常</h4>
+  <p>删除含子节点的映射/列表项需二次确认并提示影响范围（如"将删除 3 个子节点"）；编辑导致语法非法时按 FR-02 的草稿规则处理。</p>
+</div>
+
+<h3>FR-06 版本快照、对比与回滚<span class="tag p0">P0</span></h3>
+<div class="card">
+  <h4>处理规则</h4>
+  <ol>
+    <li>每次 apply 成功或编辑保存成功，自动生成版本快照（完整原文 + 时间 + 操作人）。</li>
+    <li>版本列表按时间倒序展示，支持查看任意版本的全文。</li>
+    <li>支持任意两版本<b>全文 diff 对比</b>：行级增删改高亮，并附"结构层面共变更 N 个节点"摘要。</li>
+    <li>回滚：选择历史版本执行"回滚"，系统以该版本原文生成一次编辑保存（即生成新版本，而非覆盖历史），保留完整审计轨迹。</li>
+  </ol>
+</div>
+
+<h3>FR-07 导出与回推命令<span class="tag p0">P0</span></h3>
+<div class="card">
+  <h4>处理规则</h4>
+  <ol>
+    <li>任意时刻可从当前内容导出为原始 YAML 文本（下载文件或复制到剪贴板），内容与库内 <code>content_text</code> 一致。</li>
+    <li>界面展示"推送命令"卡片：自动生成 preview 与 apply 两段 curl 示例，含公网可达基址与一次性 token 占位符（与 Nginx 推送一致的交互）。</li>
+    <li>导出与推送必须双向一致：推送进去的原文经"解析→重新序列化"后，除规范化空白外应与源文件一致（注释、顺序、值类型不丢失）。</li>
+  </ol>
+</div>
+
+<h2>5. 共享规则与异常</h2>
+<h3>5.1 归属与权限</h3>
+<ul>
+  <li>每个 YamlConfig 归属且仅归属一个行业；配置列表、详情、编辑仅对所属行业可见，与现有 Nginx 配置的行业隔离规则一致。</li>
+  <li>推送 preview 允许持有合法 preview token 的任何人发起（无界面场景）；apply 必须持有一次性 apply token 或已登录会话。</li>
+  <li>删除配置（整个文件）属于危险操作：需二次确认，删除后其版本快照一并归档不可恢复。<span class="tag dec">决策</span></li>
+</ul>
+<h3>5.2 状态与数据规则</h3>
+<table>
+  <tr><th>对象</th><th>状态</th><th>转换</th><th>禁止</th></tr>
+  <tr><td>YamlConfig</td><td>启用 / 停用 / 语法异常</td><td>停用↔启用；保存成功清除"语法异常"</td><td>语法异常状态下参与 apply</td></tr>
+  <tr><td>PushTask</td><td>pending / applied / failed</td><td>pending→applied｜failed</td><td>applied/failed 后不可再 apply</td></tr>
+  <tr><td>PushToken</td><td>有效 / 已用 / 过期</td><td>有效→已用（apply 成功后）</td><td>已用与过期 token 不可复用</td></tr>
+</table>
+<h3>5.3 异常总表</h3>
+<table>
+  <tr><th>场景</th><th>行为</th></tr>
+  <tr><td>推送非 YAML 或语法非法</td><td>preview 阶段拦截，返回行号定位，不落库</td></tr>
+  <tr><td>同一配置并发推送</td><td>拒绝新任务，提示先处理进行中任务</td></tr>
+  <tr><td>编辑保存版本冲突</td><td>提示刷新重试，不做自动合并</td></tr>
+  <tr><td>token 缺失/过期/已用</td><td>401/明确错误文案，任务不创建</td></tr>
+  <tr><td>回滚目标版本缺失</td><td>提示版本已归档，引导从版本列表重新选择</td></tr>
+  <tr><td>文件超过大小上限</td><td>上传阶段拒绝并提示上限</td></tr>
+</table>
+
+<h2>6. 开放问题</h2>
+<table>
+  <tr><th>编号</th><th>问题</th><th>状态</th></tr>
+  <tr><td>OQ-1</td><td>样例文件含大量密码、RSA 私钥、云厂商 AK/SK；本期决策为明文存储与展示。若未来接入合规审计或外部共享，需重新评估敏感值脱敏/加密。</td><td><span class="tag dec">已决策</span>；合规场景重评 <span class="tag p1">P1</span></td></tr>
+  <tr><td>OQ-2</td><td>通用 YAML 的"节点级操作"对深嵌套大文件（本样例 1200+ 行）易用性有限，本期以全文编辑为主、树操作为辅。是否在后续提供"集群/实例/变量"等 schema 化编辑，待真实使用反馈。<span class="tag dec">假设</span></td><td><span class="tag p1">P1</span></td></tr>
+  <tr><td>OQ-3</td><td>配置文件数量上限、单文件大小上限、版本快照保留策略（永久 vs 定期清理）未定。</td><td><span class="tag p1">待定 [TBD]</span></td></tr>
+</table>
+
+<h2>7. 设计决策摘要（评审要点）</h2>
+<div class="card">
+  <ol>
+    <li><b>通用 YAML 而非绑定样例结构</b>：产品按树形结构管理任意 YAML，样例仅作验证载体。理由：绑定 schema 会限制复用，且"键路径 + 行号"两套定位机制已能覆盖样例的业务化诉求。</li>
+    <li><b>复用现有"配置文件管理"范式而非新造轮子</b>：推送两阶段、一次性 token、行业归属、版本快照、导出回推与 Nginx 系统同构，只替换"解析器 + 树模型 + 视图"三处。建议实现时抽象公共底座，避免两套系统各自维护推送/版本/权限逻辑。</li>
+    <li><b>全文优先、树为辅</b>：YAML 以文本形式被运维日常维护，与 Nginx 以块为编辑单元不同，主编辑方式是全文+语法高亮，树承担导航与定位职责。</li>
+    <li><b>容错解析 + 显式校验</b>：既不能拒绝常见"缩进不齐"的工业文件，也不能静默篡改原文。用"宽松保存原文 + 严格定位提示"保证双向无损。</li>
+  </ol>
+</div>
+
+<div class="foot">
+  本文档由 prd-authoring 生成，为自包含 HTML 交付物；产品决策基于所附 deploy_config.yml 样例与现有 Nginx 配置管理系统调研。
+</div>
+</div>
+</body>
+</html>
