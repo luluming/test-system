@@ -719,25 +719,17 @@ def create_push_token(
     return {"token": raw, "purpose": purpose, "expires_at": row.expires_at.isoformat()}
 
 
-@config_tree_router.post("/{config_id}/push/preview")
-def push_preview(
-    config_id: int,
-    file: UploadFile = File(...),
-    authorization: str | None = Header(default=None),
-    request: Request = None,
-    db: Session = Depends(get_db),
-) -> dict:
-    """阶段一：只读解析 + 差异对比。
-
-    - 有变更（替换/新建）：落一条 pending 任务，返回 task_id + 可直接执行的 apply 命令；
-    - 无变更（文件与线上一致）：不落任务，返回 changed=false 提示「无变更点」。
-    认证支持 JWT 或一次性 preview token（使用即消耗）。"""
-    actor = _resolve_push_actor(db, config_id, "preview", authorization)
+def _decode_upload(file: UploadFile) -> str:
+    """读取上传文件并解码（UTF-8，失败退化为 GBK）。"""
     raw = file.file.read()
     try:
-        text = raw.decode("utf-8")
+        return raw.decode("utf-8")
     except UnicodeDecodeError:
-        text = raw.decode("gbk", errors="replace")
+        return raw.decode("gbk", errors="replace")
+
+
+def _parse_and_diff(db: Session, config_id: int, text: str) -> tuple[dict, list[dict], dict]:
+    """解析上传原文并与库中配置比对，返回 (root, entries, counts)；语法/重复定义错误抛 422。"""
     root, errors = parse_nginx(text)
     if errors:
         raise HTTPException(
@@ -755,6 +747,25 @@ def push_preview(
     counts = {"replace": 0, "new": 0, "none": 0, "keep": 0}
     for e in entries:
         counts[e["action"]] += 1
+    return root, entries, counts
+
+
+@config_tree_router.post("/{config_id}/push/preview")
+def push_preview(
+    config_id: int,
+    file: UploadFile = File(...),
+    authorization: str | None = Header(default=None),
+    request: Request = None,
+    db: Session = Depends(get_db),
+) -> dict:
+    """阶段一：只读解析 + 差异对比。
+
+    - 有变更（替换/新建）：落一条 pending 任务，返回 task_id + 可直接执行的 apply 命令；
+    - 无变更（文件与线上一致）：不落任务，返回 changed=false 提示「无变更点」。
+    认证支持 JWT 或一次性 preview token（使用即消耗）。"""
+    actor = _resolve_push_actor(db, config_id, "preview", authorization)
+    text = _decode_upload(file)
+    _root, entries, counts = _parse_and_diff(db, config_id, text)
     if counts["replace"] == 0 and counts["new"] == 0:
         # 无任何变更：不落任务，直接告知「无变更点」
         return {
@@ -795,24 +806,8 @@ def push_preview(
     }
 
 
-@config_tree_router.post("/{config_id}/push/{task_id}/apply")
-def push_apply(
-    config_id: int,
-    task_id: str,
-    payload: PushApplyRequest,
-    authorization: str | None = Header(default=None),
-    db: Session = Depends(get_db),
-) -> dict:
-    """阶段二：确认提交。事务内替换/新建 + 镜像联动 + 强制新版本；失败整体回滚。
-    认证支持 JWT 或一次性 apply token（使用即消耗）。"""
-    try:
-        task_id = int(task_id)
-    except (TypeError, ValueError):
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="task_id 必须是预览返回的任务号（数字）；请把 URL 里的 <task_id> 占位符替换为实际任务号（如 5）",
-        )
-    _resolve_push_actor(db, config_id, "apply", authorization)
+def _apply_pending_task(db: Session, config_id: int, task_id: int) -> dict:
+    """校验 pending 任务并提交：替换/新建 + 镜像联动 + 强制新版本；失败整体回滚。"""
     task = _get_push_task(db, config_id, task_id)
     if task.status != "pending":
         raise HTTPException(
@@ -870,6 +865,71 @@ def push_apply(
             + (f"，镜像同步 {len(mirrored)} 对" if mirrored else "")
         ),
     }
+
+
+@config_tree_router.post("/{config_id}/push")
+def push_direct(
+    config_id: int,
+    file: UploadFile = File(...),
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> dict:
+    """一步推送：上传文件 → 解析比对 → 立即提交，等价于 preview + apply 合并为一次请求。
+
+    认证支持 JWT 或一次性 apply token（使用即消耗）。
+    文件与线上完全一致时返回 changed=false，不落任务。
+    """
+    actor = _resolve_push_actor(db, config_id, "apply", authorization)
+    text = _decode_upload(file)
+    _root, entries, counts = _parse_and_diff(db, config_id, text)
+    if counts["replace"] == 0 and counts["new"] == 0:
+        return {
+            "ok": True,
+            "changed": False,
+            "diff": entries,
+            "counts": counts,
+            "message": "文件与当前配置一致，无变更点，未做任何修改",
+        }
+    task = NginxPushTask(
+        nginx_config_id=config_id,
+        status="pending",
+        raw_text=text,
+        diff_json=json.dumps(entries, ensure_ascii=False),
+        created_by=actor,
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    result = _apply_pending_task(db, config_id, task.id)
+    result["changed"] = True
+    result["counts"] = counts
+    result["message"] = (
+        f"已推送：替换 {counts['replace']} 项、新建 {counts['new']} 项、"
+        f"保留 {counts['keep']} 项" + (f"，镜像同步 {len(result['mirrored'])} 对" if result["mirrored"] else "")
+    )
+    logger.info("一步推送成功 config_id=%s task_id=%s by=%s", config_id, task.id, actor)
+    return result
+
+
+@config_tree_router.post("/{config_id}/push/{task_id}/apply")
+def push_apply(
+    config_id: int,
+    task_id: str,
+    payload: PushApplyRequest,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> dict:
+    """阶段二：确认提交。事务内替换/新建 + 镜像联动 + 强制新版本；失败整体回滚。
+    认证支持 JWT 或一次性 apply token（使用即消耗）。"""
+    try:
+        task_id = int(task_id)
+    except (TypeError, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="task_id 必须是预览返回的任务号（数字）；请把 URL 里的 <task_id> 占位符替换为实际任务号（如 5）",
+        )
+    _resolve_push_actor(db, config_id, "apply", authorization)
+    return _apply_pending_task(db, config_id, task_id)
 
 
 @config_tree_router.get("/{config_id}/push-tasks")
