@@ -685,6 +685,53 @@ export default function YamlConfigPage() {
   };
 
   // ---------- 渲染 ----------
+  // Modal 放在最外层 JSX 里，避免空行业/loading 的 early-return 把它们绕过（点"新建"按钮会设置
+  // showNew=true，但 early-return 时 Modal 根本不在 DOM 里）
+  const modals = (
+    <>
+      {/* 新建弹窗 */}
+      <Modal
+        title="新建 YAML 配置"
+        open={showNew}
+        onCancel={() => setShowNew(false)}
+        onOk={handleCreate}
+        okText="创建"
+        cancelText="取消"
+      >
+        <p style={{ fontSize: 12.5, color: "var(--text-sec)", marginBottom: 8 }}>文件名（以 .yml / .yaml 结尾），归属当前行业。</p>
+        <Input
+          placeholder="deploy_config.yml"
+          value={newName}
+          onChange={(e) => setNewName(e.target.value)}
+          onPressEnter={handleCreate}
+          autoFocus
+        />
+      </Modal>
+
+      {/* 版本查看 / 回滚 */}
+      <Modal
+        title={verModal ? `v${verModal.version} · ${verModal.note || "快照"} · ${fmtTime(verModal.created_at)}${verModal.created_by ? ` · ${verModal.created_by}` : ""}` : ""}
+        open={!!verModal}
+        onCancel={() => setVerModal(null)}
+        width={760}
+        footer={
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <button className="yt-btn" onClick={() => setVerModal(null)}>关闭</button>
+            {verModal && verModal.version !== active?.version && (
+              <button className="yt-btn primary" onClick={doRollback}>回滚到此版本</button>
+            )}
+          </div>
+        }
+      >
+        <pre className="mono" style={{ maxHeight: 440, overflowY: "auto", margin: 0, padding: "10px 12px", background: "var(--bg-deep2)", border: "1px solid var(--border-soft)", borderRadius: 6, fontSize: 11.5, lineHeight: 1.6, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
+          {verModal ? verModal.content : ""}
+        </pre>
+      </Modal>
+    </>
+  );
+
+  const toastEl = toast && <div className={`yt-toast${toast.type === "err" ? " err" : ""}${toast.type === "warn" ? " warn" : ""}`}>{toast.msg}</div>;
+
   if (filesLoading) {
     return (
       <div className="yaml-root">
@@ -692,6 +739,7 @@ export default function YamlConfigPage() {
           <span className="yt-brand"><span className="y-dot" />YAML 配置工作台<small>加载中…</small></span>
         </div>
         <div className="empty-hint" style={{ padding: 40 }}>正在加载该行业的 YAML 文件…</div>
+        {modals}{toastEl}
       </div>
     );
   }
@@ -714,6 +762,7 @@ export default function YamlConfigPage() {
           </div>
           <button className="yt-btn primary" onClick={() => setShowNew(true)}>＋ 新建 YAML 配置</button>
         </div>
+        {modals}{toastEl}
       </div>
     );
   }
@@ -1095,46 +1144,9 @@ export default function YamlConfigPage() {
         </>
       )}
 
-      {/* 新建弹窗 */}
-      <Modal
-        title="新建 YAML 配置"
-        open={showNew}
-        onCancel={() => setShowNew(false)}
-        onOk={handleCreate}
-        okText="创建"
-        cancelText="取消"
-      >
-        <p style={{ fontSize: 12.5, color: "var(--text-sec)", marginBottom: 8 }}>文件名（以 .yml / .yaml 结尾），归属当前行业。</p>
-        <Input
-          placeholder="deploy_config.yml"
-          value={newName}
-          onChange={(e) => setNewName(e.target.value)}
-          onPressEnter={handleCreate}
-          autoFocus
-        />
-      </Modal>
+      {modals}
 
-      {/* 版本查看 / 回滚 */}
-      <Modal
-        title={verModal ? `v${verModal.version} · ${verModal.note || "快照"} · ${fmtTime(verModal.created_at)}${verModal.created_by ? ` · ${verModal.created_by}` : ""}` : ""}
-        open={!!verModal}
-        onCancel={() => setVerModal(null)}
-        width={760}
-        footer={
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-            <button className="yt-btn" onClick={() => setVerModal(null)}>关闭</button>
-            {verModal && verModal.version !== active.version && (
-              <button className="yt-btn primary" onClick={doRollback}>回滚到此版本</button>
-            )}
-          </div>
-        }
-      >
-        <pre className="mono" style={{ maxHeight: 440, overflowY: "auto", margin: 0, padding: "10px 12px", background: "var(--bg-deep2)", border: "1px solid var(--border-soft)", borderRadius: 6, fontSize: 11.5, lineHeight: 1.6, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
-          {verModal ? verModal.content : ""}
-        </pre>
-      </Modal>
-
-      {toast && <div className={`yt-toast${toast.type === "err" ? " err" : ""}${toast.type === "warn" ? " warn" : ""}`}>{toast.msg}</div>}
+      {toastEl}
     </div>
   );
 }
