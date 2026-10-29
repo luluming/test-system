@@ -13,9 +13,6 @@
   border: 1px solid transparent; transition: all .15s var(--ease);
 }
 .ops-titlebar .tb-back:hover { background: var(--bg-surface2); color: var(--text-pri); border-color: var(--border-soft); }
-.ops-titlebar .tb-hamb { font-size: 15px; color: var(--text-sec); }
-.ops-titlebar .tb-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success); }
-.ops-titlebar .tb-brand { color: var(--text-pri); letter-spacing: -0.3px; }
 .ops-titlebar .tb-mid { margin-left: 24px; color: var(--text-ter); font-size: 11px; font-family: var(--mono); }
 .ops-titlebar .win-dots { margin-left: auto; display: flex; gap: 8px; }
 .ops-titlebar .win-dots i { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }

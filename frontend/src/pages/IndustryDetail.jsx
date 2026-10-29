@@ -284,9 +284,6 @@ export default function IndustryDetail() {
         <div className="ops-titlebar">
           <div className="tb-left">
             <span className="tb-back" onClick={() => navigate("/")} title="返回行业管理">← 行业管理</span>
-            <span className="tb-hamb">☰</span>
-            <span className="tb-dot" />
-            <span className="tb-brand">Nginx Console</span>
           </div>
           <div className="tb-mid">{lib.getFileName()} · {industry ? industry.name : "…"}</div>
           <div className="win-dots">
