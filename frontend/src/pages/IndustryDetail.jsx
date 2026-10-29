@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Modal } from "antd";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { getIndustry } from "../api/industry";
 import { listConfigsByIndustry, createNginxConfig } from "../api/nginx";
 import { getConfigTree, deleteBlock, mirrorBlock, listMirrorPairs, createMirrorPair, deleteMirrorPair, reorderBlocks } from "../api/nginxInner";
@@ -56,6 +56,7 @@ function SideItem({ node, off, active, onSelect, onMove, onDelete, mirror }) {
 }
 
 export default function IndustryDetail() {
+  const navigate = useNavigate();
   const { industryId } = useParams();
   const id = Number(industryId);
 
@@ -282,6 +283,7 @@ export default function IndustryDetail() {
         {/* 标题栏 36px（对齐 mock） */}
         <div className="ops-titlebar">
           <div className="tb-left">
+            <span className="tb-back" onClick={() => navigate("/")} title="返回行业管理">← 行业管理</span>
             <span className="tb-hamb">☰</span>
             <span className="tb-dot" />
             <span className="tb-brand">Nginx Console</span>

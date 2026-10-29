@@ -7,6 +7,12 @@
   background: var(--bg-deep); border-bottom: 1px solid var(--border-soft); font-size: 12px;
 }
 .ops-titlebar .tb-left { display: flex; align-items: center; gap: 10px; font-weight: 600; }
+.ops-titlebar .tb-back {
+  display: inline-flex; align-items: center; gap: 4px; cursor: pointer;
+  font-size: 12px; color: var(--text-sec); padding: 3px 8px; border-radius: 4px;
+  border: 1px solid transparent; transition: all .15s var(--ease);
+}
+.ops-titlebar .tb-back:hover { background: var(--bg-surface2); color: var(--text-pri); border-color: var(--border-soft); }
 .ops-titlebar .tb-hamb { font-size: 15px; color: var(--text-sec); }
 .ops-titlebar .tb-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success); }
 .ops-titlebar .tb-brand { color: var(--text-pri); letter-spacing: -0.3px; }
