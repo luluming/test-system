@@ -10,3 +10,5 @@ bcrypt==4.0.1
 python-multipart>=0.0.9
 pytest>=8.0
 httpx>=0.27
+# MySQL 驱动（SQLAlchemy 通过 mysql+pymysql:// 连接）
+pymysql>=1.1

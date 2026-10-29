@@ -22,7 +22,9 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
-    # 数据库连接（默认使用 backend 目录下的 SQLite 文件）
+    # 数据库连接
+    # - SQLite：sqlite:///./test_system.db
+    # - MySQL： mysql+pymysql://user:password@host:3306/test_system?charset=utf8mb4
     DATABASE_URL: str = "sqlite:///./test_system.db"
 
     # CORS：允许的前端开发服务器来源

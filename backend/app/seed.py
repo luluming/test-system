@@ -152,8 +152,12 @@ def seed_yaml_configs(db, industry_id: int) -> None:
 
 
 def _ensure_scope_column() -> None:
-    """SQLite 兼容迁移：industries 表若缺 scope 列则补一个（默认 'both'，旧行业双菜单可见）。"""
-    from sqlalchemy import text, inspect
+    """迁移兼容：industries 表若缺 scope 列则补一个（默认 'both'，旧行业双菜单可见）。
+
+    SQLite 直接 ALTER 不支持多步；MySQL/PostgreSQL 通用；这里统一使用 SQLAlchemy
+    inspect 判断，支持所有后端。
+    """
+    from sqlalchemy import inspect, text
 
     insp = inspect(engine)
     cols = {c["name"] for c in insp.get_columns("industries")}
