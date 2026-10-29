@@ -166,16 +166,18 @@ def _delete_industry_row(db: Session, row: Industry) -> None:
 def delete_industry(
     industry_id: int,
     delete_scope: str = Query(
-        "all",
-        pattern=r"^(all|nginx|yml)$",
-        description="all=删除整个行业；nginx/yml=只清该模块数据",
+        ...,
+        pattern=r"^(nginx|yml)$",
+        description="nginx/yml：只删当前菜单所属模块的数据，绝不跨模块删除",
     ),
     db: Session = Depends(get_db),
     _current_user: User = Depends(get_current_user),
 ) -> None:
-    """删除行业或行业内的单个模块数据（模板行业一律禁止）。
+    """删除行业在单个模块下的数据（模板行业一律禁止）。
 
-    - all：级联清空 Nginx + YAML 全部数据并删除行业记录
+    两个菜单完全独立：本接口只处理 ``delete_scope`` 指定的模块，另一模块的
+    数据与列表绝不会被影响。
+
     - nginx：只清 Nginx 族；行业若同时归属 YML 则保留并收敛为 scope=yml，否则整条删除
     - yml：只清 YAML 族；行业若同时归属 Nginx 则保留并收敛为 scope=nginx，否则整条删除
     """
@@ -186,14 +188,6 @@ def delete_industry(
             detail="这是模板源行业，禁止删除。如需移除模板属性请先编辑该行业",
         )
 
-    if delete_scope == "all":
-        _delete_nginx_data(db, industry_id)
-        _delete_yaml_data(db, industry_id)
-        _delete_industry_row(db, row)
-        logger.info("已删除整个行业 id=%s name=%s", industry_id, row.name)
-        return
-
-    # 只删单个模块的数据
     if delete_scope == "nginx":
         _delete_nginx_data(db, industry_id)
         kept_scope = "yml"
