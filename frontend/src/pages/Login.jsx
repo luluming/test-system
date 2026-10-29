@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Button, Form, Input, message } from "antd";
 import { LockOutlined, SafetyOutlined, UserOutlined } from "@ant-design/icons";
 import { fetchCaptcha, login } from "../api/auth";
@@ -18,9 +18,17 @@ export default function Login() {
   const navigate = useNavigate();
   const { theme, setTheme } = useTheme();
   const [form] = Form.useForm();
+  const [searchParams] = useSearchParams();
   const [loading, setLoading] = useState(false);
   const [captcha, setCaptcha] = useState(null); // { captcha_id, captcha_image }
   const captchaLoadingRef = useRef(false); // 防止验证码重复请求
+
+  // 会话过期跳转过来时给出提示
+  useEffect(() => {
+    if (searchParams.get("reason") === "expired") {
+      message.warning("会话已过期，请重新登录");
+    }
+  }, [searchParams]);
 
   // 拉取图形验证码：进入页面自动加载，点击图片可刷新
   const loadCaptcha = useCallback(async () => {
