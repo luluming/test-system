@@ -32,14 +32,6 @@
   transition: all .15s var(--ease);
 }
 .row-delete:hover { border-color: var(--error-border); background: var(--error-light, #fff1f0); color: var(--err); transform: translateY(-1px); }
-/* 行尾「移至另一菜单」：弱化样式，避免和进入/删除抢视线 */
-.row-move {
-  font-size: 11.5px; font-weight: 500; white-space: nowrap; cursor: pointer;
-  padding: 4px 10px; border-radius: 6px; border: 1px dashed var(--border);
-  background: transparent; color: var(--text-sec);
-  transition: all .15s var(--ease);
-}
-.row-move:hover { border-style: solid; border-color: var(--brand-border); color: var(--brand); transform: translateY(-1px); }
 
 /* 工作台类型选择（进入 nginx / yml 行业管理） */
 .mode-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 16px 0 14px; }

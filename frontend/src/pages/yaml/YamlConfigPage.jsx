@@ -176,6 +176,7 @@ export default function YamlConfigPage() {
   const navigate = useNavigate();
 
   const [files, setFiles] = useState([]);
+  const [filesLoading, setFilesLoading] = useState(true);
   const [fileFilter, setFileFilter] = useState("");
   const [activeId, setActiveId] = useState(null);
   const [content, setContent] = useState("");
@@ -233,12 +234,15 @@ export default function YamlConfigPage() {
   // ---------- 数据加载 ----------
   const loadFiles = useCallback(() => {
     if (!industryId) return;
+    setFilesLoading(true);
     yamlApi.listYamlConfigs(industryId)
       .then((r) => {
-        setFiles(r.data || []);
-        setActiveId((prev) => (r.data.some((f) => f.id === prev) ? prev : r.data[0]?.id || null));
+        const list = r.data || [];
+        setFiles(list);
+        setActiveId((prev) => (list.some((f) => f.id === prev) ? prev : list[0]?.id || null));
       })
-      .catch(() => notify("加载 YAML 文件列表失败", "err"));
+      .catch(() => notify("加载 YAML 文件列表失败", "err"))
+      .finally(() => setFilesLoading(false));
   }, [industryId, notify]);
 
   const loadActive = useCallback(() => {
@@ -681,14 +685,35 @@ export default function YamlConfigPage() {
   };
 
   // ---------- 渲染 ----------
+  if (filesLoading) {
+    return (
+      <div className="yaml-root">
+        <div className="yaml-toolbar">
+          <span className="yt-brand"><span className="y-dot" />YAML 配置工作台<small>加载中…</small></span>
+        </div>
+        <div className="empty-hint" style={{ padding: 40 }}>正在加载该行业的 YAML 文件…</div>
+      </div>
+    );
+  }
   if (!active) {
     return (
       <div className="yaml-root">
         <div className="yaml-toolbar">
           <span className="yt-back" onClick={() => navigate("/")}>← 行业管理</span>
-          <span className="yt-brand"><span className="y-dot" />YAML 配置工作台<small>加载中…</small></span>
+          <span className="yt-brand"><span className="y-dot" />YAML 配置工作台</span>
         </div>
-        <div className="empty-hint" style={{ padding: 40 }}>正在加载该行业的 YAML 文件…</div>
+        <div className="empty-hint" style={{ padding: 60, textAlign: "center" }}>
+          <div style={{ fontSize: 40, marginBottom: 16 }}>📄</div>
+          <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>
+            {files.length === 0 ? "该行业暂无 YAML 配置文件" : "未选中任何文件"}
+          </div>
+          <div style={{ fontSize: 12.5, color: "var(--text-sec)", marginBottom: 20 }}>
+            {files.length === 0
+              ? "新建一个 .yml / .yaml 文件，开始编辑与版本管理。"
+              : "请从左侧列表选择一个文件，或新建一个。"}
+          </div>
+          <button className="yt-btn primary" onClick={() => setShowNew(true)}>＋ 新建 YAML 配置</button>
+        </div>
       </div>
     );
   }

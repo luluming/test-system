@@ -26,7 +26,7 @@ export default function IndustryCloneModal({ templates, open, onClose, onCreated
 
   if (!open) return null;
   return (
-    <div className="modal-mask" onClick={onClose}>
+    <div className="modal-mask">
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h3>新建行业（模板克隆 · {scopeLabel}）</h3>
         <p className="meta">

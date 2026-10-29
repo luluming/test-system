@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Modal } from "antd";
-import { deleteIndustry, listIndustries, updateIndustry } from "../api/industry";
+import { deleteIndustry, listIndustries } from "../api/industry";
 import { listConfigsByIndustry } from "../api/nginx";
 import { getConfigTree } from "../api/nginxInner";
 import { getYamlStatsByIndustry } from "../api/yaml";
@@ -113,32 +113,6 @@ export default function IndustryDashboard() {
     } catch { setError("行业列表加载失败"); }
   };
 
-  // 跨菜单迁移：把行业归入另一个管理菜单（只改归属，不删配置）
-  const doMove = (ind) => {
-    const target = mode === "nginx" ? "yml" : "nginx";
-    const targetLabel = target === "yml" ? "YML" : "Nginx";
-    Modal.confirm({
-      title: `将「${ind.name}」移至 ${targetLabel} 行业管理`,
-      content: (
-        <div style={{ fontSize: 12.5, lineHeight: 1.9 }}>
-          迁移后该行业只在 {targetLabel} 菜单可见，本菜单不再显示；<b>配置数据不会删除</b>。
-        </div>
-      ),
-      okText: "确认迁移",
-      cancelText: "取消",
-      onOk: async () => {
-        try {
-          await updateIndustry(ind.id, { scope: target });
-          notify(`已将「${ind.name}」移至 ${targetLabel} 菜单`);
-          await refresh();
-        } catch (e) {
-          const d = e.response?.data?.detail;
-          notify(typeof d === "string" ? d : "迁移失败，请稍后再试");
-        }
-      },
-    });
-  };
-
   return (
     <div>
       {/* 页头（统一外壳视觉） */}
@@ -247,11 +221,6 @@ export default function IndustryDashboard() {
                     ) : (
                       <button className="row-enter yml" onClick={(e) => { e.stopPropagation(); navigate(`/ops/${ind.id}/yaml`); }}>YML 配置</button>
                     )}
-                    <button
-                      className="row-move"
-                      onClick={(e) => { e.stopPropagation(); doMove(ind); }}
-                      title={`把该行业归入 ${mode === "nginx" ? "YML" : "Nginx"} 行业管理菜单（不删配置）`}
-                    >移至{mode === "nginx" ? "YML" : "Nginx"}</button>
                     <button
                       className="row-delete"
                       onClick={(e) => { e.stopPropagation(); setDelTarget(ind); }}

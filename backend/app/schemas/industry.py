@@ -49,14 +49,12 @@ class CloneIndustryRequest(BaseModel):
 
 
 class IndustryUpdate(BaseModel):
-    """更新行业请求（字段可选）。"""
+    """更新行业请求（字段可选）。归属菜单 scope 在创建/克隆时决定，之后不再改变。"""
 
     name: str | None = Field(default=None, min_length=1, max_length=50)
     owner: str | None = Field(default=None, max_length=50)
     remark: str | None = Field(default=None, max_length=255)
     is_template: bool | None = None
-    # 归属菜单：both | nginx | yml，用于在 Nginx / YML 行业管理之间迁移行业
-    scope: str | None = Field(default=None, pattern=r"^(both|nginx|yml)$")
 
     @field_validator("name", "owner", mode="before")
     @classmethod
