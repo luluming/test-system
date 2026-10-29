@@ -547,23 +547,8 @@ def yaml_push_preview(
     }
 
 
-@router.post("/{config_id}/push/{task_id}/apply")
-def yaml_push_apply(
-    config_id: int,
-    task_id: str,
-    payload: YamlPushApplyRequest,
-    authorization: str | None = Header(default=None),
-    db: Session = Depends(get_db),
-) -> dict:
-    """阶段二：确认提交。事务内更新原文 + 强制新版本快照；失败整体回滚。"""
-    try:
-        task_id = int(task_id)
-    except (TypeError, ValueError):
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="task_id 必须是预览返回的任务号（数字）；请把 URL 里的 <task_id> 占位符替换为实际任务号",
-        )
-    actor = _resolve_push_actor(db, config_id, "apply", authorization)
+def _apply_pending_task(db: Session, config_id: int, task_id: int, note: str) -> dict:
+    """校验 pending 任务并提交：更新原文 + 版本号 +1 + 快照；失败整体回滚。"""
     task = _get_push_task(db, config_id, task_id)
     if task.status != "pending":
         raise HTTPException(
@@ -592,7 +577,7 @@ def yaml_push_apply(
         cfg.content_text = task.raw_text
         cfg.status = "enabled"
         cfg.version += 1
-        _snapshot(db, cfg.id, cfg.version, cfg.content_text, payload.note or "推送提交", actor)
+        _snapshot(db, cfg.id, cfg.version, cfg.content_text, note, task.created_by)
         task.status = "applied"
         task.applied_at = datetime.utcnow()
         task.error_detail = None
@@ -618,3 +603,88 @@ def yaml_push_apply(
             f"生成版本快照 v{cfg.version}"
         ),
     }
+
+
+@router.post("/{config_id}/push")
+def yaml_push_direct(
+    config_id: int,
+    file: UploadFile = File(...),
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> dict:
+    """一步推送：上传文件 → 校验 → diff → 立即提交，等价于 preview + apply 合并为一次请求。
+
+    认证支持 JWT 或一次性 apply token（使用即消耗）。文件与线上一致时返回 changed=false。
+    """
+    actor = _resolve_push_actor(db, config_id, "apply", authorization)
+    raw = file.file.read()
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        text = raw.decode("gbk", errors="replace")
+    errors = validate_yaml(text)
+    if errors:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"errors": errors, "message": "YAML 语法校验未通过，文件整体拒绝，不产生任何入库副作用"},
+        )
+    cfg = _get_config(db, config_id)
+    entries, counts = compute_diff(text, cfg.content_text)
+    if counts["replace"] == 0 and counts["new"] == 0 and counts["delete"] == 0:
+        return {
+            "ok": True,
+            "changed": False,
+            "diff": entries,
+            "counts": counts,
+            "message": "文件与当前配置一致，无变更点，未做任何修改",
+        }
+    pending = db.execute(
+        select(YamlPushTask).where(
+            YamlPushTask.yaml_config_id == config_id,
+            YamlPushTask.status == "pending",
+        )
+    ).scalar_one_or_none()
+    if pending is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"已有待提交任务 #{pending.id}，请先完成或取消后再推送",
+        )
+    task = YamlPushTask(
+        yaml_config_id=config_id,
+        status="pending",
+        raw_text=text,
+        diff_json=json.dumps(entries, ensure_ascii=False),
+        created_by=actor,
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    result = _apply_pending_task(db, config_id, task.id, "一步推送")
+    result["changed"] = True
+    result["counts"] = counts
+    result["message"] = (
+        f"已推送：替换 {counts['replace']} 个、新建 {counts['new']} 个、"
+        f"删除 {counts['delete']} 个，生成版本快照 v{result['new_version']}"
+    )
+    logger.info("YAML 一步推送成功 config_id=%s task_id=%s by=%s", config_id, task.id, actor)
+    return result
+
+
+@router.post("/{config_id}/push/{task_id}/apply")
+def yaml_push_apply(
+    config_id: int,
+    task_id: str,
+    payload: YamlPushApplyRequest,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> dict:
+    """阶段二：确认提交。事务内更新原文 + 强制新版本快照；失败整体回滚。"""
+    try:
+        task_id = int(task_id)
+    except (TypeError, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="task_id 必须是预览返回的任务号（数字）；请把 URL 里的 <task_id> 占位符替换为实际任务号",
+        )
+    _resolve_push_actor(db, config_id, "apply", authorization)
+    return _apply_pending_task(db, config_id, task_id, payload.note or "推送提交")

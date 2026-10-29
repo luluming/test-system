@@ -61,8 +61,7 @@ export default function PushModal({ open, onClose }) {
   const [tasks, setTasks] = useState([]);
   const [detail, setDetail] = useState(null); // {id, raw_text, diff}
   const [busy, setBusy] = useState(false);
-  const [pushTokens, setPushTokens] = useState(null); // {preview, apply, expires_at}
-  const [taskIdInput, setTaskIdInput] = useState("");
+  const [pushTokens, setPushTokens] = useState(null); // {apply, expires_at}
   const [publicBase, setPublicBase] = useState(""); // 后端公网基址
 
   const configName = (configs || []).find((c) => c.id === configId)?.name || "";
@@ -136,21 +135,14 @@ export default function PushModal({ open, onClose }) {
 
   const genTokens = () => {
     setBusy(true);
-    Promise.all([
-      inner.createPushToken(configId, "preview"),
-      inner.createPushToken(configId, "apply"),
-    ])
-      .then(([pv, ap]) => {
+    inner.createPushToken(configId, "apply")
+      .then((ap) => {
         setBusy(false);
         setPushTokens({
-          preview: pv.data.token,
           apply: ap.data.token,
-          expires_at: pv.data.expires_at,
+          expires_at: ap.data.expires_at,
         });
-        // 自动回填最新 pending 任务的 task_id（若存在）
-        const pending = (tasks || []).find((t) => t.status === "pending");
-        if (pending) setTaskIdInput(String(pending.id));
-        toast("一次性 token 已生成（预览+提交各一枚，单次使用，30 分钟过期）", "ok");
+        toast("一次性 token 已生成（单次使用，30 分钟过期）", "ok");
       })
       .catch((e) => {
         setBusy(false);
@@ -170,20 +162,11 @@ export default function PushModal({ open, onClose }) {
 
   const originBase = `${window.location.origin}`.replace(/:\d+$/, "") || "http://localhost";
   const base = publicBase || originBase;
-  const previewToken = pushTokens?.preview || "<TOKEN>";
   const applyToken = pushTokens?.apply || "<TOKEN>";
-  const taskIdText = taskIdInput || "<task_id>";
-  const applyCmd = preview?.apply_command || `curl -X POST "${base}/api/nginx-configs/${configId}/push/${taskIdText}/apply" \\
+  const curlCmd = `curl -X POST "${base}/api/nginx-configs/${configId}/push" \\
   -H "Authorization: Bearer ${applyToken}" \\
-  -H "Content-Type: application/json" -d "{}"`;
-  const curlCmd = `curl -X POST "${base}/api/nginx-configs/${configId}/push/preview" \\
-  -H "Authorization: Bearer ${previewToken}" \\
-  -F "file=@/path/to/local.conf"
-# 确认提交（预览返回的 task_id 已填充，<APPLY_TOKEN> 替换为你的 apply token）：
-${applyCmd}`;
-  const cliCmd = `python tools/nginx_push.py --industry "${industryName}" --config "${configName}" --file /path/to/local.conf
-# 预览无异议后确认提交（追加 --apply）：
-python tools/nginx_push.py --industry "${industryName}" --config "${configName}" --file /path/to/local.conf --apply`;
+  -F "file=@/path/to/local.conf"`;
+  const cliCmd = `python tools/nginx_push.py --industry "${industryName}" --config "${configName}" --file /path/to/local.conf --apply`;
 
   if (!open) return null;
   return (
@@ -252,18 +235,9 @@ python tools/nginx_push.py --industry "${industryName}" --config "${configName}"
               </div>
               {pushTokens && (
                 <div style={{ fontSize: 10, color: "var(--warn)", marginBottom: 6 }}>
-                  token 仅可各用一次（预览 1 枚 + 提交 1 枚），{new Date(pushTokens.expires_at).toLocaleString("zh-CN", { hour12: false })} 前有效；再次点击会作废旧 token 并重新签发。
+                  token 单次使用，{new Date(pushTokens.expires_at).toLocaleString("zh-CN", { hour12: false })} 前有效；再次点击会作废旧 token 并重新签发。
                 </div>
               )}
-              <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}>
-                <span style={{ fontSize: 11, color: "var(--text-sec)", whiteSpace: "nowrap" }}>task_id</span>
-                <input
-                  value={taskIdInput}
-                  onChange={(e) => setTaskIdInput(e.target.value.trim())}
-                  placeholder="预览返回的 task_id（预览后自动填充）"
-                  style={{ flex: 1, height: 26, fontSize: 11, padding: "0 8px", background: "var(--bg-input)", border: "1px solid var(--border-soft)", borderRadius: 4, color: "var(--text-prim)" }}
-                />
-              </div>
               <div style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 6 }}>
                 <span style={{ fontSize: 11, color: "var(--text-sec)", paddingTop: 2 }}>curl</span>
                 <pre className="mono" style={{ flex: 1, margin: 0, padding: "6px 10px", background: "var(--bg-deep2)", border: "1px solid var(--border-soft)", borderRadius: 6, fontSize: 11, lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{curlCmd}</pre>

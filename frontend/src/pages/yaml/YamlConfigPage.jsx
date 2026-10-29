@@ -657,15 +657,12 @@ export default function YamlConfigPage() {
     if (!active) return;
     setBusy(true);
     setBusyTag("token");
-    Promise.all([
-      yamlApi.createYamlPushToken(active.id, "preview"),
-      yamlApi.createYamlPushToken(active.id, "apply"),
-    ])
-      .then(([pv, ap]) => {
+    yamlApi.createYamlPushToken(active.id, "apply")
+      .then((ap) => {
         setBusy(false);
         setBusyTag("");
-        setPushTokens({ preview: pv.data.token, apply: ap.data.token, expires_at: pv.data.expires_at });
-        notify("一次性 Token 已生成（各 1 枚，30 分钟过期）", "ok");
+        setPushTokens({ apply: ap.data.token, expires_at: ap.data.expires_at });
+        notify("一次性 Token 已生成（单次使用，30 分钟过期）", "ok");
       })
       .catch(() => { setBusy(false); setBusyTag(""); notify("生成 Token 失败", "err"); });
   };
@@ -768,13 +765,9 @@ export default function YamlConfigPage() {
   }
 
   const base = publicBase || "http://localhost:8001";
-  const taskIdText = preview?.task_id ?? "<task_id>";
-  const previewCmd = `curl -X POST "${base}/api/yaml-configs/${active.id}/push/preview" \\
-  -H "Authorization: Bearer ${pushTokens?.preview || "<PREVIEW_TOKEN>"}" \\
+  const pushCmd = `curl -X POST "${base}/api/yaml-configs/${active.id}/push" \\
+  -H "Authorization: Bearer ${pushTokens?.apply || "<TOKEN>"}" \\
   -F "file=@./${active.name}"`;
-  const applyCmd = `curl -X POST "${base}/api/yaml-configs/${active.id}/push/${taskIdText}/apply" \\
-  -H "Authorization: Bearer ${pushTokens?.apply || "<APPLY_TOKEN>"}" \\
-  -H "Content-Type: application/json" -d "{}"`;
   const copyCmd = (cmd, label) => {
     navigator.clipboard?.writeText(cmd)
       .then(() => notify(`${label} 命令已复制`))
@@ -1099,23 +1092,17 @@ export default function YamlConfigPage() {
                       <button className="yt-btn ghost" onClick={genTokens} disabled={busy}>
                         {pushTokens ? "重新生成 Token" : "生成推送 Token"}
                       </button>
-                      {pushTokens && <span className="tok-tip">各 1 枚单次使用 · {fmtTime(pushTokens.expires_at)} 前有效</span>}
+                      {pushTokens && <span className="tok-tip">单次使用 · {fmtTime(pushTokens.expires_at)} 前有效</span>}
                     </div>
                     {pushTokens && (
                       <div className="tok-box">
-                        <div><span>preview</span>{pushTokens.preview}</div>
-                        <div><span>apply</span>{pushTokens.apply}</div>
+                        <div><span>token</span>{pushTokens.apply}</div>
                       </div>
                     )}
                     <div className="cmd-card">
-                      <div className="c-head"><span className="st">preview</span>预检差异 · 返回 task_id
-                        <span className="copy" onClick={() => copyCmd(previewCmd, "preview")}>复制</span></div>
-                      <pre>{previewCmd}</pre>
-                    </div>
-                    <div className="cmd-card">
-                      <div className="c-head"><span className="st">apply</span>确认提交 · 需一次性 Token
-                        <span className="copy" onClick={() => copyCmd(applyCmd, "apply")}>复制</span></div>
-                      <pre>{applyCmd}</pre>
+                      <div className="c-head"><span className="st">push</span>一步推送 · 校验 + 比对 + 提交
+                        <span className="copy" onClick={() => copyCmd(pushCmd, "推送")}>复制</span></div>
+                      <pre>{pushCmd}</pre>
                     </div>
                   </>
                 )}
