@@ -3,8 +3,8 @@
 const TOKEN_KEY = "token";
 const LAST_ACTIVE_KEY = "token_last_active";
 
-/** 空闲过期时长：30 分钟无操作即视为过期 */
-export const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
+/** 空闲过期时长：60 分钟无操作即视为过期 */
+export const IDLE_TIMEOUT_MS = 60 * 60 * 1000;
 
 // 解码 JWT payload（不校验签名，仅读 exp）
 function decodePayload(token) {
