@@ -6,9 +6,11 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.accounts import router as accounts_router
 from app.api.auth import router as auth_router
 from app.api.items import router as items_router
 from app.api.industries import router as industries_router
+from app.api.projects import router as projects_router
 from app.api.meta import router as meta_router
 from app.api.nginx import (
     biz_router,
@@ -61,6 +63,8 @@ app.add_middleware(SecurityHeadersMiddleware)
 
 # 注册业务路由
 app.include_router(auth_router)
+app.include_router(accounts_router)
+app.include_router(projects_router)
 app.include_router(items_router)
 app.include_router(industries_router)
 app.include_router(meta_router)

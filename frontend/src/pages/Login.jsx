@@ -2,8 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Button, Form, Input, message } from "antd";
 import { LockOutlined, SafetyOutlined, UserOutlined } from "@ant-design/icons";
-import { fetchCaptcha, login } from "../api/auth";
-import { setToken } from "../store/auth";
+import { fetchCaptcha, fetchMe, login } from "../api/auth";
+import { setToken, setUser } from "../store/auth";
 import { useTheme } from "../theme/ThemeProvider";
 import "./auth.css";
 
@@ -23,10 +23,13 @@ export default function Login() {
   const [captcha, setCaptcha] = useState(null); // { captcha_id, captcha_image }
   const captchaLoadingRef = useRef(false); // 防止验证码重复请求
 
-  // 会话过期跳转过来时给出提示
+  // 会话过期 / 账号被停用跳转过来时给出提示
   useEffect(() => {
-    if (searchParams.get("reason") === "expired") {
+    const reason = searchParams.get("reason");
+    if (reason === "expired") {
       message.warning("会话已过期，请重新登录");
+    } else if (reason === "disabled") {
+      message.error("账号已被停用，请联系管理员");
     }
   }, [searchParams]);
 
@@ -67,6 +70,11 @@ export default function Login() {
       });
       const token = res.data?.access_token || res.data?.token;
       setToken(token);
+      // 拉取当前用户信息（角色/状态）供全局使用
+      try {
+        const me = await fetchMe();
+        setUser(me.data);
+      } catch { /* 用户态拉取失败不阻塞登录 */ }
       message.success("登录成功");
       navigate("/");
     } catch (err) {
@@ -155,7 +163,7 @@ export default function Login() {
             </Form.Item>
             <div className="auth-actions">
               <Link to="/reset-password">忘记密码？</Link>
-              <Link to="/register">还没有账号？立即注册</Link>
+              <span style={{ color: "var(--text-ter)" }}>账号由管理员创建</span>
             </div>
           </Form>
         </div>

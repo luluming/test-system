@@ -1,6 +1,7 @@
 // 认证状态工具：对 localStorage 中的 token 进行封装
 
 const TOKEN_KEY = "token";
+const USER_KEY = "user";
 const LAST_ACTIVE_KEY = "token_last_active";
 
 /** 空闲过期时长：60 分钟无操作即视为过期 */
@@ -44,8 +45,24 @@ export function setToken(token) {
   touchActivity();
 }
 
-// 清除登录 token（登出）
+// 清除登录 token（登出，同时清除用户态）
 export function clearToken() {
   localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(USER_KEY);
   localStorage.removeItem(LAST_ACTIVE_KEY);
+}
+
+// 保存当前登录用户信息（登录成功后由 /auth/me 写入）
+export function setUser(user) {
+  localStorage.setItem(USER_KEY, JSON.stringify(user));
+}
+
+// 读取当前登录用户信息，未登录时返回 null
+export function getUser() {
+  try {
+    const raw = localStorage.getItem(USER_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
 }

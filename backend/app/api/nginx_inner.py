@@ -17,6 +17,8 @@ from sqlalchemy.orm import Session
 logger = logging.getLogger("nginx_inner")
 
 from app.api.deps import get_db
+from app.api.nginx import _get_config as _get_nginx_config
+from app.core.permissions import resolve_project_for_config
 from app.core.security import decode_token, get_current_user
 from app.models.nginx import Upstream, UpstreamServer
 from app.models.user import User
@@ -270,6 +272,11 @@ def _get_block(db: Session, block_id: int) -> ConfigBlock:
     return row
 
 
+def _check_config(db: Session, config_id: int, user: User, need: str) -> None:
+    """按配置归属项目校验权限：need 为 view | edit；不足抛 403。"""
+    resolve_project_for_config(db, _get_nginx_config(db, config_id), user, need)
+
+
 def _all_block_rows(db: Session, config_id: int) -> list[ConfigBlock]:
     return list(
         db.execute(
@@ -302,8 +309,9 @@ def _collect_subtree_ids(db: Session, block_id: int) -> list[int]:
 def list_blocks(
     nginx_config_id: int,
     db: Session = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> list[ConfigBlock]:
+    _check_config(db, nginx_config_id, current_user, "view")
     return [
         b
         for b in _all_block_rows(db, nginx_config_id)
@@ -315,8 +323,9 @@ def list_blocks(
 def create_block(
     payload: ConfigBlockCreate,
     db: Session = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> ConfigBlock:
+    _check_config(db, payload.nginx_config_id, current_user, "edit")
     if payload.parent_id is not None:
         parent = _get_block(db, payload.parent_id)
         if parent.nginx_config_id != payload.nginx_config_id:
@@ -333,17 +342,20 @@ def create_block(
 def get_block(
     block_id: int,
     db: Session = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> ConfigBlock:
-    return _get_block(db, block_id)
+    row = _get_block(db, block_id)
+    _check_config(db, row.nginx_config_id, current_user, "view")
+    return row
 
 
 @blocks_router.get("/{block_id}/children", response_model=list[ConfigBlockOut])
 def block_children(
     block_id: int,
     db: Session = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> list[ConfigBlock]:
+    _check_config(db, _get_block(db, block_id).nginx_config_id, current_user, "view")
     return list(
         db.execute(
             select(ConfigBlock)
@@ -357,13 +369,15 @@ def block_children(
 def reorder_blocks(
     payload: BlockReorderRequest,
     db: Session = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     rows = list(
         db.execute(
             select(ConfigBlock).where(ConfigBlock.parent_id == payload.parent_id)
         ).scalars().all()
     )
+    if rows:
+        _check_config(db, rows[0].nginx_config_id, current_user, "edit")
     by_id = {b.id: b for b in rows}
     # 事务原子性：任一 id 不存在即整体拒绝，避免部分块排序被更新
     missing = [oid for oid in payload.ids if oid not in by_id]
@@ -392,9 +406,10 @@ def update_block(
     block_id: int,
     payload: ConfigBlockUpdate,
     db: Session = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> ConfigBlock:
     row = _get_block(db, block_id)
+    _check_config(db, row.nginx_config_id, current_user, "edit")
     for field, value in payload.model_dump(exclude_unset=True).items():
         if value is not None:
             setattr(row, field, value)
@@ -408,9 +423,10 @@ def update_block(
 def delete_block(
     block_id: int,
     db: Session = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> None:
     cfg_id = _get_block(db, block_id).nginx_config_id
+    _check_config(db, cfg_id, current_user, "edit")
     ids = _collect_subtree_ids(db, block_id)
     db.execute(ConfigOption.__table__.delete().where(ConfigOption.block_id.in_(ids)))
     db.execute(ConfigBlock.__table__.delete().where(ConfigBlock.id.in_(ids)))
@@ -423,7 +439,7 @@ def mirror_block(
     block_id: int,
     dst_block_id: int,
     db: Session = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> ConfigBlock:
     """镜像同步：把 src 块整棵子树（含 options）覆盖复制到 dst 块。
 
@@ -437,6 +453,7 @@ def mirror_block(
             detail="源块与目标块必须属于同一配置文件",
         )
     cfg_id = src.nginx_config_id
+    _check_config(db, cfg_id, current_user, "edit")
 
     # 1) 记录 dst 原 listen 值（同步后恢复，保证监听点端口不变）
     dst_listen = None
@@ -524,8 +541,9 @@ def mirror_block(
 def list_mirror_pairs(
     config_id: int,
     db: Session = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> list[NginxMirrorPair]:
+    _check_config(db, config_id, current_user, "view")
     return list(
         db.execute(
             select(NginxMirrorPair)
@@ -542,8 +560,9 @@ def create_mirror_pair(
     config_id: int,
     payload: MirrorPairCreate,
     db: Session = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> NginxMirrorPair:
+    _check_config(db, config_id, current_user, "edit")
     if payload.src_listen == payload.dst_listen:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="母本与镜像端口不能相同")
     row = NginxMirrorPair(
@@ -568,8 +587,9 @@ def delete_mirror_pair(
     config_id: int,
     pair_id: int,
     db: Session = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> None:
+    _check_config(db, config_id, current_user, "edit")
     row = db.execute(
         select(NginxMirrorPair).where(
             NginxMirrorPair.id == pair_id,
@@ -587,8 +607,9 @@ def delete_mirror_pair(
 def list_versions(
     config_id: int,
     db: Session = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> list[NginxConfigVersion]:
+    _check_config(db, config_id, current_user, "view")
     return list(
         db.execute(
             select(NginxConfigVersion)
@@ -605,8 +626,9 @@ def create_version(
     config_id: int,
     payload: NginxVersionCreate,
     db: Session = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> NginxConfigVersion:
+    _check_config(db, config_id, current_user, "edit")
     max_row = db.execute(
         select(func.max(NginxConfigVersion.version)).where(
             NginxConfigVersion.nginx_config_id == config_id
@@ -705,9 +727,10 @@ def create_push_token(
     config_id: int,
     purpose: str = Query(..., pattern="^(preview|apply)$"),
     db: Session = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
-    """签发一次性推送 token（需 JWT）；同 config+purpose 的旧未用 token 立即作废。"""
+    """签发一次性推送 token（需 JWT + 项目可编辑权限）；同 config+purpose 的旧未用 token 立即作废。"""
+    _check_config(db, config_id, current_user, "edit")
     now = datetime.utcnow()
     for old in db.execute(
         select(NginxPushToken).where(
@@ -951,8 +974,9 @@ def push_apply(
 def list_push_tasks(
     config_id: int,
     db: Session = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> list[dict]:
+    _check_config(db, config_id, current_user, "view")
     rows = list(
         db.execute(
             select(NginxPushTask)
@@ -969,8 +993,9 @@ def get_push_task(
     config_id: int,
     task_id: int,
     db: Session = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
+    _check_config(db, config_id, current_user, "view")
     t = _get_push_task(db, config_id, task_id)
     summary = _task_summary(t)
     summary["raw_text"] = t.raw_text
@@ -981,8 +1006,9 @@ def get_push_task(
 def config_tree(
     config_id: int,
     db: Session = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
+    _check_config(db, config_id, current_user, "view")
     rows = _all_block_rows(db, config_id)
     ids = [b.id for b in rows]
     options = (
@@ -1030,8 +1056,9 @@ def config_tree(
 def list_options(
     block_id: int,
     db: Session = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> list[ConfigOption]:
+    _check_config(db, _get_block(db, block_id).nginx_config_id, current_user, "view")
     rows = list(
         db.execute(
             select(ConfigOption)
@@ -1049,9 +1076,11 @@ def list_options(
 def create_option(
     payload: ConfigOptionCreate,
     db: Session = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> ConfigOption:
-    _get_block(db, payload.block_id)
+    _check_config(
+        db, _get_block(db, payload.block_id).nginx_config_id, current_user, "edit"
+    )
     row = ConfigOption(**payload.model_dump())
     db.add(row)
     db.commit()
@@ -1060,15 +1089,21 @@ def create_option(
     return row
 
 
+def _get_option(db: Session, option_id: int) -> ConfigOption:
+    row = db.execute(select(ConfigOption).where(ConfigOption.id == option_id)).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="配置选项不存在")
+    return row
+
+
 @options_router.get("/{option_id}", response_model=ConfigOptionOut)
 def get_option(
     option_id: int,
     db: Session = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> ConfigOption:
-    row = db.execute(select(ConfigOption).where(ConfigOption.id == option_id)).scalar_one_or_none()
-    if row is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="配置选项不存在")
+    row = _get_option(db, option_id)
+    _check_config(db, _get_block(db, row.block_id).nginx_config_id, current_user, "view")
     return row
 
 
@@ -1076,8 +1111,11 @@ def get_option(
 def reorder_options(
     payload: OptionReorderRequest,
     db: Session = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
+    _check_config(
+        db, _get_block(db, payload.block_id).nginx_config_id, current_user, "edit"
+    )
     rows = list(
         db.execute(
             select(ConfigOption).where(ConfigOption.block_id == payload.block_id)
@@ -1097,10 +1135,11 @@ def update_option(
     option_id: int,
     payload: ConfigOptionUpdate,
     db: Session = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> ConfigOption:
-    row = get_option(option_id, db=db)
+    row = _get_option(db, option_id)
     cfg_id = _config_id_of_option(db, option_id)
+    _check_config(db, cfg_id, current_user, "edit")
     for field, value in payload.model_dump(exclude_unset=True).items():
         if value is not None:
             setattr(row, field, value)
@@ -1114,10 +1153,11 @@ def update_option(
 def delete_option(
     option_id: int,
     db: Session = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> None:
     cfg_id = _config_id_of_option(db, option_id)
-    db.delete(get_option(option_id, db=db))
+    _check_config(db, cfg_id, current_user, "edit")
+    db.delete(_get_option(db, option_id))
     db.commit()
     _auto_archive(db, cfg_id)
 
@@ -1132,8 +1172,9 @@ def render_config(
     config_id: int,
     context: str = "conf",
     db: Session = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
+    _check_config(db, config_id, current_user, "view")
     root = build_config_dict(db, config_id, context=context)
     return {"content": render_config_text(root)}
 
@@ -1148,8 +1189,9 @@ def export_config(
     config_id: int,
     payload: ExportRequest,
     db: Session = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
+    _check_config(db, config_id, current_user, "view")
     root = build_config_dict(db, config_id, context=payload.context)
     exceptions = [e.model_dump() for e in payload.upstream_exceptions]
     content = export_config_text(
@@ -1182,16 +1224,19 @@ def validate_config(
     config_id: int,
     payload: ValidateRequest,
     db: Session = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
+    _check_config(db, config_id, current_user, "view")
     return nginx_validate(build_validation_wrapper(payload.content))
 
 
 @config_actions_router.post("/{config_id}/reload")
 def reload_config(
     config_id: int,
-    _current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
+    _check_config(db, config_id, current_user, "edit")
     return nginx_reload()
 
 
@@ -1199,9 +1244,10 @@ def reload_config(
 def test_config(
     config_id: int,
     db: Session = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     """对配置内所有 server 块的 proxy_pass 直连目标做连通性探测。"""
+    _check_config(db, config_id, current_user, "view")
     from app.services.nginx_render import build_config_dict
 
     root = build_config_dict(db, config_id, context="conf")

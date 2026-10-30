@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Modal, Input } from "antd";
 import { getIndustry } from "../../api/industry";
+import { getProject } from "../../api/projects";
 import * as yamlApi from "../../api/yaml";
 import "./yaml.css";
 
@@ -172,8 +173,12 @@ function fmtDate(s) {
 }
 
 export default function YamlConfigPage() {
-  const { industryId } = useParams();
+  const { projectId } = useParams();
   const navigate = useNavigate();
+  // 项目上下文：进入页面先拉取项目（校验访问权限），再按其行业加载 YAML 文件
+  const [project, setProject] = useState(null);
+  const [industryId, setIndustryId] = useState(null);
+  const readOnly = project?.my_perm === "view";
 
   const [files, setFiles] = useState([]);
   const [filesLoading, setFilesLoading] = useState(true);
@@ -239,7 +244,7 @@ export default function YamlConfigPage() {
   const loadFiles = useCallback(() => {
     if (!industryId) return;
     setFilesLoading(true);
-    yamlApi.listYamlConfigs(industryId)
+    yamlApi.listYamlConfigs(industryId, projectId)
       .then((r) => {
         const list = r.data || [];
         setFiles(list);
@@ -247,7 +252,7 @@ export default function YamlConfigPage() {
       })
       .catch(() => notify("加载 YAML 文件列表失败", "err"))
       .finally(() => setFilesLoading(false));
-  }, [industryId, notify]);
+  }, [industryId, projectId, notify]);
 
   const loadActive = useCallback(() => {
     if (!activeId) return;
@@ -262,7 +267,20 @@ export default function YamlConfigPage() {
       .catch(() => setVersions([]));
   }, [activeId, notify]);
 
+  // 进入页面：先校验项目访问权限（无权限跳 403），再加载行业与文件
   useEffect(() => {
+    getProject(projectId)
+      .then((res) => {
+        setProject(res.data);
+        setIndustryId(res.data.industry_id);
+      })
+      .catch((err) => {
+        if (err.response?.status === 403) navigate("/403", { replace: true });
+      });
+  }, [projectId, navigate]);
+
+  useEffect(() => {
+    if (!industryId) return;
     getIndustry(industryId).then((res) => setIndustry(res.data)).catch(() => setIndustry(null));
     loadFiles();
   }, [industryId, loadFiles]);
@@ -326,7 +344,7 @@ export default function YamlConfigPage() {
     const snap = new Map(files.map((f) => [f.id, f.version]));
     versionPollRef.current = setInterval(async () => {
       try {
-        const r = await yamlApi.listYamlConfigs(industryId);
+        const r = await yamlApi.listYamlConfigs(industryId, projectId);
         const remoteList = r.data || [];
         let changed = false;
         for (const rf of remoteList) {
@@ -346,7 +364,7 @@ export default function YamlConfigPage() {
     }, 3000);
     return () => clearInterval(versionPollRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [industryId, files.length, editing]);
+  }, [industryId, projectId, files.length, editing]);
 
   // ---------- 滚动同步（textarea 驱动高亮层） ----------
   const syncScroll = useCallback(() => {
@@ -620,7 +638,7 @@ export default function YamlConfigPage() {
     let nm = newName.trim();
     if (!nm) nm = "deploy_config.yml";
     else if (!nm.endsWith(".yml") && !nm.endsWith(".yaml")) nm += ".yml";
-    yamlApi.createYamlConfig({ industry_id: Number(industryId), name: nm, content: `# ${nm} 新建占位\nhosts: []\n` })
+    yamlApi.createYamlConfig({ industry_id: Number(industryId), project_id: Number(projectId), name: nm, content: `# ${nm} 新建占位\nhosts: []\n` })
       .then((r) => {
         setShowNew(false); setNewName("");
         loadFiles();
@@ -771,7 +789,7 @@ export default function YamlConfigPage() {
         footer={
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
             <button className="yt-btn" onClick={() => setVerModal(null)}>关闭</button>
-            {verModal && verModal.version !== active?.version && (
+            {!readOnly && verModal && verModal.version !== active?.version && (
               <button className="yt-btn primary" onClick={doRollback}>回滚到此版本</button>
             )}
           </div>
@@ -989,7 +1007,7 @@ export default function YamlConfigPage() {
     return (
       <div className="yaml-root">
         <div className="yaml-toolbar">
-          <span className="yt-back" onClick={() => navigate("/?mode=yml")}>← 行业管理</span>
+          <span className="yt-back" onClick={() => navigate(`/projects/${projectId}`)}>← 项目详情</span>
           <span className="yt-brand"><span className="y-dot" />YAML 配置工作台</span>
         </div>
         <div className="empty-hint" style={{ padding: 60, textAlign: "center" }}>
@@ -1002,7 +1020,7 @@ export default function YamlConfigPage() {
               ? "新建一个 .yml / .yaml 文件，开始编辑与版本管理。"
               : "请从左侧列表选择一个文件，或新建一个。"}
           </div>
-          <button className="yt-btn primary" onClick={() => setShowNew(true)}>＋ 新建 YAML 配置</button>
+          {!readOnly && <button className="yt-btn primary" onClick={() => setShowNew(true)}>＋ 新建 YAML 配置</button>}
         </div>
         {modals}{toastEl}
       </div>
@@ -1055,25 +1073,28 @@ export default function YamlConfigPage() {
     <div className="yaml-root">
       {/* ===== 顶栏 ===== */}
       <div className="yaml-toolbar">
-        <span className="yt-back" onClick={() => navigate("/?mode=yml")}>← 行业管理</span>
+        <span className="yt-back" onClick={() => navigate(`/projects/${projectId}`)}>← 项目详情</span>
         <span className="yt-sep" />
         <span className="yt-brand">
           <span className="y-dot" />
-          {industry ? industry.name : `industry #${industryId}`}
+          {project ? project.name : industry ? industry.name : "…"}
           <small>{active.name}</small>
         </span>
+        {readOnly && <span className="tag2 bare">只读</span>}
         <span className="yt-sp" />
         <div className="yt-btns">
           <button className={`yt-btn ghost${showSearch ? " on" : ""}`} onClick={() => setShowSearch((v) => !v)} title="全文搜索（Ctrl/⌘ + F）">
             搜索<kbd>⌘F</kbd>
           </button>
-          <button className="yt-btn ghost" onClick={() => setShowNew(true)}>新建</button>
+          {!readOnly && <button className="yt-btn ghost" onClick={() => setShowNew(true)}>新建</button>}
           <button className="yt-btn ghost" onClick={handleExport}>导出</button>
-          <button className={`yt-btn push${preview ? " live" : ""}`} onClick={() => setOpenPush(true)}>
-            接收推送{preview ? <i className="pdot" /> : null}
-          </button>
+          {!readOnly && (
+            <button className={`yt-btn push${preview ? " live" : ""}`} onClick={() => setOpenPush(true)}>
+              接收推送{preview ? <i className="pdot" /> : null}
+            </button>
+          )}
           <span className="yt-sep" />
-          {editing ? (
+          {!readOnly && (editing ? (
             <>
               <button className="yt-btn" onClick={cancelEdit}>取消</button>
               <button className="yt-btn primary" onClick={handleSave} disabled={!dirty} title="Ctrl/⌘ + S">
@@ -1082,7 +1103,7 @@ export default function YamlConfigPage() {
             </>
           ) : (
             <button className="yt-btn primary" onClick={startEdit}>编辑</button>
-          )}
+          ))}
         </div>
       </div>
 
@@ -1115,7 +1136,9 @@ export default function YamlConfigPage() {
                   <span className="ver">v{f.version}</span>
                   <span>{f.line_count} 行 · {f.node_count} 节点</span>
                 </div>
-                <button className="yfile-del" title="删除文件" onClick={(e) => { e.stopPropagation(); handleDelete(f); }}>✕</button>
+                {!readOnly && (
+                  <button className="yfile-del" title="删除文件" onClick={(e) => { e.stopPropagation(); handleDelete(f); }}>✕</button>
+                )}
               </div>
             ))}
             {visibleFiles.length === 0 && <div className="empty-hint">没有匹配的文件</div>}
@@ -1324,7 +1347,7 @@ export default function YamlConfigPage() {
           <span>Ln {curLine}, Col 1</span>
           <span>UTF-8</span>
           <span>YAML</span>
-          <span>{editing ? "编辑中" : "只读"}</span>
+          <span>{readOnly ? "只读" : editing ? "编辑中" : "浏览"}</span>
         </span>
       </div>
 

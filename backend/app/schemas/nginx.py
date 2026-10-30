@@ -9,13 +9,18 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class NginxConfigCreate(BaseModel):
-    """创建 nginx 配置请求（必须指定所属行业）。"""
+    """创建 nginx 配置请求（必须指定所属行业）。
+
+    project_id 可选：指定则挂到该项目（需该项目可编辑权限，且行业须一致）；
+    不指定则落到行业默认项目（兼容旧行为）。
+    """
 
     industry_id: int
     name: str = Field(min_length=1, max_length=100)
     domain: str | None = Field(default=None, max_length=255)
     config_text: str
     enabled: bool = True
+    project_id: int | None = None
 
 
 class NginxConfigOut(BaseModel):

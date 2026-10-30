@@ -357,16 +357,16 @@ export default function BlockPage() {
         <div className="toolbar">
           <span className="file mono" style={{ fontSize: 12 }}>{lib.getFileName()}</span>
           <span className="spacer" />
-          <button className="btn" onClick={() => setShowAdd(true)}>＋ 块</button>
+          {!ops.readOnly && <button className="btn" onClick={() => setShowAdd(true)}>＋ 块</button>}
           <span className="tb-sep" />
           <button className="btn" onClick={() => setShowExport(true)}>导出配置</button>
-          <button className="btn" title="本地配置推送：上传 conf 预览差异后提交" onClick={() => setShowPush(true)}>推送配置</button>
+          {!ops.readOnly && <button className="btn" title="本地配置推送：上传 conf 预览差异后提交" onClick={() => setShowPush(true)}>推送配置</button>}
           <span className="tb-sep" />
-          <button className="btn" title="配置镜像对：两个监听点内容保持一致" onClick={() => setShowMirror(true)}>镜像设置</button>
+          {!ops.readOnly && <button className="btn" title="配置镜像对：两个监听点内容保持一致" onClick={() => setShowMirror(true)}>镜像设置</button>}
           <button className="btn" title="查看配置历史版本并对比差异" onClick={() => setShowVersions(true)}>版本对比</button>
           <button className="btn" title="从服务端重载最新配置" onClick={() => { ops.loadTree(ops.configId, ops.ctx); toast("已刷新最新配置", "ok"); }}>刷新</button>
           <span className="tb-sep" />
-          <button className="btn primary" title="把当前配置渲染文本存为一个版本" onClick={() => saveVersion()}>保存</button>
+          {!ops.readOnly && <button className="btn primary" title="把当前配置渲染文本存为一个版本" onClick={() => saveVersion()}>保存</button>}
         </div>
         <div className="dtabs">
           <div className={`dtab${tab === "tree" ? " on" : ""}`} title="块树（嵌套）" onClick={() => setTab("tree")}>块树（嵌套）<span className="n" style={{ fontSize: 9, color: "var(--text-ter)", marginLeft: 6, fontFamily: "var(--mono)" }}>{tree.length ? treeNodeCount(tree) : ""}</span></div>

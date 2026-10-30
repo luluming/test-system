@@ -34,6 +34,10 @@ class YamlConfig(Base):
     industry_id: Mapped[int] = mapped_column(
         ForeignKey("industries.id"), index=True, nullable=False
     )
+    # 归属项目（权限判定依据）；历史数据由启动迁移挂到行业「默认项目」
+    project_id: Mapped[int | None] = mapped_column(
+        ForeignKey("projects.id"), index=True, nullable=True
+    )
     name: Mapped[str] = mapped_column(String(100), index=True, nullable=False)
     description: Mapped[str | None] = mapped_column(String(255), nullable=True)
     content_text: Mapped[str] = mapped_column(BigText, nullable=False)

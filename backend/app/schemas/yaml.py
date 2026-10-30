@@ -9,12 +9,17 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class YamlConfigCreate(BaseModel):
-    """新建 YAML 配置：归属行业 + 文件名 + 可选初始内容。"""
+    """新建 YAML 配置：归属行业 + 文件名 + 可选初始内容。
+
+    project_id 可选：指定则挂到该项目（需该项目可编辑权限，且行业须一致）；
+    不指定则落到行业默认项目（兼容旧行为）。
+    """
 
     industry_id: int
     name: str = Field(min_length=1, max_length=100)
     description: str | None = None
     content: str = ""
+    project_id: int | None = None
 
 
 class YamlConfigSave(BaseModel):

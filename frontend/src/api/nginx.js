@@ -51,6 +51,10 @@ export function listBizPorts(industryId) {
 export function listConfigsByIndustry(industryId) {
   return client.get("/nginx-configs", { params: { industry_id: industryId } });
 }
+// ---- 项目作用域 ----（后端要求 industry_id 必传，project_id 为附加过滤）
+export function listConfigsByProject(industryId, projectId) {
+  return client.get("/nginx-configs", { params: { industry_id: industryId, project_id: projectId } });
+}
 export function createBizPort(data) {
   return client.post("/biz-ports", data);
 }

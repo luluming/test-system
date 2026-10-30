@@ -31,12 +31,20 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
 
-def create_access_token(subject: str, expires_delta: timedelta | None = None) -> str:
-    """签发 JWT 访问令牌，subject 为用户唯一标识（用户名）。"""
+def create_access_token(
+    subject: str,
+    expires_delta: timedelta | None = None,
+    token_version: int = 1,
+) -> str:
+    """签发 JWT 访问令牌，subject 为用户唯一标识（用户名）。
+
+    tv（token_version）：登录态版本号，停用/重置密码/修改密码时自增，
+    与库中不一致的旧令牌将被拒绝，实现「登录态立即失效」。
+    """
     expire = datetime.now(timezone.utc) + (
         expires_delta or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     )
-    payload = {"sub": subject, "exp": expire}
+    payload = {"sub": subject, "exp": expire, "tv": token_version}
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
@@ -72,6 +80,18 @@ def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="用户不存在",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="账号已被停用，请联系管理员",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    if payload.get("tv") != user.token_version:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="登录状态已失效，请重新登录",
             headers={"WWW-Authenticate": "Bearer"},
         )
     return user

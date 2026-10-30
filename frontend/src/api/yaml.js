@@ -2,8 +2,11 @@ import client from "./client";
 
 // ---- YAML 配置管理（后端真实 API）----
 
-export function listYamlConfigs(industryId) {
-  return client.get("/yaml-configs", { params: { industry_id: industryId } });
+export function listYamlConfigs(industryId, projectId) {
+  const params = {};
+  if (industryId) params.industry_id = industryId;
+  if (projectId) params.project_id = projectId;
+  return client.get("/yaml-configs", { params });
 }
 export function createYamlConfig(data) {
   return client.post("/yaml-configs", data);

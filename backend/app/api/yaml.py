@@ -26,7 +26,14 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
+from app.core.permissions import (
+    require_project_edit,
+    require_project_view,
+    resolve_project_for_config,
+    visible_project_ids,
+)
 from app.core.security import decode_token, get_current_user
+from app.models.project import Project
 from app.models.user import User
 from app.models.yaml import (
     YamlConfig,
@@ -100,7 +107,29 @@ def _delete_config_cascade(db: Session, cfg: YamlConfig) -> None:
     db.execute(delete(YamlConfig).where(YamlConfig.id == cfg.id))
 
 
-# ---- 基础 CRUD（均需登录）----
+# ---- 基础 CRUD（按配置归属项目做权限控制）----
+
+
+def _resolve_target_project(
+    db: Session, user: User, industry_id: int, project_id: int | None
+) -> Project:
+    """新建配置的归属项目：指定则校验编辑权限与行业一致；否则落行业默认项目。"""
+    if project_id is not None:
+        project = require_project_edit(db, user, project_id)
+        if project.industry_id != industry_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="所选项目不属于该行业",
+            )
+        return project
+    from app.seed import get_or_create_default_project  # 延迟导入避免循环
+
+    admin = db.execute(select(User).where(User.role == "admin")).scalars().first()
+    project = get_or_create_default_project(
+        db, industry_id, admin.id if admin else user.id
+    )
+    require_project_edit(db, user, project.id)
+    return project
 
 
 def _top_array_len(text: str, key: str) -> int:
@@ -126,12 +155,13 @@ def _top_array_len(text: str, key: str) -> int:
 def yaml_stats_by_industry(
     industry_ids: str | None = Query(default=None),
     db: Session = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     """批量统计：一次返回所有指定行业的真实 YAML 配置数、主机数、集群数。
 
     返回 {industry_id: {yml_count, hosts, clusters, total_nodes}} 映射。
     industry_ids 可选（逗号分隔数字）；不传则统计全部行业。
+    非管理员仅统计其有权限查看的项目下的配置。
     """
     rows = list(
         db.execute(select(YamlConfig)).scalars().all()
@@ -145,8 +175,17 @@ def yaml_stats_by_industry(
                 continue
         rows = [r for r in rows if r.industry_id in wanted]
 
+    visible_cache: dict[int, set[int] | None] = {}
     out: dict[int, dict] = {}
     for r in rows:
+        if current_user.role != "admin":
+            if r.industry_id not in visible_cache:
+                visible_cache[r.industry_id] = visible_project_ids(
+                    db, current_user, r.industry_id
+                )
+            vis = visible_cache[r.industry_id]
+            if vis is not None and r.project_id not in vis:
+                continue
         info = analyze(r.content_text)
         agg = out.setdefault(
             r.industry_id,
@@ -162,17 +201,23 @@ def yaml_stats_by_industry(
 @router.get("", response_model=list[YamlConfigListItem])
 def list_yaml_configs(
     industry_id: int,
+    project_id: int | None = None,
     db: Session = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> list[dict]:
-    """按行业列出 YAML 配置（含解析统计，供列表展示；不含全文）。"""
-    rows = list(
-        db.execute(
-            select(YamlConfig)
-            .where(YamlConfig.industry_id == industry_id)
-            .order_by(YamlConfig.id)
-        ).scalars().all()
-    )
+    """按行业列出 YAML 配置（含解析统计，供列表展示；不含全文）。
+
+    project_id 可选：指定则仅列该项目（需可查看权限）；不指定时
+    非管理员仅能看到其有权限项目下的配置。
+    """
+    stmt = select(YamlConfig).where(YamlConfig.industry_id == industry_id)
+    if project_id is not None:
+        require_project_view(db, current_user, project_id)
+        stmt = stmt.where(YamlConfig.project_id == project_id)
+    rows = list(db.execute(stmt.order_by(YamlConfig.id)).scalars().all())
+    if project_id is None and current_user.role != "admin":
+        vis = visible_project_ids(db, current_user, industry_id) or set()
+        rows = [r for r in rows if r.project_id in vis]
     out: list[dict] = []
     for r in rows:
         info = analyze(r.content_text)
@@ -200,7 +245,10 @@ def create_yaml_config(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> YamlConfig:
-    """新建配置：携带内容则按语法校验定状态并生成 v1 快照。"""
+    """新建配置：携带内容则按语法校验定状态并生成 v1 快照；归属项目按权限解析。"""
+    project = _resolve_target_project(
+        db, current_user, payload.industry_id, payload.project_id
+    )
     exists = db.execute(
         select(YamlConfig).where(
             YamlConfig.industry_id == payload.industry_id,
@@ -216,6 +264,7 @@ def create_yaml_config(
     errors = validate_yaml(content) if content.strip() else []
     cfg = YamlConfig(
         industry_id=payload.industry_id,
+        project_id=project.id,
         name=payload.name,
         description=payload.description,
         content_text=content,
@@ -235,9 +284,11 @@ def create_yaml_config(
 def get_yaml_config(
     config_id: int,
     db: Session = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> YamlConfig:
-    return _get_config(db, config_id)
+    cfg = _get_config(db, config_id)
+    resolve_project_for_config(db, cfg, current_user, "view")
+    return cfg
 
 
 @router.put("/{config_id}", response_model=YamlConfigOut)
@@ -249,6 +300,7 @@ def save_yaml_config(
 ) -> YamlConfig:
     """全文编辑保存：乐观锁 + 语法校验；校验失败且未强制草稿时 422 拦截。"""
     cfg = _get_config(db, config_id)
+    resolve_project_for_config(db, cfg, current_user, "edit")
     if cfg.version != payload.expected_version:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -274,9 +326,11 @@ def save_yaml_config(
 def delete_yaml_config(
     config_id: int,
     db: Session = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> None:
-    _delete_config_cascade(db, _get_config(db, config_id))
+    cfg = _get_config(db, config_id)
+    resolve_project_for_config(db, cfg, current_user, "edit")
+    _delete_config_cascade(db, cfg)
     db.commit()
 
 
@@ -287,13 +341,14 @@ def delete_yaml_config(
 def list_yaml_versions(
     config_id: int,
     db: Session = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> list[dict]:
     """版本快照列表：附带与前一版的 diff 摘要（变更计数 + 前 5 个变更键路径）。
 
     前端用摘要在版本卡片上做轻量标记；点击打开弹窗再看全文详情。
     """
-    _get_config(db, config_id)
+    cfg = _get_config(db, config_id)
+    resolve_project_for_config(db, cfg, current_user, "view")
     versions = list(
         db.execute(
             select(YamlConfigVersion)
@@ -357,6 +412,7 @@ def rollback_yaml_config(
 ) -> YamlConfig:
     """回滚到指定版本：以该版本原文生成一次保存（生成新版本，而非覆盖历史）。"""
     cfg = _get_config(db, config_id)
+    resolve_project_for_config(db, cfg, current_user, "edit")
     target = db.execute(
         select(YamlConfigVersion).where(
             YamlConfigVersion.yaml_config_id == config_id,
@@ -383,10 +439,11 @@ def rollback_yaml_config(
 def get_yaml_tree(
     config_id: int,
     db: Session = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     """原文 → 结构化树；语法非法时返回错误清单（宽松模式：原文照常可浏览/编辑）。"""
     cfg = _get_config(db, config_id)
+    resolve_project_for_config(db, cfg, current_user, "view")
     errors = validate_yaml(cfg.content_text)
     if errors:
         return {"valid": False, "errors": errors, "tree": []}
@@ -485,10 +542,11 @@ def create_yaml_push_token(
     config_id: int,
     purpose: str = Query(..., pattern="^(preview|apply)$"),
     db: Session = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
-    """签发一次性推送 token（需 JWT）；同 config+purpose 的旧未用 token 立即作废。"""
-    _get_config(db, config_id)
+    """签发一次性推送 token（需 JWT + 项目可编辑权限）；同 config+purpose 的旧未用 token 立即作废。"""
+    cfg = _get_config(db, config_id)
+    resolve_project_for_config(db, cfg, current_user, "edit")
     now = datetime.utcnow()
     for old in db.execute(
         select(YamlPushToken).where(
@@ -515,8 +573,10 @@ def create_yaml_push_token(
 def list_yaml_push_tasks(
     config_id: int,
     db: Session = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> list[dict]:
+    cfg = _get_config(db, config_id)
+    resolve_project_for_config(db, cfg, current_user, "view")
     rows = list(
         db.execute(
             select(YamlPushTask)

@@ -17,6 +17,7 @@ from app.models import (
     Industry,
     Item,
     NginxConfig,
+    Project,
     Upstream,
     UpstreamServer,
     User,
@@ -151,6 +152,32 @@ def seed_yaml_configs(db, industry_id: int) -> None:
     logger.info("已补齐行业 %s 的 YAML 演示配置", industry_id)
 
 
+# 预置行业（PRD v1.2）：仅系统管理员可增删
+PRESET_INDUSTRIES = [
+    ("freight", "货运"),
+    ("domestic_freight", "国内货运"),
+    ("taxi", "出租"),
+    ("bus", "公交"),
+    ("mining", "矿山"),
+]
+
+# 历史配置迁移：每个行业的孤儿配置挂到该项目下（PRD 开放问题 Q1 的决策）
+DEFAULT_PROJECT_CODE = "default"
+DEFAULT_PROJECT_NAME = "默认项目"
+
+
+def _add_column_if_missing(table: str, column_ddl: str, column_name: str) -> None:
+    """迁移兼容：表缺列时补列（支持 MySQL / SQLite）。"""
+    from sqlalchemy import inspect, text
+
+    insp = inspect(engine)
+    cols = {c["name"] for c in insp.get_columns(table)}
+    if column_name not in cols:
+        with engine.begin() as conn:
+            conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column_ddl}"))
+        logger.info("已迁移 %s 表：补 %s 列", table, column_name)
+
+
 def _ensure_scope_column() -> None:
     """迁移兼容：industries 表若缺 scope 列则补一个（默认 'both'，旧行业双菜单可见）。
 
@@ -169,10 +196,64 @@ def _ensure_scope_column() -> None:
         logger.info("已迁移 industries 表：补 scope 列")
 
 
+def get_or_create_default_project(db, industry_id: int, owner_id: int) -> Project:
+    """获取（或创建）行业下的「默认项目」，用于承接历史孤儿配置。"""
+    proj = db.execute(
+        select(Project).where(
+            Project.industry_id == industry_id,
+            Project.code == DEFAULT_PROJECT_CODE,
+        )
+    ).scalar_one_or_none()
+    if proj is None:
+        proj = Project(
+            industry_id=industry_id,
+            name=DEFAULT_PROJECT_NAME,
+            code=DEFAULT_PROJECT_CODE,
+            owner_id=owner_id,
+            remark="系统迁移创建：承接本行业既有配置",
+        )
+        db.add(proj)
+        db.flush()
+        logger.info("已为行业 %s 创建默认项目", industry_id)
+    return proj
+
+
+def _migrate_orphan_configs(db, admin_id: int) -> None:
+    """把 project_id 为空的 nginx/yml 配置挂到所属行业的默认项目（幂等）。"""
+    industry_ids = {
+        r[0]
+        for r in db.execute(
+            select(NginxConfig.industry_id).where(NginxConfig.project_id.is_(None))
+        ).all()
+    } | {
+        r[0]
+        for r in db.execute(
+            select(YamlConfig.industry_id).where(YamlConfig.project_id.is_(None))
+        ).all()
+    }
+    for ind_id in industry_ids:
+        proj = get_or_create_default_project(db, ind_id, admin_id)
+        db.execute(
+            NginxConfig.__table__.update()
+            .where(NginxConfig.industry_id == ind_id, NginxConfig.project_id.is_(None))
+            .values(project_id=proj.id)
+        )
+        db.execute(
+            YamlConfig.__table__.update()
+            .where(YamlConfig.industry_id == ind_id, YamlConfig.project_id.is_(None))
+            .values(project_id=proj.id)
+        )
+
+
 def init_db() -> None:
     """创建所有数据表；用户/模板行业为空时写入演示数据。"""
     Base.metadata.create_all(bind=engine)
     _ensure_scope_column()
+    # 账号体系与项目层级迁移列
+    _add_column_if_missing("users", "role VARCHAR(16) NOT NULL DEFAULT 'user'", "role")
+    _add_column_if_missing("users", "token_version INT NOT NULL DEFAULT 1", "token_version")
+    _add_column_if_missing("nginx_configs", "project_id INT NULL", "project_id")
+    _add_column_if_missing("yaml_configs", "project_id INT NULL", "project_id")
 
     db = SessionLocal()
     try:
@@ -184,6 +265,7 @@ def init_db() -> None:
                 username="admin",
                 email="admin@example.com",
                 hashed_password=hash_password("admin123"),
+                role="admin",
             )
             db.add(admin)
             db.flush()
@@ -193,6 +275,18 @@ def init_db() -> None:
                     Item(title="演示物品 2", description="第二条演示数据", owner_id=admin.id),
                 ]
             )
+        elif admin.role != "admin":
+            admin.role = "admin"
+            db.flush()
+
+        # 预置五个行业（按 code 幂等）
+        for code, name in PRESET_INDUSTRIES:
+            exists = db.execute(
+                select(Industry).where(Industry.code == code)
+            ).scalar_one_or_none()
+            if exists is None:
+                db.add(Industry(code=code, name=name, owner="系统预置"))
+        db.flush()
 
         # 模板行业 seed（幂等）
         template_industry = db.execute(
@@ -261,6 +355,9 @@ def init_db() -> None:
             ).first()
             if has_any is None:
                 seed_yaml_configs(db, ind.id)
+
+        # 历史配置迁移：孤儿 nginx/yml 配置挂到行业默认项目
+        _migrate_orphan_configs(db, admin.id)
 
         db.commit()
         logger.info("演示数据初始化完成")

@@ -48,8 +48,54 @@ class UserOut(UserBase):
     """用户响应：不含 hashed_password / password，杜绝敏感字段泄漏。"""
 
     id: int
+    role: str
     is_active: bool
     created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AccountCreate(BaseModel):
+    """管理员创建账号：角色固定为普通用户。"""
+
+    username: str
+    email: str
+    password: str
+
+
+class AccountOut(BaseModel):
+    """账号管理列表项：含角色、状态与名下项目数。"""
+
+    id: int
+    username: str
+    email: str
+    role: str
+    is_active: bool
+    project_count: int = 0
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AccountStatusUpdate(BaseModel):
+    """启用/停用账号。"""
+
+    is_active: bool
+
+
+class AccountPasswordReset(BaseModel):
+    """管理员重置账号密码。"""
+
+    new_password: str
+
+
+class AccountSearchItem(BaseModel):
+    """账号搜索（共享授权选人用）：模糊匹配用户名/邮箱。"""
+
+    id: int
+    username: str
+    email: str
+    is_active: bool
 
     model_config = ConfigDict(from_attributes=True)
 

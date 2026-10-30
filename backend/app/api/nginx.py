@@ -13,8 +13,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
+from app.core.permissions import (
+    require_project_edit,
+    require_project_view,
+    resolve_project_for_config,
+    visible_project_ids,
+)
 from app.core.security import get_current_user
 from app.models.nginx import BizPort, DomainMapping, ForwardPort, NginxConfig
+from app.models.project import Project
 from app.models.user import User
 from app.schemas.nginx import (
     BizPortCreate,
@@ -123,28 +130,61 @@ def _get_config(db: Session, config_id: int) -> NginxConfig:
     return row
 
 
+def _resolve_target_project(
+    db: Session, user: User, industry_id: int, project_id: int | None
+) -> Project:
+    """新建配置的归属项目：指定则校验编辑权限与行业一致；否则落行业默认项目。"""
+    if project_id is not None:
+        project = require_project_edit(db, user, project_id)
+        if project.industry_id != industry_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="所选项目不属于该行业",
+            )
+        return project
+    from app.seed import get_or_create_default_project  # 延迟导入避免循环
+
+    admin = db.execute(select(User).where(User.role == "admin")).scalars().first()
+    project = get_or_create_default_project(
+        db, industry_id, admin.id if admin else user.id
+    )
+    require_project_edit(db, user, project.id)
+    return project
+
+
 @config_router.get("", response_model=list[NginxConfigOut])
 def list_configs(
     industry_id: int,
+    project_id: int | None = None,
     db: Session = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> list[NginxConfig]:
-    return list(
-        db.execute(
-            select(NginxConfig)
-            .where(NginxConfig.industry_id == industry_id)
-            .order_by(NginxConfig.id)
-        ).scalars().all()
-    )
+    """按行业列出 nginx 配置；project_id 可选（指定则仅列该项目，需可查看权限）。
+
+    不指定 project_id 时，非管理员仅能看到其有权限项目下的配置。
+    """
+    stmt = select(NginxConfig).where(NginxConfig.industry_id == industry_id)
+    if project_id is not None:
+        require_project_view(db, current_user, project_id)
+        stmt = stmt.where(NginxConfig.project_id == project_id)
+    rows = list(db.execute(stmt.order_by(NginxConfig.id)).scalars().all())
+    if project_id is None and current_user.role != "admin":
+        vis = visible_project_ids(db, current_user, industry_id) or set()
+        rows = [r for r in rows if r.project_id in vis]
+    return rows
 
 
 @config_router.post("", response_model=NginxConfigOut, status_code=status.HTTP_201_CREATED)
 def create_config(
     payload: NginxConfigCreate,
     db: Session = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> NginxConfig:
-    row = NginxConfig(**payload.model_dump(), version=1)
+    project = _resolve_target_project(
+        db, current_user, payload.industry_id, payload.project_id
+    )
+    row = NginxConfig(**payload.model_dump(exclude={"project_id"}), version=1)
+    row.project_id = project.id
     db.add(row)
     try:
         db.commit()
@@ -159,9 +199,11 @@ def create_config(
 def get_config(
     config_id: int,
     db: Session = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> NginxConfig:
-    return _get_config(db, config_id)
+    row = _get_config(db, config_id)
+    resolve_project_for_config(db, row, current_user, "view")
+    return row
 
 
 @config_router.put("/{config_id}", response_model=NginxConfigOut)
@@ -169,9 +211,10 @@ def update_config(
     config_id: int,
     payload: NginxConfigUpdate,
     db: Session = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> NginxConfig:
     row = _get_config(db, config_id)
+    resolve_project_for_config(db, row, current_user, "edit")
     if row.version != payload.base_version:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -190,9 +233,11 @@ def update_config(
 def delete_config(
     config_id: int,
     db: Session = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> None:
-    db.delete(_get_config(db, config_id))
+    row = _get_config(db, config_id)
+    resolve_project_for_config(db, row, current_user, "edit")
+    db.delete(row)
     db.commit()
 
 
@@ -205,9 +250,10 @@ def edit_heartbeat(
     config_id: int,
     payload: LeaseBody,
     db: Session = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> NginxConfig:
     row = _get_config(db, config_id)
+    resolve_project_for_config(db, row, current_user, "edit")
     if (
         row.edit_holder is not None
         and row.edit_holder != payload.holder
@@ -230,9 +276,10 @@ def edit_release(
     config_id: int,
     payload: LeaseBody,
     db: Session = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     row = _get_config(db, config_id)
+    resolve_project_for_config(db, row, current_user, "edit")
     if row.edit_holder == payload.holder:
         row.edit_holder = None
         row.edit_heartbeat_at = None

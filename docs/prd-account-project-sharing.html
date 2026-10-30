@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PRD · 账号管理与项目共享（Nginx / YML / 环境变量配置平台）</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --card:#ffffff; --ink:#1f2329; --ink-2:#4e5562; --ink-3:#8a919e;
+    --line:#e5e7eb; --accent:#2f54eb; --accent-soft:#eef2ff; --green:#16a34a; --green-soft:#ecfdf3;
+    --amber:#d97706; --amber-soft:#fffbeb; --red:#dc2626; --red-soft:#fef2f2;
+    --code-bg:#0f172a; --code-ink:#e2e8f0;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+       background:var(--bg);color:var(--ink);line-height:1.75;font-size:14.5px}
+  a{color:var(--accent);text-decoration:none}
+  code,kbd{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.9em;
+           background:#f1f5f9;border:1px solid var(--line);border-radius:4px;padding:1px 6px}
+
+  .layout{display:flex;max-width:1240px;margin:0 auto;min-height:100vh}
+  /* ---- 侧边导航 ---- */
+  .side{width:230px;flex-shrink:0;padding:28px 18px;position:sticky;top:0;height:100vh;overflow:auto}
+  .side h1{font-size:15px;line-height:1.5;margin-bottom:4px}
+  .side .ver{font-size:12px;color:var(--ink-3);margin-bottom:20px}
+  .side nav a{display:block;padding:6px 10px;border-radius:6px;color:var(--ink-2);font-size:13.5px}
+  .side nav a:hover{background:var(--accent-soft);color:var(--accent)}
+  .side nav a.sub{padding-left:24px;font-size:13px;color:var(--ink-3)}
+
+  /* ---- 正文 ---- */
+  main{flex:1;padding:36px 44px 120px;min-width:0}
+  .doc-head{margin-bottom:36px;padding-bottom:24px;border-bottom:1px solid var(--line)}
+  .doc-head h1{font-size:26px;letter-spacing:.5px}
+  .doc-head .meta{margin-top:10px;color:var(--ink-3);font-size:13px;display:flex;gap:18px;flex-wrap:wrap}
+  .tag{display:inline-block;padding:1px 10px;border-radius:999px;font-size:12px;font-weight:600}
+  .tag.blue{background:var(--accent-soft);color:var(--accent)}
+  .tag.green{background:var(--green-soft);color:var(--green)}
+  .tag.amber{background:var(--amber-soft);color:var(--amber)}
+  .tag.red{background:var(--red-soft);color:var(--red)}
+  .tag.gray{background:#f1f5f9;color:var(--ink-2)}
+
+  section{margin:44px 0}
+  h2{font-size:20px;margin-bottom:16px;padding-left:12px;border-left:4px solid var(--accent)}
+  h3{font-size:16.5px;margin:26px 0 10px}
+  h4{font-size:14.5px;margin:18px 0 8px;color:var(--ink-2)}
+  p{margin:10px 0;color:var(--ink-2)}
+  ul,ol{margin:10px 0 10px 22px;color:var(--ink-2)}
+  li{margin:5px 0}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:22px 24px;margin:16px 0}
+  .fr-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .fr-id{font-family:ui-monospace,Menlo,monospace;font-weight:700;color:#fff;background:var(--accent);
+         border-radius:6px;padding:2px 9px;font-size:12.5px}
+  .fr-name{font-size:16px;font-weight:700}
+  .prio{margin-left:auto}
+
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:13.5px;background:var(--card)}
+  th,td{border:1px solid var(--line);padding:8px 12px;text-align:left;vertical-align:top}
+  th{background:#f8fafc;font-weight:600;color:var(--ink)}
+  tr:nth-child(even) td{background:#fcfcfd}
+  .tbl-wrap{overflow-x:auto;border-radius:10px}
+
+  .flow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:14px 0;font-size:13px}
+  .flow .node{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:6px 14px}
+  .flow .node.hot{border-color:var(--accent);background:var(--accent-soft);color:var(--accent);font-weight:600}
+  .flow .arr{color:var(--ink-3)}
+
+  .note{border-left:3px solid var(--amber);background:var(--amber-soft);border-radius:0 8px 8px 0;
+        padding:10px 14px;margin:12px 0;font-size:13.5px;color:#7c5a12}
+  .note b{color:#92600a}
+  .tbd{color:var(--red);font-weight:600}
+
+  /* ---- Demo 区域 ---- */
+  .demo{border:1px dashed #b6c2ff;border-radius:12px;background:#fbfcff;padding:18px;margin:16px 0}
+  .demo .demo-tag{font-size:12px;color:var(--accent);font-weight:700;letter-spacing:1px;margin-bottom:12px}
+  .btn{border:1px solid var(--line);background:#fff;border-radius:7px;padding:5px 14px;font-size:13px;
+       cursor:pointer;color:var(--ink-2);transition:.15s}
+  .btn:hover{border-color:var(--accent);color:var(--accent)}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn.primary:hover{background:#1d39c4;color:#fff}
+  .btn.danger:hover{border-color:var(--red);color:var(--red)}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .btn.sm{padding:2px 10px;font-size:12px}
+
+  .mock-table{width:100%;border-collapse:collapse;font-size:13px;background:#fff}
+  .mock-table th,.mock-table td{border:1px solid var(--line);padding:7px 10px;text-align:left}
+  .mock-table th{background:#f8fafc}
+  .chip{display:inline-flex;align-items:center;gap:6px;background:var(--accent-soft);color:var(--accent);
+        border-radius:999px;padding:2px 8px 2px 12px;font-size:12.5px;margin:2px}
+  .chip button{border:none;background:none;color:var(--accent);cursor:pointer;font-size:13px;line-height:1}
+  select,input[type=text]{border:1px solid var(--line);border-radius:7px;padding:5px 10px;font-size:13px;background:#fff}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .seg button{border:none;background:#fff;padding:5px 16px;font-size:13px;cursor:pointer;color:var(--ink-2)}
+  .seg button.on{background:var(--accent);color:#fff;font-weight:600}
+  .modal-mask{position:fixed;inset:0;background:rgba(15,23,42,.45);display:none;align-items:center;justify-content:center;z-index:50}
+  .modal-mask.show{display:flex}
+  .modal{background:#fff;border-radius:14px;width:560px;max-width:92vw;max-height:86vh;overflow:auto;padding:24px 26px}
+  .modal h4{font-size:15px;margin:0 0 4px;color:var(--ink)}
+  .modal .row{margin:14px 0}
+  .modal .lbl{font-size:12.5px;color:var(--ink-3);margin-bottom:6px}
+  .toast{position:fixed;left:50%;top:24px;transform:translateX(-50%);background:#111827;color:#fff;
+         padding:8px 20px;border-radius:8px;font-size:13px;opacity:0;transition:.25s;z-index:99;pointer-events:none}
+  .toast.show{opacity:1}
+  .perm-badge{font-size:11.5px;padding:1px 8px;border-radius:4px;font-weight:600}
+  .perm-edit{background:var(--green-soft);color:var(--green)}
+  .perm-view{background:#f1f5f9;color:var(--ink-2)}
+  .perm-owner{background:var(--accent-soft);color:var(--accent)}
+
+  footer{color:var(--ink-3);font-size:12.5px;margin-top:60px;padding-top:18px;border-top:1px solid var(--line)}
+  @media(max-width:900px){.side{display:none}main{padding:24px 18px 80px}}
+</style>
+</head>
+<body>
+<div class="layout">
+
+  <!-- ================= 侧边导航 ================= -->
+  <aside class="side">
+    <h1>账号管理与项目共享</h1>
+    <div class="ver">PRD v1.2 · 2026-10-30</div>
+    <nav>
+      <a href="#bg">1. 背景与目标</a>
+      <a href="#model">2. 产品模型</a>
+      <a href="#scope">3. 范围</a>
+      <a href="#fr">4. 功能需求</a>
+      <a class="sub" href="#fr-01">FR-01 登录与账号管理</a>
+      <a class="sub" href="#fr-02">FR-02 项目管理</a>
+      <a class="sub" href="#fr-03">FR-03 项目共享</a>
+      <a class="sub" href="#fr-04">FR-04 项目详情与配置管理</a>
+      <a class="sub" href="#fr-05">FR-05 环境变量管理</a>
+      <a href="#rules">5. 共享规则与权限矩阵</a>
+      <a href="#edge">6. 异常与边界</a>
+      <a href="#open">7. 开放问题</a>
+    </nav>
+  </aside>
+
+  <!-- ================= 正文 ================= -->
+  <main>
+    <div class="doc-head">
+      <h1>账号管理与项目共享 PRD</h1>
+      <div class="meta">
+        <span>版本 v1.2</span><span>日期 2026-10-30</span><span>状态 <span class="tag blue">待评审</span></span>
+        <span>范围：账号体系 · 项目共享 · 行业 → 项目（Nginx / YML / 环境变量）</span>
+        <span>v1.1 对象层级调整为「行业 → 项目 → 配置」；v1.2 预置行业：货运 / 国内货运 / 出租 / 公交 / 矿山</span>
+      </div>
+    </div>
+
+    <!-- ============ 1 背景与目标 ============ -->
+    <section id="bg">
+      <h2>1. 背景与目标</h2>
+      <p>现有配置管理平台以「行业」为顶层容器，行业内直接管理 Nginx 配置与 YML 配置，支持版本快照、差异对比、命令行推送（一次性 Token）。当前系统只有单一登录账号，没有账号体系与权限概念；行业下的配置没有更细的分组，也没有环境变量的独立管理能力。本期在<b>行业之下引入「项目」层级</b>：一个行业下挂多个项目，每个项目独立管理自己的 Nginx 配置、YML 配置与环境变量，项目同时是共享与权限控制的基本单位。</p>
+      <div class="card">
+        <table>
+          <tr><th style="width:180px">观察到的现状</th><th>带来的问题</th></tr>
+          <tr><td>只有一个登录账号，所有人共用</td><td>无法区分操作者，出问题无法追责；离职/换人只能改密码并通知所有人</td></tr>
+          <tr><td>任何登录者可见、可改全部行业配置</td><td>配置无边界，跨团队误改风险高；只读协作方也拥有完整编辑权</td></tr>
+          <tr><td>环境变量散落在各 YML 文件里硬编码</td><td>同一变量多处重复、改一处漏一处；变量值（如 IP、密钥）无法在项目维度统一查看</td></tr>
+        </table>
+      </div>
+      <h3>目标（可观察结果）</h3>
+      <ul>
+        <li>系统管理员可以创建、停用、重置账号；普通用户用独立账号登录，登录行为可区分到人。</li>
+        <li>项目 Owner 可以把项目共享给「所有人」或「指定人」，并分别授予「可查看 / 可编辑」权限；被共享人登录后在自己的项目列表中看到对应项目，且只能在被授权范围内操作。</li>
+        <li>行业下的每个项目可以集中管理自己的 Nginx 配置、YML 配置与环境变量（键值对），并在同一项目详情页中统一查看。</li>
+      </ul>
+    </section>
+
+    <!-- ============ 2 产品模型 ============ -->
+    <section id="model">
+      <h2>2. 产品模型</h2>
+      <h3>2.1 角色</h3>
+      <div class="tbl-wrap"><table>
+        <tr><th style="width:150px">角色</th><th>定义</th><th style="width:340px">核心能力</th></tr>
+        <tr><td><b>系统管理员</b></td><td>平台运维方，全系统唯一预置，不可被删除/停用</td><td>管理全部账号；查看与管理全部项目（含共享设置）</td></tr>
+        <tr><td><b>普通用户</b></td><td>由管理员创建的账号</td><td>在行业下创建并管理自己的项目；共享项目给他人；在被授权范围内查看/编辑他人项目</td></tr>
+      </table></div>
+      <p>「查看者 / 编辑者」不是独立账号角色，而是<b>项目级共享授权</b>：同一账号在项目 A 可以是编辑者，在项目 B 只是查看者。</p>
+
+      <h3>2.2 对象模型</h3>
+      <div class="card">
+        <div class="flow">
+          <span class="node">行业 Industry</span><span class="arr">1 ─ n</span>
+          <span class="node hot">项目 Project</span><span class="arr">1 ─ n</span>
+          <span class="node">Nginx 配置 / YML 配置 / 环境变量</span>
+        </div>
+        <div class="flow">
+          <span class="node hot">项目 Project</span><span class="arr">1 ─ n</span>
+          <span class="node">共享授权 ShareGrant</span><span class="arr">n ─ 1</span>
+          <span class="node">账号 User</span>
+        </div>
+        <ul>
+          <li><b>行业</b>：现有顶层容器不变（对应现有「行业管理」），作为组织分组层，本身不承载权限。系统预置五个行业：<b>货运、国内货运、出租、公交、矿山</b>，后续仅系统管理员可增删。</li>
+          <li><b>项目</b>：行业下的配置分组，是<b>共享与权限控制的基本单位</b>。字段：名称、编码、负责人（Owner）、备注、创建时间；一个项目仅属于一个行业，归属创建后不可变更。</li>
+          <li><b>Nginx 配置 / YML 配置</b>：归属于项目，每个项目维护自己的一套配置；编辑、版本快照、diff 对比、命令行推送等能力沿用现有实现。</li>
+          <li><b>环境变量</b>：项目级键值对（键 / 值 / 备注），不区分生产/测试环境。</li>
+          <li><b>共享授权</b>：记录「项目 × 对象（全员或指定账号）× 权限档位」。</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ============ 3 范围 ============ -->
+    <section id="scope">
+      <h2>3. 范围</h2>
+      <table>
+        <tr><th style="width:90px">优先级</th><th>内容</th></tr>
+        <tr>
+          <td><span class="tag red">P0</span></td>
+          <td>账号管理（管理员建号/停用/重置密码；用户改自己密码）· 项目 CRUD（行业下创建/编辑/删除）· 项目共享（全员/指定人、查看/编辑、变更与撤销）· 项目详情统一入口（Nginx / YML / 环境变量，配置能力沿用现有实现）· 环境变量 CRUD · 全量权限控制（页面可见性 + 操作拦截）</td>
+        </tr>
+        <tr>
+          <td><span class="tag amber">P1</span></td>
+          <td>共享操作记录（谁何时共享/撤销）· 环境变量批量导入导出 · 敏感变量值掩码显示</td>
+        </tr>
+        <tr>
+          <td><span class="tag gray">排除</span></td>
+          <td>环境变量按环境（生产/预发/测试）分组 · 变量在配置中的模板引用（如 <code>{{var}}</code>）· SSO / LDAP · 自助注册 · 审批流</td>
+        </tr>
+      </table>
+      <p>P0 最小完整旅程：<b>管理员创建账号 → 用户登录，在行业下创建项目 → 在项目内管理 nginx/yml/环境变量 → 共享给指定人（可编辑）→ 指定人登录看到项目并完成一次配置修改</b>；恢复路径：Owner 撤销共享后，被撤销人立即失去访问。</p>
+    </section>
+
+    <!-- ============ 4 功能需求 ============ -->
+    <section id="fr">
+      <h2>4. 功能需求</h2>
+
+      <!-- ============ FR-01 账号 ============ -->
+      <div class="card" id="fr-01">
+        <div class="fr-head"><span class="fr-id">FR-01</span><span class="fr-name">登录与账号管理</span><span class="tag red prio">P0</span></div>
+
+        <h3>目的</h3>
+        <p>让每个操作者用独立账号登录，管理员集中管理账号生命周期。</p>
+
+        <h3>登录（沿用现有行为）</h3>
+        <ul>
+          <li>用户名 + 密码 + 图形验证码登录；连续 60 分钟无操作自动退出（现有空闲超时机制不变）。</li>
+          <li>账号被停用后，该账号的登录态立即失效，再次请求跳回登录页并提示「账号已被停用，请联系管理员」。</li>
+        </ul>
+
+        <h3>账号管理（仅系统管理员可见）</h3>
+        <p>入口：侧边菜单「账号管理」。页面为账号列表 + 新建按钮。</p>
+        <table>
+          <tr><th style="width:130px">动作</th><th>规则</th></tr>
+          <tr><td>新建账号</td><td>必填：用户名（3–50 位，字母开头，仅字母/数字/下划线，全系统唯一）、邮箱（唯一）、初始密码（≥8 位，含字母与数字）。创建后默认启用。</td></tr>
+          <tr><td>启用 / 停用</td><td>停用即时生效：该账号所有登录态失效，且无法再登录；其创建的项目与共享授权<b>保留不删</b>。可随时重新启用。</td></tr>
+          <tr><td>重置密码</td><td>管理员设置新密码（同初始密码规则），重置后该账号所有旧登录态失效。</td></tr>
+          <tr><td>删除账号</td><td><b>名下仍有项目的账号禁止删除</b>，按钮置灰并提示「该账号名下有 N 个项目，请先转移或删除」；名下无项目时删除需二次确认。系统管理员自身不可被停用/删除。</td></tr>
+          <tr><td>修改密码（本人）</td><td>任意登录用户在个人菜单修改自己的密码，需校验旧密码；成功后当前登录态保持，其他设备的登录态失效。</td></tr>
+        </table>
+
+        <div class="demo">
+          <div class="demo-tag">交互 DEMO · 账号管理列表（停用 / 删除阻止）</div>
+          <table class="mock-table" id="acctTable">
+            <tr><th>用户名</th><th>邮箱</th><th>名下项目</th><th>状态</th><th style="width:210px">操作</th></tr>
+          </table>
+          <p style="font-size:12.5px;color:var(--ink-3);margin-top:10px">点击「停用/启用」切换状态；点击「删除」观察名下有项目时的阻止提示。</p>
+        </div>
+      </div>
+
+      <!-- ============ FR-02 项目管理 ============ -->
+      <div class="card" id="fr-02">
+        <div class="fr-head"><span class="fr-id">FR-02</span><span class="fr-name">项目管理</span><span class="tag red prio">P0</span></div>
+
+        <h3>目的</h3>
+        <p>在行业之下提供配置分组容器，把一套 Nginx 配置、YML 配置与环境变量归拢到一个可共享的边界内。</p>
+
+        <h3>入口与列表</h3>
+        <ul>
+          <li>从行业进入：行业列表 → 行业详情页展示该行业下的<b>项目列表</b>。行业与项目名称结构对所有登录用户可见（名称本身不设权限），项目内容按授权控制。</li>
+          <li>系统预置五个行业：<b>货运、国内货运、出租、公交、矿山</b>；行业的新建 / 编辑 / 删除仅系统管理员（见权限矩阵）。</li>
+          <li>项目列表分两个页签：<b>我的项目</b>（我创建的）、<b>共享给我的</b>（全员共享 + 指定人共享，带权限标识）。系统管理员额外看到「全部项目」。</li>
+          <li>列表字段：项目名称、编码、负责人、配置数量（nginx / yml / 环境变量条数）、更新时间、我的权限（负责人 / 可编辑 / 可查看）。</li>
+        </ul>
+
+        <h3>新建 / 编辑项目</h3>
+        <table>
+          <tr><th style="width:110px">字段</th><th>规则</th></tr>
+          <tr><td>所属行业</td><td>创建时选定，<b>创建后不可变更</b>（避免配置在未知范围间移动）</td></tr>
+          <tr><td>项目名称</td><td>必填，≤50 字，同一行业内不可重名</td></tr>
+          <tr><td>项目编码</td><td>必填，≤50 位小写字母/数字/中划线，同一行业内唯一，创建后不可修改</td></tr>
+          <tr><td>备注</td><td>选填，≤255 字</td></tr>
+        </table>
+
+        <h3>删除项目</h3>
+        <ul>
+          <li>仅项目 Owner 与系统管理员可删除，需输入项目名称二次确认。</li>
+          <li><b>非空项目禁止删除</b>：项目下仍有 Nginx/YML 配置或环境变量时，删除按钮置灰并提示「请先清空项目下的配置与环境变量」。避免连带删除配置造成不可逆损失。</li>
+        </ul>
+      </div>
+
+      <!-- ============ FR-03 项目共享 ============ -->
+      <div class="card" id="fr-03">
+        <div class="fr-head"><span class="fr-id">FR-03</span><span class="fr-name">项目共享</span><span class="tag red prio">P0</span></div>
+
+        <h3>目的</h3>
+        <p>让项目 Owner 控制「谁能看见、谁能改」，覆盖「给所有人看」与「给指定人看/改」两类协作场景。</p>
+
+        <h3>触发</h3>
+        <p>项目列表行操作与项目详情页均有「共享」入口。仅 <b>Owner 与系统管理员</b>可见该入口。</p>
+
+        <h3>共享弹窗规则</h3>
+        <table>
+          <tr><th style="width:150px">共享方式</th><th>规则</th></tr>
+          <tr>
+            <td><b>全员可见</b>（开关）</td>
+            <td>开启后，所有启用状态的账号在项目列表「共享给我的」中可见本项目，权限固定为<b>可查看</b>。全员共享不开放编辑——面向未知人群的编辑权风险不可控，这是有意收窄的产品决策。</td>
+          </tr>
+          <tr>
+            <td><b>指定人</b>（列表）</td>
+            <td>按用户名/邮箱搜索添加；每人单独设置 <b>可查看</b> 或 <b>可编辑</b>。可随时修改档位或移除，<b>即时生效</b>。不可添加项目 Owner 本人（重复添加同一用户时视为修改权限档位）。</td>
+          </tr>
+        </table>
+        <ul>
+          <li>两种方式可叠加：同一用户同时命中多条授权时，<b>取最高权限</b>（如全员可查看 + 指定可编辑 → 可编辑）。</li>
+          <li>共享给已停用账号：允许配置但账号停用期间不生效，账号重新启用后自动恢复。</li>
+        </ul>
+
+        <div class="demo">
+          <div class="demo-tag">交互 DEMO · 项目共享弹窗（点击「共享」打开）</div>
+          <button class="btn primary" onclick="document.getElementById('shareMask').classList.add('show')">共享「运单调度」项目</button>
+        </div>
+      </div>
+
+      <!-- ============ FR-04 项目详情 ============ -->
+      <div class="card" id="fr-04">
+        <div class="fr-head"><span class="fr-id">FR-04</span><span class="fr-name">项目详情与配置管理</span><span class="tag red prio">P0</span></div>
+
+        <h3>布局</h3>
+        <p>项目详情页分四个区域：<b>项目信息</b>（所属行业/名称/编码/负责人/备注 + 共享入口）、<b>Nginx 配置</b>、<b>YML 配置</b>、<b>环境变量</b>（见 FR-05）。配置编辑全部沿用现有能力：在线编辑、版本快照、diff 对比、命令行推送（一次性 Token）、回滚。</p>
+        <h3>权限表现</h3>
+        <table>
+          <tr><th style="width:120px">我的权限</th><th>页面表现</th></tr>
+          <tr><td><span class="perm-badge perm-view">可查看</span></td><td>所有内容只读；编辑/删除/推送/共享按钮隐藏或置灰；YML/Nginx 编辑器进入只读模式，版本快照可查看</td></tr>
+          <tr><td><span class="perm-badge perm-edit">可编辑</span></td><td>可在项目内增删改 Nginx/YML 配置、生成推送 Token、管理环境变量；<b>无</b>共享入口、不可删除项目</td></tr>
+          <tr><td><span class="perm-badge perm-owner">负责人</span></td><td>全部能力 + 共享管理 + 删除项目</td></tr>
+        </table>
+        <p>无权限用户直接访问项目 URL 时，返回 403 提示页「你没有该项目的访问权限」。</p>
+      </div>
+
+      <!-- ============ FR-05 环境变量 ============ -->
+      <div class="card" id="fr-05">
+        <div class="fr-head"><span class="fr-id">FR-05</span><span class="fr-name">环境变量管理</span><span class="tag red prio">P0</span></div>
+
+        <h3>目的</h3>
+        <p>把散落在配置中的变量集中到项目维度统一维护与查看。</p>
+
+        <h3>字段</h3>
+        <table>
+          <tr><th style="width:100px">字段</th><th>规则</th></tr>
+          <tr><td>变量键</td><td>必填；<code>^[A-Za-z_][A-Za-z0-9_]*$</code>，≤128 字符；同一项目内唯一（创建/改名时校验，冲突提示「该变量已存在」）</td></tr>
+          <tr><td>变量值</td><td>必填，≤4096 字符，支持多行文本</td></tr>
+          <tr><td>备注</td><td>选填，≤255 字，用于说明用途</td></tr>
+        </table>
+
+        <h3>行为</h3>
+        <ul>
+          <li>列表：键 / 值（过长截断，悬停显示完整值）/ 备注 / 更新时间 / 更新人；支持按键与值搜索。</li>
+          <li>新增、编辑、删除：删除需二次确认（变量可能被配置引用，删除不可撤销）。</li>
+          <li>权限：可查看 → 只读列表；可编辑及以上 → 可增删改。</li>
+        </ul>
+        <p>说明：本期为纯键值对管理，<b>不与 YML/Nginx 配置做模板变量替换</b>（已列入排除项）。</p>
+      </div>
+    </section>
+
+    <!-- ============ 5 共享规则与权限矩阵 ============ -->
+    <section id="rules">
+      <h2>5. 共享规则与权限矩阵</h2>
+      <p>以下矩阵是各功能模块权限判断的<b>唯一定义</b>，功能章节不再重复描述。</p>
+      <div class="tbl-wrap"><table>
+        <tr><th>动作</th><th>系统管理员</th><th>项目 Owner</th><th>可编辑（共享）</th><th>可查看（共享）</th><th>无权限用户</th></tr>
+        <tr><td>创建 / 停用 / 重置 / 删除账号</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>行业的新建 / 编辑 / 删除</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>创建项目（行业下）</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅（任何登录用户）</td></tr>
+        <tr><td>查看项目内容</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>❌（403）</td></tr>
+        <tr><td>编辑项目信息 / 项目下增删配置文件</td><td>✅</td><td>✅</td><td>✅</td><td>❌</td><td>❌</td></tr>
+        <tr><td>编辑 Nginx / YML 配置、生成推送 Token</td><td>✅</td><td>✅</td><td>✅</td><td>❌</td><td>❌</td></tr>
+        <tr><td>环境变量增删改</td><td>✅</td><td>✅</td><td>✅</td><td>❌</td><td>❌</td></tr>
+        <tr><td>管理共享（全员开关 / 指定人）</td><td>✅</td><td>✅</td><td>❌</td><td>❌</td><td>❌</td></tr>
+        <tr><td>删除项目</td><td>✅</td><td>✅</td><td>❌</td><td>❌</td><td>❌</td></tr>
+      </table></div>
+
+      <h3>共享授权状态</h3>
+      <div class="flow">
+        <span class="node hot">生效中</span><span class="arr">→ 修改档位 / 移除</span><span class="node">立即变更 / 立即失效</span>
+        <span style="color:var(--ink-3)">（无中间态、无审批）</span>
+      </div>
+      <ul>
+        <li>被撤销/降权时，若对方正在编辑页面中，保存时服务端按最新权限拦截并提示「你的访问权限已变更」。</li>
+        <li>权限判断一律以<b>服务端</b>为准，前端隐藏按钮仅为体验优化。</li>
+      </ul>
+    </section>
+
+    <!-- ============ 6 异常与边界 ============ -->
+    <section id="edge">
+      <h2>6. 异常与边界</h2>
+      <table>
+        <tr><th style="width:230px">场景</th><th>产品行为</th></tr>
+        <tr><td>账号被停用时处于登录状态</td><td>下一次请求即失效，跳转登录页并提示原因</td></tr>
+        <tr><td>删除名下有项目的账号</td><td>阻止并提示项目数量；引导先停用</td></tr>
+        <tr><td>删除非空项目</td><td>阻止并提示先清空项目下的配置与环境变量</td></tr>
+        <tr><td>共享弹窗中搜索不到用户</td><td>显示「未找到该账号」，支持核对用户名后重试</td></tr>
+        <tr><td>无权限访问项目 URL</td><td>403 提示页，不暴露项目是否存在的额外信息</td></tr>
+        <tr><td>编辑过程中权限被撤销</td><td>保存时拒绝并提示；页面刷新后按新权限渲染（只读或不可见）</td></tr>
+        <tr><td>环境变量键冲突 / 格式非法</td><td>表单内联报错，不落库</td></tr>
+        <tr><td>YML 并发编辑冲突</td><td>沿用现有乐观锁与版本快照机制，不在本期改动</td></tr>
+      </table>
+    </section>
+
+    <!-- ============ 7 开放问题 ============ -->
+    <section id="open">
+      <h2>7. 开放问题</h2>
+      <table>
+        <tr><th style="width:60px">编号</th><th>问题</th><th style="width:220px">影响</th></tr>
+        <tr><td>Q1</td><td>现有行业下直接管理的 Nginx/YML 配置如何迁移到项目？（候选：每个行业自动创建一个「默认项目」承接现有全部配置 / 提供手动归组入口）<span class="tbd">[TBD]</span></td><td>决定上线迁移方案</td></tr>
+        <tr><td>Q2</td><td>项目是否需要支持跨行业移动或复制？（当前决策：不支持，归属创建后不可变更）<span class="tbd">[TBD]</span></td><td>影响对象模型与项目操作项</td></tr>
+        <tr><td>Q3</td><td>「全员可见」是否需要支持例外名单（全员可见但排除某人）？<span class="tbd">[TBD]</span></td><td>影响共享授权模型复杂度</td></tr>
+      </table>
+    </section>
+
+    <footer>账号管理与项目共享 PRD v1.2 · 2026-10-30 · 本文档由 prd-authoring 技能生成，标记 [TBD] 的条目需在评审会上确认</footer>
+  </main>
+</div>
+
+<!-- ================= 共享弹窗 Demo ================= -->
+<div class="modal-mask" id="shareMask" onclick="if(event.target===this)this.classList.remove('show')">
+  <div class="modal">
+    <h4>共享「运单调度」 <span class="tag gray">所属行业：货运</span></h4>
+    <p style="font-size:12.5px;color:var(--ink-3)">全员共享固定为「可查看」；指定人可单独授予编辑权。变更即时生效。</p>
+    <div class="row">
+      <div class="lbl">共享范围</div>
+      <div class="seg">
+        <button id="segOff" class="on" onclick="setScope(false)">仅指定人</button>
+        <button id="segOn" onclick="setScope(true)">全员可见（可查看）</button>
+      </div>
+    </div>
+    <div class="row">
+      <div class="lbl">添加指定人</div>
+      <div style="display:flex;gap:8px">
+        <input type="text" id="shareUser" placeholder="输入用户名，如 zhangsan" style="flex:1">
+        <select id="sharePerm"><option value="view">可查看</option><option value="edit">可编辑</option></select>
+        <button class="btn primary" onclick="addShare()">添加</button>
+      </div>
+    </div>
+    <div class="row">
+      <div class="lbl">已共享给</div>
+      <div id="shareList">
+        <span class="chip">lisi · 可编辑 <button onclick="this.parentElement.remove()">✕</button></span>
+        <span class="chip">wangwu · 可查看 <button onclick="this.parentElement.remove()">✕</button></span>
+      </div>
+    </div>
+    <div style="text-align:right;margin-top:18px">
+      <button class="btn" onclick="document.getElementById('shareMask').classList.remove('show')">取消</button>
+      <button class="btn primary" onclick="saveShare()">保存</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+// ---------- Toast ----------
+function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1800)}
+
+// ---------- 共享弹窗 Demo ----------
+let scopeAll=false;
+function setScope(all){scopeAll=all;
+  document.getElementById('segOn').classList.toggle('on',all);
+  document.getElementById('segOff').classList.toggle('on',!all);
+  toast(all?'已开启全员可见（权限：可查看）':'已切换为仅指定人共享')}
+function addShare(){
+  const u=document.getElementById('shareUser').value.trim();
+  if(!u){toast('请输入用户名');return}
+  if(u==='owner'||u==='admin'){toast('不能添加项目负责人本人');return}
+  const p=document.getElementById('sharePerm');
+  const chip=document.createElement('span');chip.className='chip';
+  chip.innerHTML=u+' · '+p.options[p.selectedIndex].text+' <button onclick="this.parentElement.remove()">✕</button>';
+  document.getElementById('shareList').appendChild(chip);
+  document.getElementById('shareUser').value='';
+}
+function saveShare(){document.getElementById('shareMask').classList.remove('show');toast('共享设置已保存，即时生效')}
+
+// ---------- 账号管理 Demo ----------
+const accts=[
+  {u:'admin',    e:'admin@corp.local', n:0,on:true, sys:true},
+  {u:'zhangsan', e:'zhangsan@corp.local',n:3,on:true},
+  {u:'lisi',     e:'lisi@corp.local',  n:0,on:true},
+  {u:'wangwu',   e:'wangwu@corp.local',n:1,on:false},
+];
+function renderAccts(){
+  const t=document.getElementById('acctTable');
+  t.innerHTML='<tr><th>用户名</th><th>邮箱</th><th>名下项目</th><th>状态</th><th style="width:210px">操作</th></tr>';
+  accts.forEach((a,i)=>{
+    const tr=document.createElement('tr');
+    tr.innerHTML='<td><b>'+a.u+'</b>'+(a.sys?' <span class="tag blue">系统管理员</span>':'')+'</td>'
+      +'<td>'+a.e+'</td><td>'+a.n+'</td>'
+      +'<td>'+(a.on?'<span class="tag green">启用</span>':'<span class="tag gray">停用</span>')+'</td>'
+      +'<td></td>';
+    const ops=tr.lastChild;
+    if(a.sys){ops.innerHTML='<span style="color:var(--ink-3);font-size:12px">不可操作</span>'}
+    else{
+      const b1=document.createElement('button');b1.className='btn sm';
+      b1.textContent=a.on?'停用':'启用';
+      b1.onclick=()=>{a.on=!a.on;toast(a.on?'账号已启用':'账号已停用，登录态已失效');renderAccts()};
+      const b2=document.createElement('button');b2.className='btn sm danger';b2.style.marginLeft='6px';
+      b2.textContent='删除';
+      if(a.n>0){b2.disabled=true;b2.title='该账号名下有 '+a.n+' 个项目，请先转移或删除';
+        b2.onclick=()=>toast('名下有 '+a.n+' 个项目，禁止删除')}
+      else{b2.onclick=()=>{if(confirm('确认删除账号 '+a.u+' ？该操作不可恢复')){accts.splice(i,1);toast('账号已删除');renderAccts()}}}
+      ops.appendChild(b1);ops.appendChild(b2);
+    }
+    t.appendChild(tr);
+  });
+}
+renderAccts();
+</script>
+</body>
+</html>

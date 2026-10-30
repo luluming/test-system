@@ -5,11 +5,6 @@ export function login(data) {
   return client.post("/auth/login", data);
 }
 
-// 用户注册：data 为 { username, password }，请求 /api/auth/register
-export function register(data) {
-  return client.post("/auth/register", data);
-}
-
 // 获取图形验证码：返回 { captcha_id, captcha_image }，请求 /api/auth/captcha
 export function fetchCaptcha() {
   return client.get("/auth/captcha");
@@ -21,7 +16,12 @@ export function resetPassword(data) {
 }
 
 // 修改密码（需登录）：data 为 { old_password, new_password }，请求 /api/auth/change-password
-// 本期仅封装方法，暂不接入 UI
+// 成功返回 { message, access_token }，前端需用新 token 替换旧 token 保持会话
 export function changePassword(data) {
   return client.post("/auth/change-password", data);
+}
+
+// 获取当前登录用户信息：请求 /api/auth/me
+export function fetchMe() {
+  return client.get("/auth/me");
 }

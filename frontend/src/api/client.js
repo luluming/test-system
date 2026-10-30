@@ -1,4 +1,5 @@
 import axios from "axios";
+import { message } from "antd";
 import { clearToken, getToken, isSessionValid, touchActivity } from "../store/auth";
 
 // 创建 axios 实例：所有请求以 /api 为前缀。开发环境由 Vite 自定义代理转发到后端
@@ -7,11 +8,11 @@ const client = axios.create({
   timeout: 10000,
 });
 
-function redirectToLogin() {
+function redirectToLogin(reason = "expired") {
   clearToken();
   // 避免在登录页重复跳转
   if (window.location.pathname !== "/login") {
-    window.location.href = "/login?reason=expired";
+    window.location.href = `/login?reason=${reason}`;
   }
 }
 
@@ -29,13 +30,19 @@ client.interceptors.request.use((config) => {
   return config;
 });
 
-// 响应拦截器：统一处理 401 未授权
+// 响应拦截器：统一处理 401 未授权 / 403 无权限
 client.interceptors.response.use(
   (response) => response,
   (error) => {
-    // 401：token 缺失或失效，清除 token 并跳转登录页
-    if (error.response && error.response.status === 401) {
-      redirectToLogin();
+    const status = error.response?.status;
+    const detail = error.response?.data?.detail;
+    if (status === 401) {
+      // 账号被停用与会话过期区分提示
+      const reason = typeof detail === "string" && detail.includes("停用") ? "disabled" : "expired";
+      redirectToLogin(reason);
+    } else if (status === 403 && typeof detail === "string" && detail) {
+      // 无权限：全局轻提示，页面自行决定后续跳转
+      message.error(detail);
     }
     return Promise.reject(error);
   }

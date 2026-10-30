@@ -1,14 +1,16 @@
-"""行业基础信息 CRUD + 模板克隆端点（均需登录）。"""
+"""行业基础信息 CRUD + 模板克隆端点（列表/详情需登录，增删改/克隆仅系统管理员）。"""
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
+from app.core.permissions import require_admin
 from app.core.security import get_current_user
 from app.models.industry import Industry
+from app.models.project import Project
 from app.models.nginx import (
     BizPort,
     ConfigBlock,
@@ -71,8 +73,9 @@ def list_industries(
 def create_industry(
     payload: IndustryCreate,
     db: Session = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> Industry:
+    require_admin(current_user)
     row = Industry(**payload.model_dump())
     db.add(row)
     try:
@@ -98,8 +101,9 @@ def update_industry(
     industry_id: int,
     payload: IndustryUpdate,
     db: Session = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> Industry:
+    require_admin(current_user)
     row = _get_industry(db, industry_id)
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(row, field, value)
@@ -171,7 +175,7 @@ def delete_industry(
         description="nginx/yml：只删当前菜单所属模块的数据，绝不跨模块删除",
     ),
     db: Session = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> None:
     """删除行业在单个模块下的数据（模板行业一律禁止）。
 
@@ -181,7 +185,17 @@ def delete_industry(
     - nginx：只清 Nginx 族；行业若同时归属 YML 则保留并收敛为 scope=yml，否则整条删除
     - yml：只清 YAML 族；行业若同时归属 Nginx 则保留并收敛为 scope=nginx，否则整条删除
     """
+    require_admin(current_user)
     row = _get_industry(db, industry_id)
+    # 行业下存在项目时禁止删除：项目及其配置/环境变量/共享须先清理
+    proj_cnt = db.scalar(
+        select(func.count(Project.id)).where(Project.industry_id == industry_id)
+    ) or 0
+    if proj_cnt:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"该行业下存在 {proj_cnt} 个项目，请先删除项目后再删除行业",
+        )
     if row.is_template:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -215,8 +229,9 @@ def delete_industry(
 def create_clone(
     payload: CloneIndustryRequest,
     db: Session = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> Industry:
+    require_admin(current_user)
     try:
         return clone_industry(db, payload=payload)
     except ValueError:

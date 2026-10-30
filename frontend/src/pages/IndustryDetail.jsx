@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Modal } from "antd";
 import { useNavigate, useParams } from "react-router-dom";
-import { getIndustry } from "../api/industry";
-import { listConfigsByIndustry, createNginxConfig } from "../api/nginx";
+import { getProject } from "../api/projects";
+import { listConfigsByProject, createNginxConfig } from "../api/nginx";
 import { getConfigTree, deleteBlock, mirrorBlock, listMirrorPairs, createMirrorPair, deleteMirrorPair, reorderBlocks } from "../api/nginxInner";
 import { OpsContext } from "./ops/OpsContext";
 import "./ops/ops.css";
@@ -57,10 +57,10 @@ function SideItem({ node, off, active, onSelect, onMove, onDelete, mirror }) {
 
 export default function IndustryDetail() {
   const navigate = useNavigate();
-  const { industryId } = useParams();
-  const id = Number(industryId);
+  const { projectId } = useParams();
+  const pid = Number(projectId);
 
-  const [industry, setIndustry] = useState(null);
+  const [project, setProject] = useState(null);
   const [configs, setConfigs] = useState([]);
   const [configId, setConfigId] = useState(null);
   const [view, setView] = useState("block");
@@ -84,20 +84,22 @@ export default function IndustryDetail() {
     setTimeout(() => setToasts((prev) => prev.filter((x) => x.id !== t.id)), 3200);
   }, []);
 
-  // 初始加载：行业 + 配置列表
+  // 初始加载：项目（校验访问权限，403 跳无权限页）+ 配置列表
   useEffect(() => {
     (async () => {
       try {
-        const [indRes, cfgRes] = await Promise.all([getIndustry(id), listConfigsByIndustry(id)]);
-        setIndustry(indRes.data);
+        const projRes = await getProject(pid);
+        setProject(projRes.data);
+        const cfgRes = await listConfigsByProject(projRes.data.industry_id, pid);
         setConfigs(cfgRes.data);
         if (cfgRes.data.length) setConfigId(cfgRes.data[0].id);
-      } catch {
-        toast("行业数据加载失败", "err");
+      } catch (err) {
+        if (err.response?.status === 403) navigate("/403", { replace: true });
+        else toast("项目数据加载失败", "err");
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  }, [pid]);
 
   // 加载当前配置的块树（按上下文）
   const loadTree = useCallback(async (cid, c) => {
@@ -232,7 +234,8 @@ export default function IndustryDetail() {
     const nm = cfgName.trim();
     if (!nm) { toast("请输入配置文件名", "warn"); return; }
     createNginxConfig({
-      industry_id: id,
+      industry_id: project.industry_id,
+      project_id: pid,
       name: nm,
       config_text: "http {\n    include mime.types;\n    default_type application/octet-stream;\n    sendfile on;\n}\n",
       enabled: true,
@@ -241,7 +244,7 @@ export default function IndustryDetail() {
         setShowCreateCfg(false);
         setCfgName("");
         toast("已创建配置文件 " + r.data.name, "ok");
-        return listConfigsByIndustry(id).then((res) => {
+        return listConfigsByProject(project.industry_id, pid).then((res) => {
           setConfigs(res.data);
           setConfigId(r.data.id);
         });
@@ -249,8 +252,13 @@ export default function IndustryDetail() {
       .catch((e) => toast("创建失败：" + (e.response?.data?.detail || "未知错误"), "err"));
   };
 
+  const readOnly = project?.my_perm === "view";
+
   const value = {
-    industryId: id, industry, configs, configId, setConfigId,
+    industryId: project?.industry_id, project, projectId: pid, readOnly,
+    // 兼容下游组件对 industry 形态的读取（如 PushModal 取行业名）
+    industry: project ? { name: project.industry_name, code: project.code } : null,
+    configs, configId, setConfigId,
     view, setView, ctx, setCtx: switchCtx, tree, setTree: setTreeState,
     stats, setStats, selected, setSelected, dirty, setDirty,
     highlightListen, setHighlightListen,
@@ -283,9 +291,12 @@ export default function IndustryDetail() {
         {/* 标题栏 36px（对齐 mock） */}
         <div className="ops-titlebar">
           <div className="tb-left">
-            <span className="tb-back" onClick={() => navigate("/")} title="返回行业管理">← 行业管理</span>
+            <span className="tb-back" onClick={() => navigate(`/projects/${pid}`)} title="返回项目详情">← 项目详情</span>
           </div>
-          <div className="tb-mid">{lib.getFileName()} · {industry ? industry.name : "…"}</div>
+          <div className="tb-mid">
+            {lib.getFileName()} · {project ? project.name : "…"}
+            {readOnly && <span className="tag2 bare" style={{ marginLeft: 8 }}>只读</span>}
+          </div>
           <div className="win-dots">
             <i className="r" /><i className="y" /><i className="g" />
           </div>
@@ -314,7 +325,7 @@ export default function IndustryDetail() {
             <div className="side-group grow">
               <div className="side-head" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingRight: 10 }}>
                 <span>监听点 ({servers.length})</span>
-                <button className="side-add" title="新增监听点（server 块）" onClick={() => setShowAdd(true)}>＋ 监听点</button>
+                {!readOnly && <button className="side-add" title="新增监听点（server 块）" onClick={() => setShowAdd(true)}>＋ 监听点</button>}
               </div>
               {servers.map((s) => (
                 <SideItem
@@ -322,8 +333,8 @@ export default function IndustryDetail() {
                   node={s}
                   active={!!(selected && selected._id === s._id)}
                   onSelect={() => setSelected(s)}
-                  onMove={(dir) => moveSide(s, dir)}
-                  onDelete={() => deleteSide(s)}
+                  onMove={readOnly ? undefined : (dir) => moveSide(s, dir)}
+                  onDelete={readOnly ? undefined : () => deleteSide(s)}
                   mirror={mirrorMap[s._id]}
                 />
               ))}
@@ -332,10 +343,10 @@ export default function IndustryDetail() {
             <div className="side-group cmn">
               <div className="side-head" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingRight: 10 }}>
                 <span>共性块 ({commons.length})</span>
-                <button className="side-add" title="新增共性块（upstream / map / geo）" onClick={() => setShowAdd(true)}>＋ 共性块</button>
+                {!readOnly && <button className="side-add" title="新增共性块（upstream / map / geo）" onClick={() => setShowAdd(true)}>＋ 共性块</button>}
               </div>
               {commons.map((n) => (
-                <SideItem key={n._id} node={n} active={!!(selected && selected._id === n._id)} onSelect={() => setSelected(n)} onDelete={() => deleteSide(n)} />
+                <SideItem key={n._id} node={n} active={!!(selected && selected._id === n._id)} onSelect={() => setSelected(n)} onDelete={readOnly ? undefined : () => deleteSide(n)} />
               ))}
               {commons.length === 0 && <div className="empty-hint" style={{ padding: "10px 14px" }}>无 map/upstream/geo 块</div>}
             </div>
@@ -346,9 +357,13 @@ export default function IndustryDetail() {
             {configs.length === 0 ? (
               <div className="ops-empty">
                 <div className="ops-empty-card">
-                  <h3>该行业暂无配置文件</h3>
-                  <p>该行业还没有任何 nginx 配置。可以新建一个 <span className="mono">.conf</span> 配置文件开始维护，创建后即可通过「＋ 块」添加 server / upstream 等配置。</p>
-                  <button className="btn primary" onClick={() => setShowCreateCfg(true)}>新建配置文件</button>
+                  <h3>该项目暂无配置文件</h3>
+                  <p>
+                    {readOnly
+                      ? "该项目还没有任何 nginx 配置，你当前为只读权限，可联系项目负责人维护。"
+                      : <>该项目还没有任何 nginx 配置。可以新建一个 <span className="mono">.conf</span> 配置文件开始维护，创建后即可通过「＋ 块」添加 server / upstream 等配置。</>}
+                  </p>
+                  {!readOnly && <button className="btn primary" onClick={() => setShowCreateCfg(true)}>新建配置文件</button>}
                 </div>
               </div>
             ) : (
@@ -370,6 +385,7 @@ export default function IndustryDetail() {
           <span className="err">0 错误</span>
           <span className="warn">0 警告</span>
           <span className="mono">{ctx === "stream" ? "stream" : "conf"}</span>
+          {readOnly && <span className="warn">只读</span>}
           <span className="mono">Ln {servers.length} · {stats ? stats.server + stats.location + stats.upstream : 0} 块</span>
           <span style={{ marginLeft: "auto" }}>
             {exportInfo.dom ? `${exportInfo.dom} 条域名替换` : ""}
@@ -396,7 +412,7 @@ export default function IndustryDetail() {
               <h3>新建配置文件</h3>
               <div className="fgroup">
                 <label>配置文件名（.conf）</label>
-                <input value={cfgName} onChange={(e) => setCfgName(e.target.value)} placeholder={(industry?.code || "industry") + "_nginx.conf"} autoFocus />
+                <input value={cfgName} onChange={(e) => setCfgName(e.target.value)} placeholder={(project?.code || "project") + "_nginx.conf"} autoFocus />
               </div>
               <div className="modal-tip">创建后可在块管理中通过「＋ 块」添加 server / upstream / map 等配置，也可用「推送配置」导入已有 conf 文件。</div>
               <div className="modal-actions">
