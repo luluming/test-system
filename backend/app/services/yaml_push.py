@@ -187,12 +187,15 @@ def compute_diff(new_text: str, old_text: str) -> tuple[list[dict], dict]:
     delete（库中存在、新文件已移除）、keep（无变化）。
     返回 (entries, counts)；counts 为各动作计数。
     """
-    new_doc = compose_yaml(new_text)
-    old_doc = compose_yaml(old_text)
+    new_doc = compose_yaml(new_text) if new_text.strip() else None
+    old_doc = compose_yaml(old_text) if old_text.strip() else None
     new_entries: list[dict] = []
     old_entries: list[dict] = []
-    _entries_into(new_doc, "", new_entries, is_root=True)
-    _entries_into(old_doc, "", old_entries, is_root=True)
+    # 空文档（新建配置尚为空白）compose_yaml 返回 None，视为无任何节点
+    if new_doc is not None:
+        _entries_into(new_doc, "", new_entries, is_root=True)
+    if old_doc is not None:
+        _entries_into(old_doc, "", old_entries, is_root=True)
     new_index = {e["path"]: e for e in new_entries}
     old_index = {e["path"]: e for e in old_entries}
 

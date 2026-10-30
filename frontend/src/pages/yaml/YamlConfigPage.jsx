@@ -191,6 +191,10 @@ export default function YamlConfigPage() {
   const [newName, setNewName] = useState("");
   const [industry, setIndustry] = useState(null);
   const [verModal, setVerModal] = useState(null);
+  const [verModalTab, setVerModalTab] = useState("diff"); // diff | content
+  const [verTooltip, setVerTooltip] = useState(null);     // hover 版本卡片整行
+  const [chipTooltip, setChipTooltip] = useState(null);  // hover 变更 chip：{v, action, x, y}
+  const diffRef = useRef(null);                           // diff 容器，弹窗打开后滚到第一个变更点
 
   // 推送
   const [openPush, setOpenPush] = useState(false);
@@ -296,6 +300,53 @@ export default function YamlConfigPage() {
   }, [openPush]);
 
   useEffect(() => { setArmApply(false); }, [preview, pushFile]);
+
+  // ---------- 版本弹窗：打开 diff tab 时滚到第一个变更点 ----------
+  useEffect(() => {
+    if (!verModal || verModal.is_first || verModalTab !== "diff") return;
+    const el = diffRef.current;
+    if (!el) return;
+    // 等下一帧 DOM 渲染完再定位
+    const raf = requestAnimationFrame(() => {
+      const firstChange = el.querySelector(".ld-add, .ld-del");
+      if (firstChange) {
+        firstChange.scrollIntoView({ block: "center", behavior: "smooth" });
+      } else {
+        el.scrollTop = 0;
+      }
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [verModal, verModalTab]);
+
+  // ---------- 远端变更感知：每 5 秒 poll 版本号，发现变化自动刷新 ----------
+  // 仅在非编辑态启用——编辑时暂停，避免打断用户或触发版本冲突
+  const versionPollRef = useRef(null);
+  useEffect(() => {
+    if (!industryId || files.length === 0 || editing) return;
+    const snap = new Map(files.map((f) => [f.id, f.version]));
+    versionPollRef.current = setInterval(async () => {
+      try {
+        const r = await yamlApi.listYamlConfigs(industryId);
+        const remoteList = r.data || [];
+        let changed = false;
+        for (const rf of remoteList) {
+          const localV = snap.get(rf.id);
+          if (localV != null && rf.version !== localV) { changed = true; break; }
+        }
+        // 新文件加入 或 文件被删除也算变更
+        if (!changed && remoteList.length !== snap.size) changed = true;
+        if (changed) {
+          // 更新快照到最新，避免下一轮重复触发
+          snap.clear();
+          remoteList.forEach((f) => snap.set(f.id, f.version));
+          notify("检测到远端有变更，已自动刷新", "ok");
+          refreshAll();
+        }
+      } catch { /* poll 静默失败，等下一轮 */ }
+    }, 3000);
+    return () => clearInterval(versionPollRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [industryId, files.length, editing]);
 
   // ---------- 滚动同步（textarea 驱动高亮层） ----------
   const syncScroll = useCallback(() => {
@@ -566,8 +617,9 @@ export default function YamlConfigPage() {
   };
 
   const handleCreate = () => {
-    const nm = newName.trim();
-    if (!nm || (!nm.endsWith(".yml") && !nm.endsWith(".yaml"))) { notify("文件名需以 .yml / .yaml 结尾", "err"); return; }
+    let nm = newName.trim();
+    if (!nm) nm = "deploy_config.yml";
+    else if (!nm.endsWith(".yml") && !nm.endsWith(".yaml")) nm += ".yml";
     yamlApi.createYamlConfig({ industry_id: Number(industryId), name: nm, content: `# ${nm} 新建占位\nhosts: []\n` })
       .then((r) => {
         setShowNew(false); setNewName("");
@@ -653,18 +705,23 @@ export default function YamlConfigPage() {
     return () => clearTimeout(t);
   }, [armApply]);
 
-  const genTokens = () => {
-    if (!active) return;
+  const genTokens = async (silent = false) => {
+    if (!active) return null;
     setBusy(true);
     setBusyTag("token");
-    yamlApi.createYamlPushToken(active.id, "apply")
-      .then((ap) => {
-        setBusy(false);
-        setBusyTag("");
-        setPushTokens({ apply: ap.data.token, expires_at: ap.data.expires_at });
-        notify("一次性 Token 已生成（单次使用，30 分钟过期）", "ok");
-      })
-      .catch(() => { setBusy(false); setBusyTag(""); notify("生成 Token 失败", "err"); });
+    try {
+      const ap = await yamlApi.createYamlPushToken(active.id, "apply");
+      const tokens = { apply: ap.data.token, expires_at: ap.data.expires_at };
+      setPushTokens(tokens);
+      if (!silent) notify("一次性 Token 已生成（单次使用，30 分钟过期）", "ok");
+      return tokens;
+    } catch {
+      if (!silent) notify("生成 Token 失败", "err");
+      return null;
+    } finally {
+      setBusy(false);
+      setBusyTag("");
+    }
   };
 
   const doRollback = () => {
@@ -695,7 +752,7 @@ export default function YamlConfigPage() {
         okText="创建"
         cancelText="取消"
       >
-        <p style={{ fontSize: 12.5, color: "var(--text-sec)", marginBottom: 8 }}>文件名（以 .yml / .yaml 结尾），归属当前行业。</p>
+        <p style={{ fontSize: 12.5, color: "var(--text-sec)", marginBottom: 8 }}>文件名（留空默认 deploy_config.yml），归属当前行业。</p>
         <Input
           placeholder="deploy_config.yml"
           value={newName}
@@ -709,8 +766,8 @@ export default function YamlConfigPage() {
       <Modal
         title={verModal ? `v${verModal.version} · ${verModal.note || "快照"} · ${fmtTime(verModal.created_at)}${verModal.created_by ? ` · ${verModal.created_by}` : ""}` : ""}
         open={!!verModal}
-        onCancel={() => setVerModal(null)}
-        width={760}
+        onCancel={() => { setVerModal(null); setVerModalTab("diff"); }}
+        width={820}
         footer={
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
             <button className="yt-btn" onClick={() => setVerModal(null)}>关闭</button>
@@ -720,10 +777,198 @@ export default function YamlConfigPage() {
           </div>
         }
       >
-        <pre className="mono" style={{ maxHeight: 440, overflowY: "auto", margin: 0, padding: "10px 12px", background: "var(--bg-deep2)", border: "1px solid var(--border-soft)", borderRadius: 6, fontSize: 11.5, lineHeight: 1.6, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
-          {verModal ? verModal.content : ""}
-        </pre>
+        {verModal && (
+          <>
+            {/* 子 tab：变更对比 vs 完整原文 */}
+            {!verModal.is_first && verModal.line_diff && verModal.line_diff.length > 0 ? (
+              <div className="vm-tabs">
+                <span className={`vm-tab${verModalTab === "diff" ? " on" : ""}`} onClick={() => setVerModalTab("diff")}>变更对比</span>
+                <span className={`vm-tab${verModalTab === "content" ? " on" : ""}`} onClick={() => setVerModalTab("content")}>完整原文</span>
+              </div>
+            ) : (
+              <div style={{ fontSize: 12, color: "var(--text-ter)", marginBottom: 8 }}>
+                {verModal.is_first ? "初始版本（前序版本不存在）" : "内容无变化"}
+              </div>
+            )}
+            {(verModal.is_first || verModalTab === "content" || !verModal.line_diff?.length) ? (
+              <pre className="mono vm-pre">{verModal.content}</pre>
+            ) : (
+              <div className="vm-diff" ref={diffRef}>
+                {(() => {
+                  // 预处理：把连续 keep 行标记为可折叠，保留变更前后各 2 行作为上下文
+                  const KEEP_CONTEXT = 2;
+                  const raw = verModal.line_diff;
+                  // 先把所有行展平成带 chunk.type 的行列表
+                  const flat = [];
+                  let ai = 0, bi = 0;
+                  raw.forEach((chunk, ci) => {
+                    for (const rawLine of chunk.lines) {
+                      const line = rawLine.endsWith("\n") ? rawLine.slice(0, -1) : rawLine;
+                      let meta;
+                      if (chunk.type === "add")       meta = { a: "", b: ++bi, marker: "+", cls: "ld-add", type: "add" };
+                      else if (chunk.type === "del")  meta = { a: ++ai, b: "", marker: "-", cls: "ld-del", type: "del" };
+                      else                            meta = { a: ++ai, b: ++bi, marker: " ", cls: "ld-keep", type: "keep" };
+                      flat.push({ line, meta });
+                    }
+                  });
+                  // 标记哪些 keep 行保留（变更行前后 KEEP_CONTEXT 行）
+                  const isChange = flat.map((f) => f.meta.type !== "keep");
+                  const keepKeep = new Set();
+                  for (let i = 0; i < flat.length; i++) {
+                    if (isChange[i]) {
+                      for (let k = Math.max(0, i - KEEP_CONTEXT); k <= Math.min(flat.length - 1, i + KEEP_CONTEXT); k++) {
+                        keepKeep.add(k);
+                      }
+                    }
+                  }
+                  // 渲染：跳过被折叠的 keep，连续折叠区间显示一个分隔条
+                  const out = [];
+                  let skipRun = 0;
+                  flat.forEach((f, i) => {
+                    if (f.meta.type === "keep" && !keepKeep.has(i)) {
+                      skipRun++;
+                      return;
+                    }
+                    if (skipRun > 0) {
+                      out.push(<div key={`skip-${i}`} className="ld-skip">⋯ {skipRun} 行未变</div>);
+                      skipRun = 0;
+                    }
+                    out.push(
+                      <div key={i} className={`ld-line ${f.meta.cls}`}>
+                        <span className="ld-a">{f.meta.a}</span>
+                        <span className="ld-b">{f.meta.b}</span>
+                        <span className="ld-m">{f.meta.marker}</span>
+                        <span className="ld-txt">{f.line || " "}</span>
+                      </div>
+                    );
+                  });
+                  if (skipRun > 0) {
+                    out.push(<div key="skip-end" className="ld-skip">⋯ {skipRun} 行未变（文件末尾）</div>);
+                  }
+                  return out;
+                })()}
+              </div>
+            )}
+          </>
+        )}
       </Modal>
+
+      {/* 版本 hover 变更摘要卡片 */}
+      {verTooltip && !verModal && (
+        <div
+          className="vt-card"
+          style={{
+            position: "fixed", left: verTooltip.x, top: verTooltip.y, zIndex: 2000,
+            maxWidth: 360, pointerEvents: "none",
+          }}
+        >
+          <div className="vt-head">
+            <b>v{verTooltip.v.version}</b>
+            {verTooltip.v.is_first
+              ? <span className="vt-sub">初始版本</span>
+              : <span className="vt-sub">
+                  与 v{verTooltip.v.version - 1} 对比 · {verTooltip.v.diff_preview_total} 处变更
+                </span>}
+          </div>
+          {!verTooltip.v.is_first && (
+            <>
+              {(() => {
+                const dc = verTooltip.v.diff_counts || {};
+                return (dc.new || dc.replace || dc.delete) ? (
+                  <div className="vt-chips">
+                    {dc.new > 0 && <span className="vd-tag new">+{dc.new} 新增</span>}
+                    {dc.replace > 0 && <span className="vd-tag rep">{dc.replace} 修改</span>}
+                    {dc.delete > 0 && <span className="vd-tag del">-{dc.delete} 删除</span>}
+                  </div>
+                ) : <div className="vt-nochange">内容无变化</div>;
+              })()}
+              {verTooltip.v.diff_preview?.length > 0 && (
+                <div className="vt-list">
+                  {verTooltip.v.diff_preview.map((p, i) => (
+                    <div key={i} className={`vt-item vt-${p.action}`}>
+                      <span className={`vt-act vt-${p.action}`}>{ACT_CN[p.action]}</span>
+                      <span className="vt-path">{p.path}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {verTooltip.v.diff_preview_total > (verTooltip.v.diff_preview?.length || 0) && (
+                <div className="vt-more">…还有 {verTooltip.v.diff_preview_total - verTooltip.v.diff_preview.length} 处变更，点击查看完整 diff</div>
+              )}
+              {verTooltip.v.line_diff?.some((c) => c.type !== "keep") && (
+                <div className="vt-snippet">
+                  {(() => {
+                    let shown = 0;
+                    return verTooltip.v.line_diff
+                      .filter((c) => c.type !== "keep")
+                      .slice(0, 3)
+                      .map((chunk, ci) => (
+                        <div key={ci} className={`vt-snip vt-snip-${chunk.type}`}>
+                          {chunk.lines.slice(0, 2).map((l, li) => (
+                            <div key={li} className="vt-snip-line">{l.endsWith("\n") ? l.slice(0, -1) : l}</div>
+                          ))}
+                          {chunk.lines.length > 2 && <div className="vt-snip-more">…共 {chunk.lines.length} 行</div>}
+                        </div>
+                      ));
+                  })()}
+                </div>
+              )}
+            </>
+          )}
+          <div className="vt-foot">点击打开弹窗查看完整对比与原文</div>
+        </div>
+      )}
+
+      {/* 变更 chip hover tooltip：只显示该 action 的变更清单 + 对应 diff 片段 */}
+      {chipTooltip && !verModal && (
+        <div
+          className="vt-card"
+          style={{ position: "fixed", left: chipTooltip.x, top: chipTooltip.y, zIndex: 2001, maxWidth: 340, pointerEvents: "none" }}
+        >
+          <div className="vt-head">
+            <b>v{chipTooltip.v.version}</b>
+            <span className={`vd-tag ${chipTooltip.action === "new" ? "new" : chipTooltip.action === "delete" ? "del" : "rep"}`} style={{ marginLeft: 4 }}>
+              {ACT_CN[chipTooltip.action]}
+            </span>
+          </div>
+          {(() => {
+            const list = (chipTooltip.v.diff_preview || []).filter((p) => p.action === chipTooltip.action);
+            return list.length > 0 ? (
+              <div className="vt-list">
+                {list.map((p, i) => (
+                  <div key={i} className={`vt-item vt-${p.action}`}>
+                    <span className={`vt-act vt-${p.action}`}>{ACT_CN[p.action]}</span>
+                    <span className="vt-path">{p.path}</span>
+                  </div>
+                ))}
+              </div>
+            ) : <div className="vt-nochange">路径摘要未捕获（可点开弹窗看详细 diff）</div>;
+          })()}
+          {(() => {
+            // 从 line_diff 里只挑对应类型的 chunk 显示片段
+            const chunkType = chipTooltip.action === "new" ? "add" : chipTooltip.action === "delete" ? "del" : "keep";
+            // 注意：replace 在 line_diff 里被拆成 del+add，所以 chipTooltip.action==="replace" 时我们显示所有 add+del
+            const chunks = (chipTooltip.v.line_diff || []).filter((c) => {
+              if (chipTooltip.action === "replace") return c.type !== "keep";
+              return c.type === chunkType;
+            }).slice(0, 2);
+            if (chunks.length === 0) return null;
+            return (
+              <div className="vt-snippet">
+                {chunks.map((chunk, ci) => (
+                  <div key={ci} className={`vt-snip vt-snip-${chunk.type}`}>
+                    {chunk.lines.slice(0, 3).map((l, li) => (
+                      <div key={li} className="vt-snip-line">{l.endsWith("\n") ? l.slice(0, -1) : l}</div>
+                    ))}
+                    {chunk.lines.length > 3 && <div className="vt-snip-more">…共 {chunk.lines.length} 行</div>}
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+          <div className="vt-foot">点击版本行可打开完整 diff 对比</div>
+        </div>
+      )}
     </>
   );
 
@@ -744,7 +989,7 @@ export default function YamlConfigPage() {
     return (
       <div className="yaml-root">
         <div className="yaml-toolbar">
-          <span className="yt-back" onClick={() => navigate("/")}>← 行业管理</span>
+          <span className="yt-back" onClick={() => navigate("/?mode=yml")}>← 行业管理</span>
           <span className="yt-brand"><span className="y-dot" />YAML 配置工作台</span>
         </div>
         <div className="empty-hint" style={{ padding: 60, textAlign: "center" }}>
@@ -765,10 +1010,19 @@ export default function YamlConfigPage() {
   }
 
   const base = publicBase || "http://localhost:8001";
-  const pushCmd = `curl -X POST "${base}/api/yaml-configs/${active.id}/push" \\
-  -H "Authorization: Bearer ${pushTokens?.apply || "<TOKEN>"}" \\
+  const buildPushCmd = (token) => `curl -X POST "${base}/api/yaml-configs/${active.id}/push" \\
+  -H "Authorization: Bearer ${token || "<TOKEN>"}" \\
   -F "file=@./${active.name}"`;
-  const copyCmd = (cmd, label) => {
+  const pushCmd = buildPushCmd(pushTokens?.apply);
+  const copyCmd = async (label) => {
+    let token = pushTokens?.apply;
+    if (!token) {
+      // 无 token 时自动生成（静默模式，不弹额外提示）
+      const tokens = await genTokens(true);
+      if (!tokens) { notify("生成 Token 失败，无法复制命令", "err"); return; }
+      token = tokens.apply;
+    }
+    const cmd = buildPushCmd(token);
     navigator.clipboard?.writeText(cmd)
       .then(() => notify(`${label} 命令已复制`))
       .catch(() => notify("复制失败", "err"));
@@ -801,7 +1055,7 @@ export default function YamlConfigPage() {
     <div className="yaml-root">
       {/* ===== 顶栏 ===== */}
       <div className="yaml-toolbar">
-        <span className="yt-back" onClick={() => navigate("/")}>← 行业管理</span>
+        <span className="yt-back" onClick={() => navigate("/?mode=yml")}>← 行业管理</span>
         <span className="yt-sep" />
         <span className="yt-brand">
           <span className="y-dot" />
@@ -971,15 +1225,90 @@ export default function YamlConfigPage() {
 
             {tab === "versions" && (
               <>
-                <p className="ytree-desc">点击查看全文，可回滚生成新版本（保留审计轨迹）</p>
+                <p className="ytree-desc">点击查看全文 / 对比上一版（保留审计轨迹）</p>
                 {versions.length === 0 && <div className="empty-hint">暂无版本快照</div>}
-                {versions.map((v) => (
-                  <div key={v.version} className={`ver-row${v.version === active.version ? " current" : ""}`} onClick={() => setVerModal(v)}>
-                    <span className="v-badge">v{v.version}</span>
-                    <span className="v-note">{v.note || "快照"}</span>
-                    <span className="v-meta">{fmtTime(v.created_at)}<br />{v.created_by || "—"}</span>
-                  </div>
-                ))}
+                {versions.map((v) => {
+                  const dc = v.diff_counts || {};
+                  const totalChange = (dc.new || 0) + (dc.replace || 0) + (dc.delete || 0);
+                  const preview = v.diff_preview || [];
+                  return (
+                    <div
+                      key={v.version}
+                      className={`ver-row${v.version === active.version ? " current" : ""}`}
+                      onClick={() => setVerModal(v)}
+                      onMouseEnter={(e) => {
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        // 优先显示在左边；左边空间不够则 fallback 到右边
+                        const cardW = 380;
+                        const x = rect.left > cardW + 20 ? rect.left - cardW - 8 : rect.right + 8;
+                        setVerTooltip({ v, x, y: rect.top });
+                      }}
+                      onMouseLeave={() => setVerTooltip(null)}
+                    >
+                      <span className="v-badge">v{v.version}</span>
+                      <span className="v-note">{v.note || "快照"}</span>
+                      <span className="v-diff">
+                        {v.is_first ? (
+                          <span className="vd-tag init">初始版本</span>
+                        ) : totalChange === 0 ? (
+                          <span className="vd-tag none">内容无变化</span>
+                        ) : (
+                          <>
+                            {dc.new > 0 && (
+                              <span
+                                className="vd-tag new"
+                                onMouseEnter={(e) => {
+                                  e.stopPropagation();
+                                  const rect = e.currentTarget.getBoundingClientRect();
+                                  const cardW = 350;
+                                  const x = rect.left > cardW + 20 ? rect.left - cardW - 6 : rect.right + 6;
+                                  setChipTooltip({ v, action: "new", x, y: rect.top });
+                                  setVerTooltip(null);
+                                }}
+                                onMouseLeave={() => setChipTooltip(null)}
+                              >+{dc.new} 新增</span>
+                            )}
+                            {dc.replace > 0 && (
+                              <span
+                                className="vd-tag rep"
+                                onMouseEnter={(e) => {
+                                  e.stopPropagation();
+                                  const rect = e.currentTarget.getBoundingClientRect();
+                                  const cardW = 350;
+                                  const x = rect.left > cardW + 20 ? rect.left - cardW - 6 : rect.right + 6;
+                                  setChipTooltip({ v, action: "replace", x, y: rect.top });
+                                  setVerTooltip(null);
+                                }}
+                                onMouseLeave={() => setChipTooltip(null)}
+                              >{dc.replace} 修改</span>
+                            )}
+                            {dc.delete > 0 && (
+                              <span
+                                className="vd-tag del"
+                                onMouseEnter={(e) => {
+                                  e.stopPropagation();
+                                  const rect = e.currentTarget.getBoundingClientRect();
+                                  const cardW = 350;
+                                  const x = rect.left > cardW + 20 ? rect.left - cardW - 6 : rect.right + 6;
+                                  setChipTooltip({ v, action: "delete", x, y: rect.top });
+                                  setVerTooltip(null);
+                                }}
+                                onMouseLeave={() => setChipTooltip(null)}
+                              >-{dc.delete} 删除</span>
+                            )}
+                            {preview.length > 0 && (
+                              <span className="vd-preview">
+                                {preview.map((p) => p.path).join("，")}
+                                {(v.diff_preview_total || preview.length) > preview.length ? "…" : ""}
+                              </span>
+                            )}
+                          </>
+                        )}
+                      </span>
+                      <span className="v-meta">{fmtTime(v.created_at)}<br />{v.created_by || "—"}</span>
+                    </div>
+                  );
+                })}
               </>
             )}
           </div>
@@ -1101,7 +1430,7 @@ export default function YamlConfigPage() {
                     )}
                     <div className="cmd-card">
                       <div className="c-head"><span className="st">push</span>一步推送 · 校验 + 比对 + 提交
-                        <span className="copy" onClick={() => copyCmd(pushCmd, "推送")}>复制</span></div>
+                        <span className="copy" onClick={() => copyCmd("推送")}>复制</span></div>
                       <pre>{pushCmd}</pre>
                     </div>
                   </>

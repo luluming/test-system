@@ -655,15 +655,20 @@ def _get_push_task(db: Session, config_id: int, task_id: int) -> NginxPushTask:
     return row
 
 
-def _resolve_push_actor(db: Session, config_id: int, purpose: str, authorization: str | None) -> str:
-    """推送接口认证：优先 JWT 用户名；否则校验一次性 token（匹配 config+purpose、未用、未过期），
-    使用后立即标记消耗。均失败抛 401。"""
+def _resolve_push_actor(
+    db: Session, config_id: int, purpose: str, authorization: str | None
+) -> tuple[str, NginxPushToken | None]:
+    """推送接口认证：优先 JWT 用户名；否则校验一次性 token（匹配 config+purpose、未用、未过期）。
+
+    只做验证，不消耗 token；消耗延迟到操作成功后由调用方执行。
+    返回 (actor_str, token_row_or_None)，后者为 None 表示走 JWT 认证。
+    均失败抛 401。"""
     if not authorization or not authorization.lower().startswith("bearer "):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="缺少认证信息")
     raw = authorization.split(" ", 1)[1].strip()
     try:
         payload = decode_token(raw)
-        return f"user:{payload.get('sub', '')}"
+        return f"user:{payload.get('sub', '')}", None
     except Exception:  # noqa: BLE001 非 JWT → 尝试一次性 token
         pass
     row = db.execute(
@@ -684,9 +689,15 @@ def _resolve_push_actor(db: Session, config_id: int, purpose: str, authorization
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="一次性 token 已过期（签发后 30 分钟有效），请在推送弹窗重新生成",
         )
+    return f"pushtoken:{row.id}", row
+
+
+def _consume_push_token(db: Session, row: NginxPushToken | None) -> None:
+    """一次性 token 延迟消耗：仅当业务操作成功后标记 used_at 并 commit。"""
+    if row is None:
+        return
     row.used_at = datetime.utcnow()
     db.commit()
-    return f"pushtoken:{row.id}"
 
 
 @config_tree_router.post("/{config_id}/push-tokens")
@@ -763,7 +774,7 @@ def push_preview(
     - 有变更（替换/新建）：落一条 pending 任务，返回 task_id + 可直接执行的 apply 命令；
     - 无变更（文件与线上一致）：不落任务，返回 changed=false 提示「无变更点」。
     认证支持 JWT 或一次性 preview token（使用即消耗）。"""
-    actor = _resolve_push_actor(db, config_id, "preview", authorization)
+    actor, token_row = _resolve_push_actor(db, config_id, "preview", authorization)
     text = _decode_upload(file)
     _root, entries, counts = _parse_and_diff(db, config_id, text)
     if counts["replace"] == 0 and counts["new"] == 0:
@@ -784,6 +795,7 @@ def push_preview(
     )
     db.add(task)
     db.commit()
+    _consume_push_token(db, token_row)  # ← 仅 preview 成功落库后消耗
     db.refresh(task)
     base = str(request.base_url).rstrip("/") if request else ""
     apply_cmd = (
@@ -879,7 +891,7 @@ def push_direct(
     认证支持 JWT 或一次性 apply token（使用即消耗）。
     文件与线上完全一致时返回 changed=false，不落任务。
     """
-    actor = _resolve_push_actor(db, config_id, "apply", authorization)
+    actor, token_row = _resolve_push_actor(db, config_id, "apply", authorization)
     text = _decode_upload(file)
     _root, entries, counts = _parse_and_diff(db, config_id, text)
     if counts["replace"] == 0 and counts["new"] == 0:
@@ -901,6 +913,7 @@ def push_direct(
     db.commit()
     db.refresh(task)
     result = _apply_pending_task(db, config_id, task.id)
+    _consume_push_token(db, token_row)  # ← 仅 apply 成功后消耗
     result["changed"] = True
     result["counts"] = counts
     result["message"] = (
@@ -928,8 +941,10 @@ def push_apply(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="task_id 必须是预览返回的任务号（数字）；请把 URL 里的 <task_id> 占位符替换为实际任务号（如 5）",
         )
-    _resolve_push_actor(db, config_id, "apply", authorization)
-    return _apply_pending_task(db, config_id, task_id)
+    _actor, token_row = _resolve_push_actor(db, config_id, "apply", authorization)
+    result = _apply_pending_task(db, config_id, task_id)
+    _consume_push_token(db, token_row)  # ← 仅 apply 成功后消耗
+    return result
 
 
 @config_tree_router.get("/{config_id}/push-tasks")

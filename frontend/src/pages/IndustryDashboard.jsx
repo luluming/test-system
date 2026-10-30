@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Modal } from "antd";
 import { deleteIndustry, listIndustries } from "../api/industry";
 import { listConfigsByIndustry } from "../api/nginx";
@@ -21,7 +21,17 @@ export default function IndustryDashboard() {
   const [delTarget, setDelTarget] = useState(null);
   const [error, setError] = useState("");
   // 工作台类型选择：进入 Nginx 行业管理 或 YML 行业管理
-  const [mode, setMode] = useState("nginx");
+  // 模式持久化在 URL 的 ?mode= 上，从行业详情返回时能保持在同一菜单
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [mode, setMode] = useState(() => (searchParams.get("mode") === "yml" ? "yml" : "nginx"));
+
+  // 切换模式并同步到 URL，保证返回/刷新后仍停留在该菜单
+  const switchMode = (next) => {
+    setMode(next);
+    const p = new URLSearchParams(searchParams);
+    if (next === "yml") p.set("mode", "yml"); else p.delete("mode");
+    setSearchParams(p, { replace: true });
+  };
   const [toast, setToast] = useState("");
 
   const load = useCallback(async (curMode) => {
@@ -128,7 +138,7 @@ export default function IndustryDashboard() {
       <div className="mode-switch">
         <div
           className={`mode-card${mode === "nginx" ? " on" : ""}`}
-          onClick={() => setMode("nginx")}
+          onClick={() => switchMode("nginx")}
         >
           <span className="m-ico">◈</span>
           <div>
@@ -138,7 +148,7 @@ export default function IndustryDashboard() {
         </div>
         <div
           className={`mode-card yml${mode === "yml" ? " on" : ""}`}
-          onClick={() => setMode("yml")}
+          onClick={() => switchMode("yml")}
         >
           <span className="m-ico">🟨</span>
           <div>

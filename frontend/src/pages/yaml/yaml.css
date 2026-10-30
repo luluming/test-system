@@ -236,10 +236,110 @@
 }
 .ver-row:hover { border-color: var(--brand-border); background: var(--bg-hover); }
 .ver-row.current { border-color: var(--brand); background: var(--brand-light); }
-.ver-row .v-badge { font-family: var(--mono); font-size: 11px; font-weight: 700; background: var(--bg-surface3); padding: 2px 8px; border-radius: 6px; }
+.ver-row .v-badge { font-family: var(--mono); font-size: 11px; font-weight: 700; background: var(--bg-surface3); padding: 2px 8px; border-radius: 6px; flex: none; }
 .ver-row.current .v-badge { background: var(--brand); color: #fff; }
-.ver-row .v-note { font-size: 11.5px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-sec); }
-.ver-row .v-meta { font-size: 10px; color: var(--text-ter); text-align: right; font-family: var(--mono); white-space: nowrap; }
+.ver-row .v-note { font-size: 11.5px; color: var(--text-sec); flex: none; white-space: nowrap; }
+.ver-row .v-diff {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px;
+  overflow: hidden; font-size: 10.5px;
+}
+.ver-row .v-diff .vd-tag {
+  font-family: var(--mono); font-size: 10px; padding: 1px 6px; border-radius: 4px;
+  white-space: nowrap; flex: none;
+}
+.ver-row .v-diff .vd-tag.new  { background: rgba(34,197,94,.12);  color: var(--success); }
+.ver-row .v-diff .vd-tag.rep  { background: rgba(251,191,36,.14);  color: var(--warning); }
+.ver-row .v-diff .vd-tag.del  { background: rgba(239,68,68,.12);   color: var(--error); }
+.ver-row .v-diff .vd-tag.init { background: var(--bg-surface3);     color: var(--text-ter); }
+.ver-row .v-diff .vd-tag.none { background: var(--bg-surface3);     color: var(--text-ter); }
+.ver-row .v-diff .vd-preview {
+  flex: 1; min-width: 0; color: var(--text-ter);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: var(--mono); font-size: 10px;
+}
+.ver-row .v-meta { font-size: 10px; color: var(--text-ter); text-align: right; font-family: var(--mono); white-space: nowrap; flex: none; }
+
+/* ---------------- 版本弹窗：tab + diff 视图 ---------------- */
+.vm-tabs { display: flex; gap: 2px; margin-bottom: 10px; border-bottom: 1px solid var(--border-soft); }
+.vm-tab {
+  font-size: 12px; padding: 6px 12px; cursor: pointer; color: var(--text-sec);
+  border-bottom: 2px solid transparent; transition: all .15s var(--ease);
+}
+.vm-tab.on { color: var(--brand); border-bottom-color: var(--brand); }
+.vm-pre {
+  max-height: 480px; overflow-y: auto; margin: 0; padding: 10px 12px;
+  background: var(--bg-deep2); border: 1px solid var(--border-soft); border-radius: 6;
+  font-family: var(--mono); font-size: 11.5px; line-height: 1.55;
+  white-space: pre-wrap; word-break: break-all;
+}
+/* unified diff：左旧右新行号 + +/- marker + 行高亮 */
+.vm-diff {
+  max-height: 480px; overflow: auto; border-radius: 6; overflow-x: hidden;
+  border: 1px solid var(--border-soft); background: var(--bg-deep2);
+}
+.ld-line {
+  display: grid; grid-template-columns: 44px 44px 22px 1fr;
+  font-family: var(--mono); font-size: 11.5px; line-height: 1.55;
+  border-bottom: 1px solid rgba(255,255,255,.03);
+}
+.ld-a, .ld-b {
+  color: var(--text-ter); text-align: right; padding-right: 6px;
+  background: rgba(0,0,0,.15); border-right: 1px solid rgba(255,255,255,.04);
+}
+.ld-a { grid-column: 1; }
+.ld-b { grid-column: 2; }
+.ld-m {
+  grid-column: 3; text-align: center;
+  border-right: 1px solid rgba(255,255,255,.04);
+}
+.ld-txt { grid-column: 4; padding: 0 10px; white-space: pre-wrap; word-break: break-all; }
+.ld-add .ld-txt { background: rgba(34,197,94,.10); color: var(--success); }
+.ld-add .ld-m   { background: rgba(34,197,94,.18); color: var(--success); }
+.ld-del .ld-txt { background: rgba(239,68,68,.10);  color: var(--error); }
+.ld-del .ld-m   { background: rgba(239,68,68,.18);  color: var(--error); }
+.ld-add .ld-b, .ld-del .ld-a { background: rgba(0,0,0,.18); }
+.ld-add .ld-a { color: rgba(255,255,255,.18); }  /* add：左行号空槽 */
+.ld-del .ld-b { color: rgba(255,255,255,.18); }  /* del：右行号空槽 */
+.ld-skip {
+  font-family: var(--mono); font-size: 10.5px;
+  color: var(--text-ter); text-align: center;
+  padding: 3px 0; margin: 2px 0;
+  background: rgba(120,120,120,.06);
+  border-top: 1px dashed rgba(255,255,255,.06);
+  border-bottom: 1px dashed rgba(255,255,255,.06);
+  letter-spacing: .5px;
+}
+
+/* ---------------- 版本 hover tooltip 卡片 ---------------- */
+.vt-card {
+  background: var(--bg-deep2); border: 1px solid var(--brand-border); border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.25); padding: 10px 12px;
+  font-size: 12px; line-height: 1.6;
+}
+.vt-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; }
+.vt-head b { font-size: 12.5px; }
+.vt-sub { color: var(--text-ter); font-size: 11px; }
+.vt-chips { display: flex; gap: 4px; margin-bottom: 6px; flex-wrap: wrap; }
+.vt-nochange { color: var(--text-ter); margin-bottom: 6px; font-size: 11px; }
+.vt-list { display: flex; flex-direction: column; gap: 2px; margin-bottom: 6px; max-height: 180px; overflow-y: auto; }
+.vt-item {
+  display: grid; grid-template-columns: 48px 1fr; gap: 6px;
+  font-family: var(--mono); font-size: 11px; padding: 2px 0;
+  border-bottom: 1px solid rgba(255,255,255,.03);
+}
+.vt-act { text-align: center; border-radius: 3px; padding: 0 3px; font-size: 10px; }
+.vt-act.vt-new     { background: rgba(34,197,94,.14); color: var(--success); }
+.vt-act.vt-replace { background: rgba(251,191,36,.16); color: var(--warning); }
+.vt-act.vt-delete  { background: rgba(239,68,68,.14);  color: var(--error); }
+.vt-path { color: var(--text-sec); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vt-more { color: var(--text-ter); font-size: 10.5px; margin: 2px 0; }
+.vt-snippet { margin-top: 6px; border-top: 1px dashed var(--border-soft); padding-top: 6px; }
+.vt-snip { margin-bottom: 4px; border-radius: 4px; padding: 3px 6px; font-family: var(--mono); font-size: 10.5px; }
+.vt-snip-add { background: rgba(34,197,94,.08); color: var(--success); }
+.vt-snip-del { background: rgba(239,68,68,.08);  color: var(--error); }
+.vt-snip-line { white-space: pre-wrap; word-break: break-all; }
+.vt-snip-more { color: var(--text-ter); font-size: 10px; margin-top: 2px; }
+.vt-foot { color: var(--text-ter); font-size: 10.5px; margin-top: 8px; border-top: 1px solid var(--border-soft); padding-top: 6px; }
 
 /* ---------------- 状态条 ---------------- */
 .yaml-status {

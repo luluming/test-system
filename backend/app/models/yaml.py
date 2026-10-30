@@ -15,9 +15,14 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
+from sqlalchemy.dialects.mysql import MEDIUMTEXT
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
+
+# MySQL 的 TEXT 上限 64KB，1213 行 YAML 的完整 diff JSON / 原文可能超限；
+# SQLite 无此限制，故仅对 MySQL 变体使用 MEDIUMTEXT（16MB）。
+BigText = Text().with_variant(MEDIUMTEXT(), "mysql")
 
 
 class YamlConfig(Base):
@@ -31,7 +36,7 @@ class YamlConfig(Base):
     )
     name: Mapped[str] = mapped_column(String(100), index=True, nullable=False)
     description: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    content_text: Mapped[str] = mapped_column(Text, nullable=False)
+    content_text: Mapped[str] = mapped_column(BigText, nullable=False)
     # enabled | disabled | invalid（语法异常时置 invalid，保存成功自动清除）
     status: Mapped[str] = mapped_column(String(16), default="enabled", nullable=False)
     # 乐观锁：每次成功写入自增；创建默认为 1
@@ -57,7 +62,7 @@ class YamlConfigVersion(Base):
         ForeignKey("yaml_configs.id"), index=True, nullable=False
     )
     version: Mapped[int] = mapped_column(Integer, nullable=False)
-    content: Mapped[str] = mapped_column(Text, nullable=False)
+    content: Mapped[str] = mapped_column(BigText, nullable=False)
     note: Mapped[str] = mapped_column(String(255), default="", nullable=False)
     created_by: Mapped[str | None] = mapped_column(String(50), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -85,14 +90,14 @@ class YamlPushTask(Base):
     status: Mapped[str] = mapped_column(
         String(16), default="pending", nullable=False
     )  # pending | applied | failed
-    raw_text: Mapped[str] = mapped_column(Text, nullable=False)
-    diff_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    raw_text: Mapped[str] = mapped_column(BigText, nullable=False)
+    diff_json: Mapped[str] = mapped_column(BigText, default="[]", nullable=False)
     created_by: Mapped[str | None] = mapped_column(String(50), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )
     applied_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    error_detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error_detail: Mapped[str | None] = mapped_column(BigText, nullable=True)
 
 
 class YamlPushToken(Base):

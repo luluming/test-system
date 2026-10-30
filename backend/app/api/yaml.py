@@ -4,6 +4,7 @@
 乐观版本快照），仅存储单元为通用 YAML 原文 content_text。
 """
 
+import difflib
 import hashlib
 import json
 import logging
@@ -21,7 +22,7 @@ from fastapi import (
     UploadFile,
     status,
 )
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
@@ -49,6 +50,7 @@ from app.services.yaml_push import (
     parse_tree,
     validate_yaml,
 )
+from app.seed import seed_yaml_configs
 
 logger = logging.getLogger("yaml")
 
@@ -86,20 +88,16 @@ def _snapshot(
 
 
 def _delete_config_cascade(db: Session, cfg: YamlConfig) -> None:
-    """删除配置及其全部版本/任务/令牌（无外键级联，手动按序清理）。"""
-    for row in db.execute(
-        select(YamlPushToken).where(YamlPushToken.yaml_config_id == cfg.id)
-    ).scalars().all():
-        db.delete(row)
-    for row in db.execute(
-        select(YamlPushTask).where(YamlPushTask.yaml_config_id == cfg.id)
-    ).scalars().all():
-        db.delete(row)
-    for row in db.execute(
-        select(YamlConfigVersion).where(YamlConfigVersion.yaml_config_id == cfg.id)
-    ).scalars().all():
-        db.delete(row)
-    db.delete(cfg)
+    """删除配置及其全部版本/任务/令牌（无 ORM 关系，按外键依赖顺序显式删）。
+
+    注意：必须用 SQL 级 delete 逐表顺序执行。若用 db.delete(对象) 依赖 unit-of-work
+    推断顺序，而模型上未声明 relationship，会先删父表触发外键约束 500。
+    """
+    db.execute(delete(YamlPushToken).where(YamlPushToken.yaml_config_id == cfg.id))
+    db.execute(delete(YamlPushTask).where(YamlPushTask.yaml_config_id == cfg.id))
+    db.execute(delete(YamlConfigVersion).where(YamlConfigVersion.yaml_config_id == cfg.id))
+    db.flush()
+    db.execute(delete(YamlConfig).where(YamlConfig.id == cfg.id))
 
 
 # ---- 基础 CRUD（均需登录）----
@@ -285,20 +283,69 @@ def delete_yaml_config(
 # ---- 版本快照：列表 / 回滚 ----
 
 
-@router.get("/{config_id}/versions", response_model=list[YamlConfigVersionOut])
+@router.get("/{config_id}/versions")
 def list_yaml_versions(
     config_id: int,
     db: Session = Depends(get_db),
     _current_user: User = Depends(get_current_user),
-) -> list[YamlConfigVersion]:
+) -> list[dict]:
+    """版本快照列表：附带与前一版的 diff 摘要（变更计数 + 前 5 个变更键路径）。
+
+    前端用摘要在版本卡片上做轻量标记；点击打开弹窗再看全文详情。
+    """
     _get_config(db, config_id)
-    return list(
+    versions = list(
         db.execute(
             select(YamlConfigVersion)
             .where(YamlConfigVersion.yaml_config_id == config_id)
             .order_by(YamlConfigVersion.version.desc())
         ).scalars().all()
     )
+    # 按版本号升序建 map，方便取"前一版快照"
+    prev_map = {v.version: v for v in versions}
+    out: list[dict] = []
+    for v in versions:
+        entry, counts = [], {"replace": 0, "new": 0, "delete": 0, "keep": 0}
+        prev = prev_map.get(v.version - 1)
+        line_diff: list[dict] = []  # line-level diff [{type: 'keep'|'add'|'del', text}]
+        if prev is not None:
+            try:
+                entry, counts = compute_diff(v.content, prev.content)
+            except Exception:  # noqa: BLE001 解析失败时跳过摘要，不阻断列表
+                entry, counts = [], {"replace": 0, "new": 0, "delete": 0, "keep": 0}
+            # line-level unified diff：弹窗里按行高亮变更
+            prev_lines = prev.content.splitlines(keepends=True)
+            cur_lines = v.content.splitlines(keepends=True)
+            sm = difflib.SequenceMatcher(a=prev_lines, b=cur_lines)
+            for tag, i1, i2, j1, j2 in sm.get_opcodes():
+                if tag == "equal":
+                    line_diff.append({"type": "keep", "lines": cur_lines[j1:j2]})
+                elif tag == "replace":
+                    line_diff.append({"type": "del", "lines": prev_lines[i1:i2]})
+                    line_diff.append({"type": "add", "lines": cur_lines[j1:j2]})
+                elif tag == "delete":
+                    line_diff.append({"type": "del", "lines": prev_lines[i1:i2]})
+                elif tag == "insert":
+                    line_diff.append({"type": "add", "lines": cur_lines[j1:j2]})
+        changed = [e for e in entry if e["action"] != "keep"]
+        # 截断：版本列表 hover tooltip 显示前 15 个变更键路径，弹窗可看完整 diff_preview
+        preview_top = changed[:15]
+        out.append(
+            {
+                "id": v.id,
+                "version": v.version,
+                "note": v.note,
+                "content": v.content,
+                "created_by": v.created_by,
+                "created_at": v.created_at.isoformat() if v.created_at else None,
+                "is_first": prev is None,
+                "diff_counts": counts,
+                "diff_preview": [{"path": e["path"], "action": e["action"]} for e in preview_top],
+                "diff_preview_total": len(changed),
+                "line_diff": line_diff,  # 弹窗中按行高亮
+            }
+        )
+    return out
 
 
 @router.post("/{config_id}/rollback", response_model=YamlConfigOut)
@@ -388,15 +435,20 @@ def _get_push_task(db: Session, config_id: int, task_id: int) -> YamlPushTask:
     return row
 
 
-def _resolve_push_actor(db: Session, config_id: int, purpose: str, authorization: str | None) -> str:
-    """推送接口认证：优先 JWT 用户名；否则校验一次性 token（匹配 config+purpose、未用、未过期），
-    使用后立即标记消耗。均失败抛 401。"""
+def _resolve_push_actor(
+    db: Session, config_id: int, purpose: str, authorization: str | None
+) -> tuple[str, YamlPushToken | None]:
+    """推送接口认证：优先 JWT 用户名；否则校验一次性 token（匹配 config+purpose、未用、未过期）。
+
+    只做验证，不消耗 token；消耗延迟到操作成功后由调用方执行。
+    返回 (actor_str, token_row_or_None)，后者为 None 表示走 JWT 认证。
+    均失败抛 401。"""
     if not authorization or not authorization.lower().startswith("bearer "):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="缺少认证信息")
     raw = authorization.split(" ", 1)[1].strip()
     try:
         payload = decode_token(raw)
-        return f"user:{payload.get('sub', '')}"
+        return f"user:{payload.get('sub', '')}", None
     except Exception:  # noqa: BLE001 非 JWT → 尝试一次性 token
         pass
     row = db.execute(
@@ -417,9 +469,15 @@ def _resolve_push_actor(db: Session, config_id: int, purpose: str, authorization
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="一次性 token 已过期（签发后 30 分钟有效），请在推送弹窗重新生成",
         )
+    return f"pushtoken:{row.id}", row
+
+
+def _consume_token(db: Session, row: YamlPushToken | None) -> None:
+    """一次性 token 延迟消耗：仅当业务操作成功后标记 used_at 并 commit。"""
+    if row is None:
+        return  # JWT 认证无 token 需消耗
     row.used_at = datetime.utcnow()
     db.commit()
-    return f"pushtoken:{row.id}"
 
 
 @router.post("/{config_id}/push-tokens")
@@ -482,7 +540,7 @@ def yaml_push_preview(
     - 有变更（替换/新建/删除）：落一条 pending 任务，返回 task_id + apply 命令；
     - 无变更：不落任务，返回 changed=false。
     认证支持 JWT 或一次性 preview token（使用即消耗）。"""
-    actor = _resolve_push_actor(db, config_id, "preview", authorization)
+    actor, token_row = _resolve_push_actor(db, config_id, "preview", authorization)
     raw = file.file.read()
     try:
         text = raw.decode("utf-8")
@@ -525,6 +583,7 @@ def yaml_push_preview(
     )
     db.add(task)
     db.commit()
+    _consume_token(db, token_row)  # ← 仅 preview 成功落库后消耗
     db.refresh(task)
     base = str(request.base_url).rstrip("/") if request else ""
     apply_cmd = (
@@ -616,7 +675,7 @@ def yaml_push_direct(
 
     认证支持 JWT 或一次性 apply token（使用即消耗）。文件与线上一致时返回 changed=false。
     """
-    actor = _resolve_push_actor(db, config_id, "apply", authorization)
+    actor, token_row = _resolve_push_actor(db, config_id, "apply", authorization)
     raw = file.file.read()
     try:
         text = raw.decode("utf-8")
@@ -629,7 +688,14 @@ def yaml_push_direct(
             detail={"errors": errors, "message": "YAML 语法校验未通过，文件整体拒绝，不产生任何入库副作用"},
         )
     cfg = _get_config(db, config_id)
-    entries, counts = compute_diff(text, cfg.content_text)
+    try:
+        entries, counts = compute_diff(text, cfg.content_text)
+    except Exception as e:  # noqa: BLE001 compose_yaml 可能与 validate_yaml 解析器不一致
+        logger.warning("compute_diff 失败 config_id=%s err=%s", config_id, e)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"message": f"YAML 结构解析失败：{e!s}"},
+        )
     if counts["replace"] == 0 and counts["new"] == 0 and counts["delete"] == 0:
         return {
             "ok": True,
@@ -659,7 +725,18 @@ def yaml_push_direct(
     db.add(task)
     db.commit()
     db.refresh(task)
-    result = _apply_pending_task(db, config_id, task.id, "一步推送")
+    try:
+        result = _apply_pending_task(db, config_id, task.id, "一步推送")
+    except Exception as e:  # noqa: BLE001 回滚 DB 异常 → 任务标记 failed，整体返回 500 但带明确信息
+        logger.exception("一步推送 apply 失败 config_id=%s task_id=%s", config_id, task.id)
+        task.status = "failed"
+        task.error_msg = f"apply 阶段异常：{e!s}"
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"message": f"推送应用失败（任务 #{task.id} 已标记失败）：{e!s}", "task_id": task.id},
+        )
+    _consume_token(db, token_row)  # ← 仅 apply 成功后消耗
     result["changed"] = True
     result["counts"] = counts
     result["message"] = (
@@ -686,5 +763,7 @@ def yaml_push_apply(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="task_id 必须是预览返回的任务号（数字）；请把 URL 里的 <task_id> 占位符替换为实际任务号",
         )
-    _resolve_push_actor(db, config_id, "apply", authorization)
-    return _apply_pending_task(db, config_id, task_id, payload.note or "推送提交")
+    _actor, token_row = _resolve_push_actor(db, config_id, "apply", authorization)
+    result = _apply_pending_task(db, config_id, task_id, payload.note or "推送提交")
+    _consume_token(db, token_row)  # ← 仅 apply 成功后消耗
+    return result

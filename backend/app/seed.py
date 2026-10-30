@@ -250,12 +250,17 @@ def init_db() -> None:
             )
             logger.info("已写入演示模板行业 overseas_freight + 1 条 nginx 配置（含块树）")
 
-        # YAML 演示配置：只给归属 YAML 菜单的行业补齐（幂等，仅补缺失文件）
+        # YAML 演示配置：只给归属 YAML 菜单且尚无任何 YAML 文件的行业做首次初始化。
+        # 已有文件的行业不再补齐 stage/test，避免用户主动删除后重启又被重建。
         # scope=nginx 的行业不应出现 YAML 数据，否则破坏两个菜单的数据隔离
         for ind in db.execute(
             select(Industry).where(Industry.scope.in_(["both", "yml"])).order_by(Industry.id)
         ).scalars().all():
-            seed_yaml_configs(db, ind.id)
+            has_any = db.execute(
+                select(YamlConfig.id).where(YamlConfig.industry_id == ind.id)
+            ).first()
+            if has_any is None:
+                seed_yaml_configs(db, ind.id)
 
         db.commit()
         logger.info("演示数据初始化完成")
