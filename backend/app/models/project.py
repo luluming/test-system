@@ -78,6 +78,36 @@ class ShareGrant(Base):
     )
 
 
+class ProjectAccessRequest(Base):
+    """项目访问申请：同行业项目重名时，无权限用户可向负责人申请只读访问。
+
+    审批通过后写入一条 view 共享授权，复用既有项目权限体系即时生效。
+    """
+
+    __tablename__ = "project_access_requests"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    project_id: Mapped[int] = mapped_column(
+        ForeignKey("projects.id"), index=True, nullable=False
+    )
+    requester_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id"), index=True, nullable=False
+    )
+    message: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # pending | approved | rejected
+    status: Mapped[str] = mapped_column(String(12), default="pending", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("project_id", "requester_id", name="uq_access_req_project_user"),
+    )
+
+
 class EnvVar(Base):
     """项目级环境变量键值对（不区分环境，不做模板引用）。"""
 

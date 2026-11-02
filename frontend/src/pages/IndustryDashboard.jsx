@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Modal, message } from "antd";
+import { Input, Modal, message } from "antd";
 import { deleteIndustry, listIndustries } from "../api/industry";
 import { getProjectStatsByIndustry, listProjects } from "../api/projects";
 import { getUser } from "../store/auth";
-import IndustryCloneModal from "./IndustryCloneModal";
+import IndustryFormModal from "./IndustryFormModal";
 import "./dashboard.css";
 
 // 行业管理：行业 → 项目的入口。行业只承载项目，配置归属到项目
@@ -17,8 +17,12 @@ export default function IndustryDashboard() {
   const [projStats, setProjStats] = useState({});
   const [mineCount, setMineCount] = useState(0);
   const [sharedCount, setSharedCount] = useState(0);
-  const [openClone, setOpenClone] = useState(false);
   const [error, setError] = useState("");
+  // 搜索：按行业名称 / code / 负责人快速定位
+  const [search, setSearch] = useState("");
+  // 新建 / 编辑弹窗
+  const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState(null);
 
   const load = useCallback(async () => {
     try {
@@ -61,6 +65,27 @@ export default function IndustryDashboard() {
     [projStats]
   );
 
+  // 搜索过滤：名称 / code / 负责人
+  const filtered = useMemo(() => {
+    const kw = search.trim().toLowerCase();
+    if (!kw) return industries;
+    return industries.filter(
+      (i) =>
+        i.name.toLowerCase().includes(kw) ||
+        i.code.toLowerCase().includes(kw) ||
+        (i.owner || "").toLowerCase().includes(kw)
+    );
+  }, [industries, search]);
+
+  // 行业变更后同步左侧导航
+  const notifyChanged = () => {
+    load();
+    window.dispatchEvent(new Event("industries:changed"));
+  };
+
+  const openCreate = () => { setEditing(null); setFormOpen(true); };
+  const openEdit = (ind) => { setEditing(ind); setFormOpen(true); };
+
   // 删除行业（仅 admin）：有项目时后端 409；scope=both 需依次清两侧数据后移除行业
   const removeIndustry = (ind) => {
     Modal.confirm({
@@ -78,7 +103,7 @@ export default function IndustryDashboard() {
             await deleteIndustry(ind.id, ind.scope === "yml" ? "yml" : "nginx");
           }
           message.success("行业已删除");
-          load();
+          notifyChanged();
         } catch (err) {
           const detail = err.response?.data?.detail;
           if (detail) message.error(detail);
@@ -93,10 +118,10 @@ export default function IndustryDashboard() {
       <div className="page-head">
         <div>
           <h1>行业管理</h1>
-          <p className="sub">行业下按项目隔离配置，每个项目独立维护 nginx / YML 配置与环境变量。</p>
+          <p className="sub">按行业分组快速定位项目；每个项目独立维护 nginx / YML 配置与环境变量。</p>
         </div>
         {isAdmin && (
-          <button className="btn primary" onClick={() => setOpenClone(true)}>＋ 新建行业（模板克隆）</button>
+          <button className="btn primary" onClick={openCreate}>＋ 新建行业</button>
         )}
       </div>
 
@@ -114,10 +139,30 @@ export default function IndustryDashboard() {
           <button className="btn mini" onClick={load}>重试</button>
         </p>
       )}
+
+      {/* 搜索工具条：快速定位行业 */}
+      {industries.length > 0 && (
+        <div className="tbl-toolbar">
+          <div className="search">
+            <Input
+              allowClear
+              placeholder="搜索行业名称 / code / 负责人"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          <span className="meta">
+            {search.trim() ? `匹配 ${filtered.length} / ${industries.length} 个行业` : `共 ${industries.length} 个行业`}
+          </span>
+        </div>
+      )}
+
       {industries.length === 0 && !error ? (
         <div className="empty">
-          {isAdmin ? "暂无行业，点击「新建行业（模板克隆）」创建。" : "暂无行业，请联系管理员创建。"}
+          {isAdmin ? "暂无行业，点击「新建行业」创建。" : "暂无行业，请联系管理员创建。"}
         </div>
+      ) : filtered.length === 0 ? (
+        <div className="empty">未找到与「{search}」匹配的行业。</div>
       ) : (
         <table className="ov-tbl tbl-anim clickable">
           <thead>
@@ -129,7 +174,7 @@ export default function IndustryDashboard() {
             </tr>
           </thead>
           <tbody>
-            {industries.map((ind) => (
+            {filtered.map((ind) => (
               <tr key={ind.id} onClick={() => navigate(`/industries/${ind.id}/projects`)}>
                 <td>
                   <div className="name-cell">
@@ -148,11 +193,14 @@ export default function IndustryDashboard() {
                 <td className="col-ops">
                   <button className="row-enter" onClick={(e) => { e.stopPropagation(); navigate(`/industries/${ind.id}/projects`); }}>项目列表</button>
                   {isAdmin && (
-                    <button
-                      className="row-delete"
-                      onClick={(e) => { e.stopPropagation(); removeIndustry(ind); }}
-                      title={ind.is_template ? "模板源行业禁止删除" : "删除行业"}
-                    >删除</button>
+                    <>
+                      <button className="row-edit" onClick={(e) => { e.stopPropagation(); openEdit(ind); }}>编辑</button>
+                      <button
+                        className="row-delete"
+                        onClick={(e) => { e.stopPropagation(); removeIndustry(ind); }}
+                        title={ind.is_template ? "模板源行业禁止删除" : "删除行业"}
+                      >删除</button>
+                    </>
                   )}
                 </td>
               </tr>
@@ -161,15 +209,16 @@ export default function IndustryDashboard() {
         </table>
       )}
       <p className="meta" style={{ padding: "14px 0 24px" }}>
-        提示：点击行业进入项目列表；行业下存在项目时不可删除。
+        提示：点击行业进入项目列表；行业下存在项目时不可删除；code 创建后不可变更。
       </p>
 
-      <IndustryCloneModal
+      <IndustryFormModal
+        open={formOpen}
+        mode={editing ? "edit" : "create"}
+        industry={editing}
         templates={templates}
-        open={openClone}
-        cloneScope="both"
-        onClose={() => setOpenClone(false)}
-        onCreated={() => { setOpenClone(false); load(); }}
+        onClose={() => setFormOpen(false)}
+        onSaved={notifyChanged}
       />
     </div>
   );

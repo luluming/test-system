@@ -42,14 +42,23 @@ function StatusTag({ status }) {
   );
 }
 
-function CopyBtn({ text, label }) {
+function CopyBtn({ text, label, onBeforeCopy }) {
   const ops = useOps();
-  const copy = () => {
-    navigator.clipboard?.writeText(text)
-      .then(() => ops.toast(`${label}已复制`, "ok"))
-      .catch(() => ops.toast("复制失败", "err"));
+  const [working, setWorking] = useState(false);
+  const copy = async () => {
+    try {
+      setWorking(true);
+      const finalText = typeof onBeforeCopy === "function" ? await onBeforeCopy() : text;
+      await navigator.clipboard?.writeText(finalText);
+      ops.toast(`${label}已复制`, "ok");
+    } catch (err) {
+      const msg = err?.message || "复制失败";
+      ops.toast(msg, "err");
+    } finally {
+      setWorking(false);
+    }
   };
-  return <button className="btn mini" onClick={copy}>复制</button>;
+  return <button className="btn mini" onClick={copy} disabled={working}>{working ? "生成中…" : "复制"}</button>;
 }
 
 export default function PushModal({ open, onClose }) {
@@ -160,6 +169,16 @@ export default function PushModal({ open, onClose }) {
       .catch(() => toast("记录详情加载失败", "err"));
   };
 
+  // 静默生成 token：复制命令时自动调用；不弹 toast
+  const ensureToken = async () => {
+    if (pushTokens?.apply) return pushTokens.apply;
+    if (!configId) throw new Error("缺少配置");
+    const ap = await inner.createPushToken(configId, "apply");
+    const next = { apply: ap.data.token, expires_at: ap.data.expires_at };
+    setPushTokens(next);
+    return next.apply;
+  };
+
   const originBase = `${window.location.origin}`.replace(/:\d+$/, "") || "http://localhost";
   const base = publicBase || originBase;
   const applyToken = pushTokens?.apply || "<TOKEN>";
@@ -225,23 +244,20 @@ export default function PushModal({ open, onClose }) {
             )}
 
             <div style={{ marginTop: 14, borderTop: "1px solid var(--border-soft)", paddingTop: 10 }}>
-              <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "space-between", marginBottom: 6, flexWrap: "wrap" }}>
+              <div style={{ marginBottom: 8 }}>
                 <span style={{ fontSize: 11, color: "var(--text-ter)" }}>
-                  生成命令（推送目标：{industryName} / {configName}，基址 {publicBase ? "公网地址" : "当前站点"}：{base}）
+                  生成命令（推送目标：{industryName} / {configName}，基址 {publicBase ? "公网地址" : "当前站点"}：{base}）。
+                  点击「复制」会自动签发一次性 token（单次使用，30 分钟有效）。
                 </span>
-                <button className="btn mini primary" onClick={genTokens} disabled={busy || !configId}>
-                  {busy ? "生成中…" : (pushTokens ? "重新生成 Token" : "生成推送 Token")}
-                </button>
               </div>
-              {pushTokens && (
-                <div style={{ fontSize: 10, color: "var(--warn)", marginBottom: 6 }}>
-                  token 单次使用，{new Date(pushTokens.expires_at).toLocaleString("zh-CN", { hour12: false })} 前有效；再次点击会作废旧 token 并重新签发。
-                </div>
-              )}
               <div style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 6 }}>
                 <span style={{ fontSize: 11, color: "var(--text-sec)", paddingTop: 2 }}>curl</span>
                 <pre className="mono" style={{ flex: 1, margin: 0, padding: "6px 10px", background: "var(--bg-deep2)", border: "1px solid var(--border-soft)", borderRadius: 6, fontSize: 11, lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{curlCmd}</pre>
-                <CopyBtn text={curlCmd} label="curl 命令" />
+                <CopyBtn label="curl 命令" onBeforeCopy={async () => {
+                  const t = await ensureToken();
+                  // 替换 curlCmd 中 Authorization: Bearer 后面引号内的 token（无论是 <TOKEN> 占位还是旧 token）
+                  return curlCmd.replace(/Authorization: Bearer [^"]+/, `Authorization: Bearer ${t}`);
+                }} />
               </div>
               <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
                 <span style={{ fontSize: 11, color: "var(--text-sec)", paddingTop: 2 }}>CLI</span>

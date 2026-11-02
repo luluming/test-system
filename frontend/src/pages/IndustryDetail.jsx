@@ -2,19 +2,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Modal } from "antd";
 import { useNavigate, useParams } from "react-router-dom";
 import { getProject } from "../api/projects";
-import { listConfigsByProject, createNginxConfig } from "../api/nginx";
+import { listConfigsByProject, createNginxConfig, deleteNginxConfig } from "../api/nginx";
 import { getConfigTree, deleteBlock, mirrorBlock, listMirrorPairs, createMirrorPair, deleteMirrorPair, reorderBlocks } from "../api/nginxInner";
 import { OpsContext } from "./ops/OpsContext";
+import ProjectNav from "../components/ProjectNav";
 import "./ops/ops.css";
 import "./dashboard.css";
 
 import * as lib from "../lib/nginx-inner";
 
 import BlockPage, { AddBlockModal } from "./ops/BlockPage";
-
-const VIEWS = [
-  { key: "block", label: "块管理", icon: "📁" },
-];
 
 /* 行内悬停操作浮层：排序（监听点 ▲▼） / 删除 */
 function SideItem({ node, off, active, onSelect, onMove, onDelete, mirror }) {
@@ -63,7 +60,6 @@ export default function IndustryDetail() {
   const [project, setProject] = useState(null);
   const [configs, setConfigs] = useState([]);
   const [configId, setConfigId] = useState(null);
-  const [view, setView] = useState("block");
   const [ctx, setCtxState] = useState("conf");
   const [tree, setTreeState] = useState([]);
   const [stats, setStats] = useState(null);
@@ -252,6 +248,48 @@ export default function IndustryDetail() {
       .catch((e) => toast("创建失败：" + (e.response?.data?.detail || "未知错误"), "err"));
   };
 
+  // 切换配置文件（.stream 文件同步切换上下文）
+  const selectConfig = (id) => {
+    const cfg = configs.find((x) => x.id === id);
+    if (!cfg) return;
+    setConfigId(id);
+    setCtxState(cfg.name.includes(".stream") ? "stream" : "conf");
+  };
+
+  // 删除整个 nginx 配置文件：块/配置项/版本/镜像对/推送记录由后端一并清理
+  const handleDeleteCfg = () => {
+    const cfg = configs.find((x) => x.id === configId);
+    if (!cfg) return;
+    Modal.confirm({
+      title: `删除配置文件「${cfg.name}」？`,
+      content: "该文件下的所有配置块、版本快照与推送记录将一并删除，且不可恢复。",
+      okText: "删除",
+      okType: "danger",
+      cancelText: "取消",
+      onOk: async () => {
+        try {
+          await deleteNginxConfig(cfg.id);
+          toast(`已删除配置文件 ${cfg.name}`, "ok");
+          const res = await listConfigsByProject(project.industry_id, pid);
+          const left = res.data || [];
+          setConfigs(left);
+          const next = left[0];
+          setConfigId(next?.id ?? null);
+          setCtxState(next && next.name.includes(".stream") ? "stream" : "conf");
+          if (!left.length) {
+            lib.setTree([]);
+            lib.setFileName("");
+            setTreeState([]);
+            setStats(null);
+            setSelected(null);
+          }
+        } catch (e) {
+          toast("删除失败：" + (e.response?.data?.detail || "未知错误"), "err");
+        }
+      },
+    });
+  };
+
   const readOnly = project?.my_perm === "view";
 
   const value = {
@@ -259,7 +297,7 @@ export default function IndustryDetail() {
     // 兼容下游组件对 industry 形态的读取（如 PushModal 取行业名）
     industry: project ? { name: project.industry_name, code: project.code } : null,
     configs, configId, setConfigId,
-    view, setView, ctx, setCtx: switchCtx, tree, setTree: setTreeState,
+    ctx, setCtx: switchCtx, tree, setTree: setTreeState,
     stats, setStats, selected, setSelected, dirty, setDirty,
     highlightListen, setHighlightListen,
     exportInfo, setExportInfo, toast,
@@ -288,28 +326,40 @@ export default function IndustryDetail() {
   return (
     <OpsContext.Provider value={value}>
       <div className="ops-root">
-        {/* 标题栏 36px（对齐 mock） */}
-        <div className="ops-titlebar">
-          <div className="tb-left">
-            <span className="tb-back" onClick={() => navigate(`/projects/${pid}`)} title="返回项目详情">← 项目详情</span>
-          </div>
-          <div className="tb-mid">
-            {lib.getFileName()} · {project ? project.name : "…"}
-            {readOnly && <span className="tag2 bare" style={{ marginLeft: 8 }}>只读</span>}
-          </div>
-          <div className="win-dots">
-            <i className="r" /><i className="y" /><i className="g" />
-          </div>
-        </div>
-
-        {/* 视图菜单 38px（仅块管理） */}
-        <div className="ops-menubar">
-          {VIEWS.map((v) => (
-            <div key={v.key} className={`navi${view === v.key ? " on" : ""}`} data-view={v.key} onClick={() => setView(v.key)}>
-              <span className="navi-ico">{v.icon}</span>{v.label}
+        {/* 项目导航 38px：概览 / Nginx / YML / 配置管理（替代旧返回栏） */}
+        <ProjectNav
+          project={project}
+          active="nginx"
+          right={
+            <div className="cfg-filebar">
+              {configs.length > 1 ? (
+                <select
+                  className="cfg-sel"
+                  value={configId ?? ""}
+                  title="切换配置文件"
+                  onChange={(e) => selectConfig(Number(e.target.value))}
+                >
+                  {configs.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              ) : (
+                <span className="mono cfg-name" title="当前配置文件">
+                  {lib.getFileName() || "未选择配置文件"}
+                </span>
+              )}
+              {!readOnly && configId && (
+                <button
+                  className="cfg-del"
+                  title="删除当前配置文件（含其下全部配置数据）"
+                  onClick={handleDeleteCfg}
+                >
+                  ✕ 删除配置
+                </button>
+              )}
             </div>
-          ))}
-        </div>
+          }
+        />
 
         {/* 主体：side + content（对齐 mock） */}
         <div className="ops-body">
@@ -369,7 +419,7 @@ export default function IndustryDetail() {
             ) : (
               <>
                 <div className="view-fade" style={{ flex: 1, display: "flex", minHeight: 0 }}>
-                  {view === "block" && <BlockPage />}
+                  <BlockPage />
                 </div>
                 <div className="foot-glow" />
               </>

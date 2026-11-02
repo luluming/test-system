@@ -7,7 +7,7 @@
 import re
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
@@ -24,14 +24,19 @@ from app.models import (
     Industry,
     NginxConfig,
     Project,
+    ProjectAccessRequest,
     ShareGrant,
     User,
     YamlConfig,
 )
 from app.schemas.project import (
+    AccessRequestCreate,
+    AccessRequestDecision,
+    AccessRequestOut,
     EnvVarCreate,
     EnvVarOut,
     EnvVarUpdate,
+    ProjectConflictOut,
     ProjectCreate,
     ProjectOut,
     ProjectUpdate,
@@ -235,6 +240,102 @@ def stats_by_industry(
     return result
 
 
+# ---- 项目访问申请（冲突查询 / 待审批列表需放在 /{project_id} 之前）----
+
+
+def _access_out(db: Session, rows: list[ProjectAccessRequest]) -> list[AccessRequestOut]:
+    """批量装配访问申请的项目名、行业名与申请人信息。"""
+    if not rows:
+        return []
+    project_ids = {r.project_id for r in rows}
+    user_ids = {r.requester_id for r in rows}
+    projects = {
+        p.id: p
+        for p in db.execute(select(Project).where(Project.id.in_(project_ids))).scalars().all()
+    }
+    users = {
+        u.id: u
+        for u in db.execute(select(User).where(User.id.in_(user_ids))).scalars().all()
+    }
+    industry_ids = {p.industry_id for p in projects.values()}
+    industries = (
+        {
+            i.id: i.name
+            for i in db.execute(select(Industry).where(Industry.id.in_(industry_ids))).scalars().all()
+        }
+        if industry_ids
+        else {}
+    )
+    result = []
+    for r in rows:
+        p = projects.get(r.project_id)
+        u = users.get(r.requester_id)
+        result.append(
+            AccessRequestOut(
+                id=r.id,
+                project_id=r.project_id,
+                project_name=p.name if p else "",
+                industry_name=industries.get(p.industry_id, "") if p else "",
+                requester_id=r.requester_id,
+                requester_name=u.username if u else "",
+                requester_email=u.email if u else None,
+                status=r.status,
+                message=r.message,
+                created_at=r.created_at,
+            )
+        )
+    return result
+
+
+@router.get("/conflict", response_model=ProjectConflictOut)
+def find_project_conflict(
+    industry_id: int,
+    name: str = "",
+    code: str = "",
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ProjectConflictOut:
+    """按名称/标识查询同行业已有项目：用于创建冲突时引导用户申请访问。"""
+    if not name and not code:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="缺少查询条件")
+    conditions = []
+    if name:
+        conditions.append(Project.name == name)
+    if code:
+        conditions.append(Project.code == code)
+    project = db.execute(
+        select(Project).where(Project.industry_id == industry_id, or_(*conditions))
+    ).scalars().first()
+    if project is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="未找到同名项目")
+    owner = db.execute(select(User).where(User.id == project.owner_id)).scalar_one_or_none()
+    return ProjectConflictOut(
+        id=project.id,
+        name=project.name,
+        code=project.code,
+        owner_id=project.owner_id,
+        owner_name=owner.username if owner else "",
+        has_access=PERM_ORDER[get_project_perm(db, current_user, project)]
+        >= PERM_ORDER["view"],
+    )
+
+
+@router.get("/access-requests/pending", response_model=list[AccessRequestOut])
+def list_pending_access_requests(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[AccessRequestOut]:
+    """待我审批的访问申请：管理员看全部，普通用户只看自己负责的项目。"""
+    stmt = select(ProjectAccessRequest).where(ProjectAccessRequest.status == "pending")
+    if current_user.role != "admin":
+        owned_ids = select(Project.id).where(Project.owner_id == current_user.id)
+        stmt = stmt.where(ProjectAccessRequest.project_id.in_(owned_ids))
+    rows = list(
+        db.execute(stmt.order_by(ProjectAccessRequest.created_at.desc())).scalars().all()
+    )
+    return _access_out(db, rows)
+
+
 # ---- 项目详情 / 更新 / 删除 ----
 
 
@@ -299,8 +400,127 @@ def delete_project(
         select(ShareGrant).where(ShareGrant.project_id == project.id)
     ).scalars().all():
         db.delete(grant)
+    for req in db.execute(
+        select(ProjectAccessRequest).where(ProjectAccessRequest.project_id == project.id)
+    ).scalars().all():
+        db.delete(req)
     db.delete(project)
     db.commit()
+
+
+# ---- 项目访问申请（发起 / 审批）----
+
+
+@router.post(
+    "/{project_id}/access-requests",
+    response_model=AccessRequestOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_access_request(
+    project_id: int,
+    payload: AccessRequestCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> AccessRequestOut:
+    """向项目负责人申请只读访问；重复申请复用原记录并重新置为待审批。"""
+    project = db.execute(select(Project).where(Project.id == project_id)).scalar_one_or_none()
+    if project is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="项目不存在")
+    if project.owner_id == current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="你是该项目负责人，无需申请"
+        )
+    if PERM_ORDER[get_project_perm(db, current_user, project)] >= PERM_ORDER["view"]:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="你已拥有该项目访问权限"
+        )
+    row = db.execute(
+        select(ProjectAccessRequest).where(
+            ProjectAccessRequest.project_id == project_id,
+            ProjectAccessRequest.requester_id == current_user.id,
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        row = ProjectAccessRequest(
+            project_id=project_id,
+            requester_id=current_user.id,
+            message=payload.message,
+            status="pending",
+        )
+        db.add(row)
+    else:
+        row.status = "pending"
+        row.message = payload.message
+    db.commit()
+    db.refresh(row)
+    return _access_out(db, [row])[0]
+
+
+@router.get("/{project_id}/access-requests", response_model=list[AccessRequestOut])
+def list_access_requests(
+    project_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[AccessRequestOut]:
+    """项目的全部访问申请（负责人/管理员）。"""
+    require_project_owner(db, current_user, project_id)
+    rows = list(
+        db.execute(
+            select(ProjectAccessRequest)
+            .where(ProjectAccessRequest.project_id == project_id)
+            .order_by(ProjectAccessRequest.created_at.desc())
+        ).scalars().all()
+    )
+    return _access_out(db, rows)
+
+
+@router.put(
+    "/{project_id}/access-requests/{request_id}",
+    response_model=AccessRequestOut,
+)
+def decide_access_request(
+    project_id: int,
+    request_id: int,
+    payload: AccessRequestDecision,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> AccessRequestOut:
+    """审批访问申请：通过时写入 view 共享授权，即时获得项目只读权限。"""
+    require_project_owner(db, current_user, project_id)
+    row = db.execute(
+        select(ProjectAccessRequest).where(
+            ProjectAccessRequest.id == request_id,
+            ProjectAccessRequest.project_id == project_id,
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="申请不存在")
+    if row.status != "pending":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="该申请已处理")
+    if payload.action == "approve":
+        grant = db.execute(
+            select(ShareGrant).where(
+                ShareGrant.project_id == project_id,
+                ShareGrant.user_id == row.requester_id,
+            )
+        ).scalar_one_or_none()
+        if grant is None:
+            db.add(
+                ShareGrant(
+                    project_id=project_id,
+                    user_id=row.requester_id,
+                    perm="view",
+                    created_by=current_user.username,
+                )
+            )
+        elif PERM_ORDER[grant.perm] < PERM_ORDER["view"]:
+            grant.perm = "view"
+        row.status = "approved"
+    else:
+        row.status = "rejected"
+    db.commit()
+    db.refresh(row)
+    return _access_out(db, [row])[0]
 
 
 # ---- 共享管理 ----

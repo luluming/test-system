@@ -17,7 +17,7 @@ from app.models.nginx import (
     Upstream,
     UpstreamServer,
 )
-from app.models.project import EnvVar, Project, ShareGrant
+from app.models.project import EnvVar, Project, ProjectAccessRequest, ShareGrant
 from app.models.user import User
 from app.models.yaml import (
     YamlConfig,
@@ -32,6 +32,7 @@ __all__ = [
     "Item",
     "Industry",
     "Project",
+    "ProjectAccessRequest",
     "ShareGrant",
     "EnvVar",
     "NginxConfig",

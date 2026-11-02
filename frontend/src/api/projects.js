@@ -32,6 +32,28 @@ export function getProjectStatsByIndustry() {
   return client.get("/projects/stats-by-industry");
 }
 
+// ---- 项目访问申请 ----
+
+// 创建冲突时查询同行业已有项目：返回 { id, name, code, owner_id, owner_name, has_access }
+export function lookupProjectConflict(params) {
+  return client.get("/projects/conflict", { params });
+}
+
+// 向项目负责人申请只读访问：data 为 { message? }
+export function createAccessRequest(projectId, data = {}) {
+  return client.post(`/projects/${projectId}/access-requests`, data);
+}
+
+// 待我审批的访问申请（负责人/管理员）
+export function listPendingAccessRequests() {
+  return client.get("/projects/access-requests/pending");
+}
+
+// 审批访问申请：action ∈ approve|reject
+export function decideAccessRequest(projectId, requestId, action) {
+  return client.put(`/projects/${projectId}/access-requests/${requestId}`, { action });
+}
+
 // ---- 项目共享（owner/admin）----
 
 // 读取共享设置：{ share_all, grants: [{user_id,username,email,perm}] }

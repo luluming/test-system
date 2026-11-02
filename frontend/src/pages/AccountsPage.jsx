@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Form, Input, Modal, message } from "antd";
 import {
   createAccount,
@@ -14,6 +15,7 @@ const PWD_RE = /^(?=.*[A-Za-z])(?=.*\d).{8,}$/;
 
 // 账号管理（仅系统管理员可见，路由层已拦截非 admin）
 export default function AccountsPage() {
+  const navigate = useNavigate();
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -134,7 +136,11 @@ export default function AccountsPage() {
     <div>
       <div className="page-head">
         <div>
-          <h1>账号管理</h1>
+          <h1>
+            <span className="meta" style={{ cursor: "pointer" }} onClick={() => navigate("/")}>行业管理</span>
+            <span className="meta"> / </span>
+            账号管理
+          </h1>
           <p className="sub">系统账号统一由管理员创建与维护，停用即刻失效，删除前需清空名下项目。</p>
         </div>
         <button className="btn primary" onClick={() => setCreateOpen(true)}>＋ 新建账号</button>

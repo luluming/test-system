@@ -70,6 +70,44 @@ class ShareOut(BaseModel):
     grants: list[ShareGrantOut]
 
 
+class ProjectConflictOut(BaseModel):
+    """同名/同标识项目冲突信息：用于引导申请人向负责人发起访问申请。"""
+
+    id: int
+    name: str
+    code: str
+    owner_id: int
+    owner_name: str = ""
+    has_access: bool = False
+
+
+class AccessRequestCreate(BaseModel):
+    """访问申请：可选一句说明。"""
+
+    message: str | None = Field(default=None, max_length=255)
+
+
+class AccessRequestOut(BaseModel):
+    """访问申请响应（含项目与申请人信息，供负责人审批列表展示）。"""
+
+    id: int
+    project_id: int
+    project_name: str
+    industry_name: str = ""
+    requester_id: int
+    requester_name: str = ""
+    requester_email: str | None = None
+    status: str
+    message: str | None = None
+    created_at: datetime
+
+
+class AccessRequestDecision(BaseModel):
+    """审批动作：approve 通过（授予只读）| reject 拒绝。"""
+
+    action: str = Field(pattern="^(approve|reject)$")
+
+
 class EnvVarCreate(BaseModel):
     """新建环境变量：键项目内唯一，值支持多行。"""
 

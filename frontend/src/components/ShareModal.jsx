@@ -10,13 +10,17 @@ export default function ShareModal({ project, open, onClose, onSaved }) {
   const [saving, setSaving] = useState(false);
   const [shareAll, setShareAll] = useState(false);
   const [grants, setGrants] = useState([]); // [{user_id, username, email, perm}]
-  const [options, setOptions] = useState([]); // 账号搜索结果
+  const [pool, setPool] = useState([]); // 账号候选池：默认前 10 个，输入时改为搜索结果
   const [searching, setSearching] = useState(false);
 
   useEffect(() => {
     if (!open || !project) return;
     setLoading(true);
-    setOptions([]);
+    setPool([]);
+    // 预加载候选账号，让下拉框一打开就有可选项（超过 4 个时下拉内部滚动）
+    searchAccounts("")
+      .then((res) => setPool(res.data || []))
+      .catch(() => setPool([]));
     getShare(project.id)
       .then((res) => {
         setShareAll(!!res.data.share_all);
@@ -26,17 +30,24 @@ export default function ShareModal({ project, open, onClose, onSaved }) {
       .finally(() => setLoading(false));
   }, [open, project]);
 
-  // 搜索账号：排除负责人本人与已在授权列表中的账号
+  // 输入关键字时向服务端检索；清空后恢复默认候选列表
   const onSearch = async (q) => {
     const kw = (q || "").trim();
-    if (!kw) { setOptions([]); return; }
+    if (!kw) {
+      try {
+        const res = await searchAccounts("");
+        setPool(res.data || []);
+      } catch {
+        setPool([]);
+      }
+      return;
+    }
     setSearching(true);
     try {
       const res = await searchAccounts(kw);
-      const excluded = new Set([project.owner_id, ...grants.map((g) => g.user_id)]);
-      setOptions(res.data.filter((u) => !excluded.has(u.id)));
+      setPool(res.data || []);
     } catch {
-      setOptions([]);
+      setPool([]);
     } finally {
       setSearching(false);
     }
@@ -44,11 +55,14 @@ export default function ShareModal({ project, open, onClose, onSaved }) {
 
   // 选中账号加入授权列表，默认可查看
   const onPick = (userId) => {
-    const u = options.find((o) => o.id === userId);
+    const u = pool.find((o) => o.id === userId);
     if (!u) return;
     setGrants((gs) => [...gs, { user_id: u.id, username: u.username, email: u.email, perm: "view" }]);
-    setOptions([]);
   };
+
+  // 候选账号：排除负责人本人与已在授权列表中的账号
+  const excluded = new Set([project?.owner_id, ...grants.map((g) => g.user_id)]);
+  const candidates = pool.filter((u) => !excluded.has(u.id));
 
   const setPerm = (userId, perm) => {
     setGrants((gs) => gs.map((g) => (g.user_id === userId ? { ...g, perm } : g)));
@@ -105,15 +119,19 @@ export default function ShareModal({ project, open, onClose, onSaved }) {
             <div className="meta" style={{ marginBottom: 8 }}>指定人共享（可查看 / 可编辑）</div>
             <Select
               showSearch
-              filterOption={false}
+              // 本地即时过滤已加载候选，同时保留服务端模糊搜索
+              filterOption={(input, option) =>
+                (option?.label ?? "").toLowerCase().includes(input.toLowerCase())
+              }
               onSearch={onSearch}
               onSelect={onPick}
               loading={searching}
               value={null}
-              placeholder="搜索用户名或邮箱，回车选择添加"
+              listHeight={128}
+              placeholder="输入用户名或邮箱匹配；默认显示 4 个，更多可滚动"
               style={{ width: "100%" }}
               notFoundContent={searching ? "搜索中…" : "无匹配账号"}
-              options={options.map((u) => ({
+              options={candidates.map((u) => ({
                 value: u.id,
                 label: `${u.username}（${u.email || "无邮箱"}）${u.is_active ? "" : " · 已停用"}`,
                 disabled: !u.is_active,

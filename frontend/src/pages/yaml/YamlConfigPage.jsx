@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Modal, Input } from "antd";
-import { getIndustry } from "../../api/industry";
 import { getProject } from "../../api/projects";
 import * as yamlApi from "../../api/yaml";
+import ProjectNav from "../../components/ProjectNav";
 import "./yaml.css";
 
 /* ============================================================
@@ -194,7 +194,6 @@ export default function YamlConfigPage() {
   const [toast, setToast] = useState(null);
   const [showNew, setShowNew] = useState(false);
   const [newName, setNewName] = useState("");
-  const [industry, setIndustry] = useState(null);
   const [verModal, setVerModal] = useState(null);
   const [verModalTab, setVerModalTab] = useState("diff"); // diff | content
   const [verTooltip, setVerTooltip] = useState(null);     // hover 版本卡片整行
@@ -281,7 +280,6 @@ export default function YamlConfigPage() {
 
   useEffect(() => {
     if (!industryId) return;
-    getIndustry(industryId).then((res) => setIndustry(res.data)).catch(() => setIndustry(null));
     loadFiles();
   }, [industryId, loadFiles]);
 
@@ -995,6 +993,7 @@ export default function YamlConfigPage() {
   if (filesLoading) {
     return (
       <div className="yaml-root">
+        <ProjectNav project={project} active="yaml" />
         <div className="yaml-toolbar">
           <span className="yt-brand"><span className="y-dot" />YAML 配置工作台<small>加载中…</small></span>
         </div>
@@ -1006,8 +1005,8 @@ export default function YamlConfigPage() {
   if (!active) {
     return (
       <div className="yaml-root">
+        <ProjectNav project={project} active="yaml" />
         <div className="yaml-toolbar">
-          <span className="yt-back" onClick={() => navigate(`/projects/${projectId}`)}>← 项目详情</span>
           <span className="yt-brand"><span className="y-dot" />YAML 配置工作台</span>
         </div>
         <div className="empty-hint" style={{ padding: 60, textAlign: "center" }}>
@@ -1071,13 +1070,13 @@ export default function YamlConfigPage() {
 
   return (
     <div className="yaml-root">
-      {/* ===== 顶栏 ===== */}
+      {/* 项目导航：概览 / Nginx / YML / 配置管理 */}
+      <ProjectNav project={project} active="yaml" />
+      {/* ===== 编辑器工具栏 ===== */}
       <div className="yaml-toolbar">
-        <span className="yt-back" onClick={() => navigate(`/projects/${projectId}`)}>← 项目详情</span>
-        <span className="yt-sep" />
         <span className="yt-brand">
           <span className="y-dot" />
-          {project ? project.name : industry ? industry.name : "…"}
+          YAML 编辑器
           <small>{active.name}</small>
         </span>
         {readOnly && <span className="tag2 bare">只读</span>}
@@ -1440,17 +1439,11 @@ export default function YamlConfigPage() {
                 </button>
                 {cmdOpen && (
                   <>
-                    <div style={{ display: "flex", gap: 8, alignItems: "center", margin: "8px 0" }}>
-                      <button className="yt-btn ghost" onClick={genTokens} disabled={busy}>
-                        {pushTokens ? "重新生成 Token" : "生成推送 Token"}
-                      </button>
-                      {pushTokens && <span className="tok-tip">单次使用 · {fmtTime(pushTokens.expires_at)} 前有效</span>}
+                    <div style={{ margin: "8px 0" }}>
+                      <span className="meta" style={{ fontSize: 11 }}>
+                        点击命令右侧「复制」会自动签发一次性 token（单次使用，30 分钟有效）。
+                      </span>
                     </div>
-                    {pushTokens && (
-                      <div className="tok-box">
-                        <div><span>token</span>{pushTokens.apply}</div>
-                      </div>
-                    )}
                     <div className="cmd-card">
                       <div className="c-head"><span className="st">push</span>一步推送 · 校验 + 比对 + 提交
                         <span className="copy" onClick={() => copyCmd("推送")}>复制</span></div>

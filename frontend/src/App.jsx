@@ -1,10 +1,11 @@
-import { Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
 import Login from "./pages/Login";
 import ResetPassword from "./pages/ResetPassword";
 import ForbiddenPage from "./pages/ForbiddenPage";
 import IndustryDashboard from "./pages/IndustryDashboard";
 import ProjectListPage from "./pages/ProjectListPage";
 import ProjectDetailPage from "./pages/ProjectDetailPage";
+import ProjectConfigPage from "./pages/ProjectConfigPage";
 import AccountsPage from "./pages/AccountsPage";
 import IndustryDetail from "./pages/IndustryDetail";
 import YamlConfigPage from "./pages/yaml/YamlConfigPage";
@@ -12,7 +13,7 @@ import AppShell from "./components/AppShell";
 import { getToken, getUser } from "./store/auth";
 
 // 需要登录才能访问的布局：统一 IDE 外壳（标题栏/内容区/状态栏）
-// 进入 /projects/:id/ops|yaml 工作台时，AppShell 自动切换沉浸模式隐藏全局外壳
+// 进入 /projects/:id/nginx|yaml 工作台时，AppShell 自动切换沉浸模式隐藏全局外壳
 function ProtectedLayout() {
   const location = useLocation();
 
@@ -32,7 +33,13 @@ function AdminPage({ children }) {
   return children;
 }
 
-// 应用路由配置：行业 → 项目 → 配置（nginx/yaml）三级结构
+// 旧路径兼容：/projects/:id/ops 重定向到新的 nginx 工作台
+function OpsRedirect() {
+  const { projectId } = useParams();
+  return <Navigate to={`/projects/${projectId}/nginx`} replace />;
+}
+
+// 应用路由配置：行业 → 项目 → 配置（概览 / nginx / yaml / 配置管理）
 export default function App() {
   return (
     <Routes>
@@ -43,8 +50,10 @@ export default function App() {
         <Route path="/" element={<IndustryDashboard />} />
         <Route path="/industries/:industryId/projects" element={<ProjectListPage />} />
         <Route path="/projects/:projectId" element={<ProjectDetailPage />} />
-        <Route path="/projects/:projectId/ops" element={<IndustryDetail />} />
+        <Route path="/projects/:projectId/nginx" element={<IndustryDetail />} />
         <Route path="/projects/:projectId/yaml" element={<YamlConfigPage />} />
+        <Route path="/projects/:projectId/config" element={<ProjectConfigPage />} />
+        <Route path="/projects/:projectId/ops" element={<OpsRedirect />} />
         <Route path="/accounts" element={<AdminPage><AccountsPage /></AdminPage>} />
         <Route path="/403" element={<ForbiddenPage />} />
       </Route>

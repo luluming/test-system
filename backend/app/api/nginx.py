@@ -9,7 +9,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
@@ -20,7 +20,18 @@ from app.core.permissions import (
     visible_project_ids,
 )
 from app.core.security import get_current_user
-from app.models.nginx import BizPort, DomainMapping, ForwardPort, NginxConfig
+from app.models.nginx import (
+    BizPort,
+    ConfigBlock,
+    ConfigOption,
+    DomainMapping,
+    ForwardPort,
+    NginxConfig,
+    NginxConfigVersion,
+    NginxMirrorPair,
+    NginxPushTask,
+    NginxPushToken,
+)
 from app.models.project import Project
 from app.models.user import User
 from app.schemas.nginx import (
@@ -190,7 +201,7 @@ def create_config(
         db.commit()
     except IntegrityError:
         db.rollback()
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="该行业下配置名已存在")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="该项目下配置名已存在")
     db.refresh(row)
     return row
 
@@ -237,6 +248,23 @@ def delete_config(
 ) -> None:
     row = _get_config(db, config_id)
     resolve_project_for_config(db, row, current_user, "edit")
+    # 先清理附属数据（块/配置项/版本/镜像对/推送记录），避免遗留孤儿行
+    block_ids = list(
+        db.execute(
+            select(ConfigBlock.id).where(ConfigBlock.nginx_config_id == config_id)
+        ).scalars()
+    )
+    if block_ids:
+        db.execute(delete(ConfigOption).where(ConfigOption.block_id.in_(block_ids)))
+        # MySQL 下 parent_id 自引用外键会阻止批量删除，先解除父子关系
+        db.execute(
+            update(ConfigBlock)
+            .where(ConfigBlock.id.in_(block_ids))
+            .values(parent_id=None)
+        )
+        db.execute(delete(ConfigBlock).where(ConfigBlock.nginx_config_id == config_id))
+    for model in (NginxConfigVersion, NginxMirrorPair, NginxPushTask, NginxPushToken):
+        db.execute(delete(model).where(model.nginx_config_id == config_id))
     db.delete(row)
     db.commit()
 

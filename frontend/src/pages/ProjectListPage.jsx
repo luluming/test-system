@@ -2,7 +2,13 @@ import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Form, Input, Modal, message } from "antd";
 import { getIndustry } from "../api/industry";
-import { createProject, deleteProject, listProjects } from "../api/projects";
+import {
+  createAccessRequest,
+  createProject,
+  deleteProject,
+  listProjects,
+  lookupProjectConflict,
+} from "../api/projects";
 import { getUser } from "../store/auth";
 import ShareModal from "../components/ShareModal";
 import "./dashboard.css";
@@ -37,6 +43,10 @@ export default function ProjectListPage() {
   // 共享弹窗目标项目
   const [shareTarget, setShareTarget] = useState(null);
 
+  // 创建冲突：同行业已存在同名项目 → 引导向负责人申请访问
+  const [conflict, setConflict] = useState(null);
+  const [requesting, setRequesting] = useState(false);
+
   // 删除确认：需输入项目名称二次确认
   const [delTarget, setDelTarget] = useState(null);
   const [delName, setDelName] = useState("");
@@ -58,6 +68,9 @@ export default function ProjectListPage() {
 
   useEffect(() => { load(tab); }, [load, tab]);
 
+  // 项目变更后同步左侧行业导航
+  const notifySidebar = () => window.dispatchEvent(new Event("industries:changed"));
+
   // 新建项目：所属行业与 code 创建后不可变更
   const submitCreate = async () => {
     const values = await createForm.validateFields();
@@ -73,11 +86,55 @@ export default function ProjectListPage() {
       setCreateOpen(false);
       createForm.resetFields();
       load(tab);
+      notifySidebar();
     } catch (err) {
+      const status = err.response?.status;
       const detail = err.response?.data?.detail;
-      if (detail) message.error(detail);
+      if (status === 409 && typeof detail === "string" && detail.includes("已存在")) {
+        // 名称/标识冲突：查负责人，改为提示申请访问
+        try {
+          const res = await lookupProjectConflict({
+            industry_id: id,
+            name: values.name,
+            code: values.code,
+          });
+          const found = res.data;
+          if (found.has_access) {
+            message.info(`你已可以访问项目「${found.name}」，请到「共享给我的」查看`);
+            setCreateOpen(false);
+            createForm.resetFields();
+            setTab("shared");
+          } else {
+            setConflict(found);
+          }
+        } catch {
+          message.error(detail);
+        }
+      } else if (detail) {
+        message.error(detail);
+      }
     } finally {
       setCreateLoading(false);
+    }
+  };
+
+  // 提交访问申请：审批通过后获得只读权限
+  const submitAccessRequest = async () => {
+    if (!conflict) return;
+    setRequesting(true);
+    try {
+      await createAccessRequest(conflict.id);
+      message.success(
+        `已向 ${conflict.owner_name || "项目负责人"} 提交访问申请，审批通过后可在「共享给我的」查看`
+      );
+      setConflict(null);
+      setCreateOpen(false);
+      createForm.resetFields();
+    } catch (err) {
+      const detail = err.response?.data?.detail;
+      message.error(typeof detail === "string" ? detail : "申请提交失败");
+    } finally {
+      setRequesting(false);
     }
   };
 
@@ -89,6 +146,7 @@ export default function ProjectListPage() {
       message.success("项目已删除");
       setDelTarget(null);
       load(tab);
+      notifySidebar();
     } catch (err) {
       const detail = err.response?.data?.detail;
       if (detail && err.response?.status !== 403) message.error(detail);
@@ -241,6 +299,28 @@ export default function ProjectListPage() {
       >
         <p className="meta">此操作不可恢复。请输入项目名称 <b>{delTarget?.name}</b> 以确认删除：</p>
         <Input value={delName} onChange={(e) => setDelName(e.target.value)} placeholder="输入项目名称" autoComplete="off" />
+      </Modal>
+
+      {/* 创建冲突：提示向负责人申请访问 */}
+      <Modal
+        title="项目已存在"
+        open={!!conflict}
+        onOk={submitAccessRequest}
+        onCancel={() => setConflict(null)}
+        confirmLoading={requesting}
+        okText={`向 ${conflict?.owner_name || "负责人"} 申请访问`}
+        cancelText="取消"
+        width={440}
+        destroyOnClose
+      >
+        <p>
+          该行业下已存在项目 <b>{conflict?.name}</b>
+          <span className="meta">（{conflict?.code}）</span>，负责人：
+          <b>{conflict?.owner_name || "未知"}</b>。
+        </p>
+        <p className="meta" style={{ marginBottom: 0 }}>
+          申请通过后，你将获得该项目的「可查看」权限，可浏览其全部 nginx / YML 配置与环境变量。
+        </p>
       </Modal>
 
       {/* 共享设置 */}

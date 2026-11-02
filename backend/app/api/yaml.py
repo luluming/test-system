@@ -251,14 +251,14 @@ def create_yaml_config(
     )
     exists = db.execute(
         select(YamlConfig).where(
-            YamlConfig.industry_id == payload.industry_id,
+            YamlConfig.project_id == project.id,
             YamlConfig.name == payload.name,
         )
     ).scalar_one_or_none()
     if exists is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="该行业下已存在同名 YAML 配置",
+            detail="该项目下已存在同名 YAML 配置",
         )
     content = payload.content or ""
     errors = validate_yaml(content) if content.strip() else []

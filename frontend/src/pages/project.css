@@ -1,0 +1,88 @@
+/* === 项目工作区：概览 / 配置管理 页面样式（基于 theme.css tokens） === */
+
+/* ---- 项目概览 ---- */
+.proj-hero { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+.proj-hero h2 { margin: 0 0 5px; font-size: 20px; letter-spacing: -.4px; }
+.proj-hero .sub { margin: 0; color: var(--text-ter); font-size: 12px; line-height: 1.7; }
+.proj-hero-actions { display: flex; gap: 8px; flex: none; }
+
+.proj-facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 20px; }
+.fact { background: var(--bg-surface2); border: 1px solid var(--border-soft); border-radius: 8px; padding: 9px 14px 10px; min-width: 0; }
+.fact small { display: block; color: var(--text-ter); font-size: 11px; margin-bottom: 3px; }
+.fact span { display: block; font-size: 12.5px; color: var(--text-pri); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---- 三个配置分区入口（Nginx / YML / 配置管理） ---- */
+.sec-title { display: flex; align-items: baseline; gap: 8px; margin: 0 0 10px; }
+.sec-title h3 { margin: 0; font-size: 14px; font-weight: 600; }
+.sec-title .meta { font-size: 11.5px; }
+
+.sec-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.sec-card {
+  position: relative; display: flex; flex-direction: column; gap: 14px;
+  background: var(--bg-surface2); border: 1px solid var(--border); border-radius: 10px;
+  padding: 16px 18px 14px; cursor: pointer; text-align: left;
+  transition: all .18s var(--ease);
+}
+.sec-card::before {
+  content: ''; position: absolute; left: 0; top: 14px; bottom: 14px; width: 3px;
+  border-radius: 0 3px 3px 0; background: var(--brand);
+}
+.sec-card.yml::before { background: var(--success); }
+.sec-card.cfg::before { background: var(--warning); }
+.sec-card:hover { border-color: var(--brand-border); background: var(--bg-hover); transform: translateY(-2px); box-shadow: var(--shadow-dropdown); }
+.sec-card.yml:hover { border-color: var(--success-border); }
+.sec-card.cfg:hover { border-color: var(--warning-border); }
+.sec-card:focus-visible { border-color: var(--brand); box-shadow: 0 0 0 3px var(--focus-ring); }
+
+.sc-head { display: flex; gap: 11px; align-items: flex-start; }
+.sc-ico {
+  width: 36px; height: 36px; flex: none; border-radius: 9px; display: grid; place-items: center;
+  font-size: 16px; background: var(--brand-light); color: var(--brand);
+}
+.sec-card.yml .sc-ico { background: var(--success-bg); color: var(--success); }
+.sec-card.cfg .sc-ico { background: var(--warning-bg); color: var(--warning); }
+.sc-t { font-size: 14px; font-weight: 600; color: var(--text-pri); }
+.sc-s { margin-top: 3px; font-size: 11.5px; color: var(--text-ter); line-height: 1.55; }
+
+.sc-foot { display: flex; align-items: baseline; gap: 6px; padding-top: 10px; border-top: 1px dashed var(--border); }
+.sc-num { font-family: var(--mono); font-size: 20px; letter-spacing: -.5px; color: var(--brand); }
+.sec-card.yml .sc-num { color: var(--success); }
+.sec-card.cfg .sc-num { color: var(--warning); }
+.sc-unit { font-size: 11px; color: var(--text-ter); }
+.sc-go { margin-left: auto; font-size: 11.5px; color: var(--text-sec); transition: transform .15s var(--ease), color .15s var(--ease); }
+.sec-card:hover .sc-go { color: var(--text-pri); transform: translateX(3px); }
+
+/* ---- 配置管理页 ---- */
+.cfg-box { background: var(--bg-surface2); border: 1px solid var(--border-soft); border-radius: 8px; padding: 4px 18px; margin-bottom: 14px; max-width: 760px; }
+.info-row { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 11px 0; border-bottom: 1px solid var(--border-soft); font-size: 12.5px; }
+.info-row:last-child { border-bottom: none; }
+.info-row > .k { color: var(--text-ter); flex: none; }
+.info-row > .v { color: var(--text-pri); text-align: right; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.info-row .v.mono { font-family: var(--mono); font-size: 12px; }
+
+.cfg-edit { max-width: 520px; }
+.cfg-edit label { display: block; margin: 0 0 6px; color: var(--text-sec); font-size: 12.5px; }
+.cfg-edit .f { margin-bottom: 14px; }
+.cfg-edit .f:last-of-type { margin-bottom: 18px; }
+.cfg-edit input,
+.cfg-edit textarea {
+  width: 100%; background: var(--bg-input); color: var(--text-pri);
+  border: 1px solid var(--border); border-radius: 6px; padding: 7px 11px; font-size: 13px;
+  font-family: inherit; transition: border-color .15s var(--ease), box-shadow .15s var(--ease);
+}
+.cfg-edit input { height: 34px; }
+.cfg-edit textarea { resize: vertical; min-height: 64px; }
+.cfg-edit input:focus, .cfg-edit textarea:focus { border-color: var(--brand); box-shadow: 0 0 0 3px var(--focus-ring); outline: none; }
+.cfg-edit .hint { color: var(--text-ter); font-size: 11.5px; margin-top: 5px; }
+
+/* 共享设置分页 */
+.grant-list { display: flex; flex-direction: column; gap: 6px; }
+.grant-row { display: flex; align-items: center; gap: 10px; background: var(--bg-hover); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; font-size: 12.5px; }
+.grant-row .g-name { font-weight: 600; color: var(--text-pri); }
+.grant-row .g-mail { color: var(--text-ter); font-size: 11.5px; }
+.grant-row .tag2 { margin-left: auto; }
+
+@media (max-width: 1180px) {
+  .sec-grid { grid-template-columns: 1fr; }
+  .proj-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

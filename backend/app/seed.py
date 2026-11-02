@@ -218,6 +218,39 @@ def get_or_create_default_project(db, industry_id: int, owner_id: int) -> Projec
     return proj
 
 
+def _ensure_config_unique_by_project() -> None:
+    """迁移兼容：配置文件唯一键由 (industry_id, name) 改为 (project_id, name)。
+
+    旧约束会把「同行业其他项目」的同名配置误判为冲突（例如新项目无法再建
+    deploy_config.yml）。MySQL 需要重建唯一索引；SQLite 的旧内联约束保持原样，
+    跨项目重名由应用层校验放行。
+    """
+    from sqlalchemy import inspect, text
+
+    insp = inspect(engine)
+    tables = set(insp.get_table_names())
+    for table, old_name, new_name in (
+        ("yaml_configs", "uq_yaml_config_industry_name", "uq_yaml_config_project_name"),
+        ("nginx_configs", "uq_nginx_config_industry_name", "uq_nginx_config_project_name"),
+    ):
+        if table not in tables:
+            continue
+        uniques = insp.get_unique_constraints(table)
+        names = {u.get("name") for u in uniques}
+        cols = {tuple(u.get("column_names") or []) for u in uniques}
+        if new_name in names or ("project_id", "name") in cols:
+            continue
+        if engine.dialect.name != "mysql":
+            continue
+        with engine.begin() as conn:
+            if old_name in names:
+                conn.execute(text(f"ALTER TABLE {table} DROP INDEX {old_name}"))
+            conn.execute(
+                text(f"ALTER TABLE {table} ADD CONSTRAINT {new_name} UNIQUE (project_id, name)")
+            )
+        logger.info("已迁移 %s 表：唯一键改为 (project_id, name)", table)
+
+
 def _migrate_orphan_configs(db, admin_id: int) -> None:
     """把 project_id 为空的 nginx/yml 配置挂到所属行业的默认项目（幂等）。"""
     industry_ids = {
@@ -254,6 +287,7 @@ def init_db() -> None:
     _add_column_if_missing("users", "token_version INT NOT NULL DEFAULT 1", "token_version")
     _add_column_if_missing("nginx_configs", "project_id INT NULL", "project_id")
     _add_column_if_missing("yaml_configs", "project_id INT NULL", "project_id")
+    _ensure_config_unique_by_project()
 
     db = SessionLocal()
     try:

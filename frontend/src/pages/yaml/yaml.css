@@ -12,7 +12,7 @@
   --yh-pad-left: 68px; /* 行号槽 54 + 左内边距 14 */
 }
 
-.yaml-root { display: flex; flex-direction: column; height: 100vh; overflow: hidden; background: var(--bg-deep); }
+.yaml-root { display: flex; flex-direction: column; height: 100%; overflow: hidden; background: var(--bg-deep); }
 
 /* ---------------- 顶栏 ---------------- */
 .yaml-toolbar {

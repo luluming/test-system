@@ -1,9 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { Form, Input, Modal, message } from "antd";
 import { useTheme } from "../theme/ThemeProvider";
 import { clearToken, getUser, setToken } from "../store/auth";
 import { changePassword } from "../api/auth";
+import { decideAccessRequest, listPendingAccessRequests } from "../api/projects";
+import IndustrySidebar from "./IndustrySidebar";
 import "./appshell.css";
 
 const SWATCHES = [
@@ -15,8 +17,9 @@ const SWATCHES = [
 // 新密码规则：至少 8 位，同时包含字母和数字
 const PWD_RE = /^(?=.*[A-Za-z])(?=.*\d).{8,}$/;
 
-// 极简单页外壳：标题栏(36px) + 内容区 + 状态栏(28px)，无侧边栏
-// 进入 /projects/:id/ops|yaml 工作台时为沉浸模式：隐藏全局外壳，由工作台展示自身完整外壳
+// 统一外壳：标题栏(36px) + 左侧行业导航 + 内容区 + 状态栏(28px)
+// 进入 /projects/:id/nginx|yaml 工作台时保留行业导航（维持行业/项目上下文），
+// 内容区切换为紧凑模式（无内边距、工作台自适应高度），并隐藏底部状态栏。
 export default function AppShell() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -24,13 +27,70 @@ export default function AppShell() {
   const user = getUser();
   const isAdmin = user?.role === "admin";
 
+  // 访问申请：待我审批（项目负责人/管理员）
+  const [pendingReqs, setPendingReqs] = useState([]);
+  const [inboxOpen, setInboxOpen] = useState(false);
+  const [decidingId, setDecidingId] = useState(null);
+
   // 修改密码弹窗
   const [pwdOpen, setPwdOpen] = useState(false);
   const [pwdLoading, setPwdLoading] = useState(false);
   const [pwdForm] = Form.useForm();
 
-  const immersive = /^\/projects\/\d+\/(ops|yaml)/.test(location.pathname);
-  if (immersive) return <Outlet />;
+  // 工作台（Nginx / YAML）：保留外壳与左侧导航，仅内容区改为紧凑布局
+  const path = location.pathname;
+  const immersive = /^\/projects\/\d+\/(nginx|yaml|ops)/.test(path);
+  // 账号管理与无权限页不展示行业导航
+  const hideSidebar = path.startsWith("/accounts") || path === "/403";
+
+  // 标题栏中段：随当前层级显示所处位置
+  const section = path === "/"
+    ? "行业管理"
+    : path.startsWith("/industries/")
+      ? "行业 / 项目列表"
+      : path.endsWith("/nginx")
+        ? "项目工作区 · Nginx 配置"
+        : path.endsWith("/yaml")
+          ? "项目工作区 · YML 配置"
+          : path.endsWith("/config")
+            ? "项目工作区 · 配置管理"
+            : path.startsWith("/projects/")
+              ? "项目工作区"
+              : path.startsWith("/accounts")
+                ? "账号管理"
+                : path === "/403"
+                  ? "无权限访问"
+                  : "";
+
+  // 路由变化时刷新待审批数量（登录后 / 进入页面即可看到入口）
+  useEffect(() => {
+    let alive = true;
+    listPendingAccessRequests()
+      .then((res) => { if (alive) setPendingReqs(res.data || []); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [location.pathname]);
+
+  // 同意 / 拒绝访问申请
+  const decideRequest = async (req, action) => {
+    setDecidingId(req.id);
+    try {
+      await decideAccessRequest(req.project_id, req.id, action);
+      message.success(
+        action === "approve"
+          ? `已同意 ${req.requester_name} 访问「${req.project_name}」（对方刷新后可见）`
+          : "已拒绝该访问申请"
+      );
+      const res = await listPendingAccessRequests();
+      setPendingReqs(res.data || []);
+      window.dispatchEvent(new Event("industries:changed"));
+    } catch (err) {
+      const detail = err.response?.data?.detail;
+      message.error(typeof detail === "string" ? detail : "操作失败");
+    } finally {
+      setDecidingId(null);
+    }
+  };
 
   const handleLogout = () => {
     clearToken();
@@ -64,16 +124,29 @@ export default function AppShell() {
       <header className="sh-titlebar">
         <div className="sh-left">
           <span className="sh-dot" />
-          <span className="sh-brand">Nginx 配置管理系统</span>
+          <button className="sh-brand" title="返回行业管理首页" onClick={() => navigate("/")}>
+            Nginx 配置管理系统
+          </button>
         </div>
-        <div className="sh-mid">行业管理</div>
+        <div className="sh-mid">{section}</div>
         <div className="sh-right">
+          {/* 无左侧导航的页面（账号管理 / 403）保留显式返回入口 */}
+          {hideSidebar && (
+            <button className="btn title-back" onClick={() => navigate("/")}>
+              ← 返回首页
+            </button>
+          )}
           {/* 当前用户：admin 角色加管理员标识 */}
           {user && (
             <span className="sh-user">
               {user.username}
               {isAdmin && <span className="tag2 pub" style={{ marginLeft: 6 }}>管理员</span>}
             </span>
+          )}
+          {pendingReqs.length > 0 && (
+            <button className="btn" onClick={() => setInboxOpen(true)}>
+              访问申请 <span className="tag2 warn">{pendingReqs.length}</span>
+            </button>
           )}
           {isAdmin && (
             <button className="btn" onClick={() => navigate("/accounts")}>
@@ -104,24 +177,85 @@ export default function AppShell() {
       </header>
 
       <div className="sh-body">
+        {/* === 左侧行业导航（账号管理/403 隐藏）=== */}
+        {!hideSidebar && <IndustrySidebar />}
+
         {/* === 内容区 === */}
         <main className="sh-main">
-          <div className="sh-content">
+          <div className={`sh-content${immersive ? " tight" : ""}`}>
             <Outlet />
           </div>
-          <div className="foot-glow" />
+          {!immersive && <div className="foot-glow" />}
         </main>
       </div>
 
-      {/* === 状态栏 28px === */}
-      <footer className="sh-statusbar">
-        <span className="mono">main</span>
-        <span className="status-dot ok" />
-        <span>clean</span>
-        <span className="err">0 错误</span>
-        <span className="warn">0 警告</span>
-        <span className="mono" style={{ marginLeft: "auto" }}>Ln 1 · Col 1 · UTF-8</span>
-      </footer>
+      {/* === 状态栏 28px（工作台沉浸布局下隐藏，留给编辑器更多高度）=== */}
+      {!immersive && (
+        <footer className="sh-statusbar">
+          <span className="mono">main</span>
+          <span className="status-dot ok" />
+          <span>clean</span>
+          <span className="err">0 错误</span>
+          <span className="warn">0 警告</span>
+          <span className="mono" style={{ marginLeft: "auto" }}>Ln 1 · Col 1 · UTF-8</span>
+        </footer>
+      )}
+
+      {/* 访问申请审批弹窗 */}
+      <Modal
+        title={`访问申请 · 待审批 ${pendingReqs.length}`}
+        open={inboxOpen}
+        onCancel={() => setInboxOpen(false)}
+        footer={null}
+        width={560}
+        destroyOnClose
+      >
+        {pendingReqs.length === 0 ? (
+          <p className="meta">暂无待审批的访问申请</p>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, maxHeight: 420, overflowY: "auto" }}>
+            {pendingReqs.map((r) => (
+              <div
+                key={r.id}
+                style={{
+                  border: "1px solid var(--border-soft)",
+                  borderRadius: 8,
+                  padding: "10px 12px",
+                  background: "var(--bg-surface2)",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <b>{r.project_name}</b>
+                  <span className="tag2 bare">{r.industry_name}</span>
+                  <span className="meta" style={{ marginLeft: "auto" }}>
+                    {r.created_at ? r.created_at.replace("T", " ").slice(0, 16) : ""}
+                  </span>
+                </div>
+                <p className="meta" style={{ margin: "6px 0 8px" }}>
+                  {r.requester_name}（{r.requester_email || "无邮箱"}）申请查看
+                  {r.message ? ` · ${r.message}` : ""}
+                </p>
+                <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                  <button
+                    className="btn mini"
+                    disabled={decidingId === r.id}
+                    onClick={() => decideRequest(r, "reject")}
+                  >
+                    拒绝
+                  </button>
+                  <button
+                    className="btn mini primary"
+                    disabled={decidingId === r.id}
+                    onClick={() => decideRequest(r, "approve")}
+                  >
+                    {decidingId === r.id ? "处理中…" : "同意"}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Modal>
 
       {/* 修改密码弹窗 */}
       <Modal

@@ -12,6 +12,13 @@
 .sh-titlebar .sh-left { display: flex; align-items: center; gap: 10px; font-weight: 600; }
 .sh-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success); }
 .sh-brand { color: var(--text-pri); letter-spacing: -0.3px; }
+/* 品牌名作为全局返回首页入口 */
+button.sh-brand {
+  border: none; background: transparent; padding: 0; font: inherit; font-weight: 600;
+  cursor: pointer; transition: color .15s var(--ease);
+}
+button.sh-brand:hover { color: var(--brand); }
+.title-back { height: 24px; padding: 0 10px; font-size: 11px; }
 .sh-mid { margin-left: 24px; color: var(--text-ter); font-size: 11px; font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sh-right { margin-left: auto; display: flex; align-items: center; gap: 14px; }
 /* 当前登录用户标识 */
@@ -39,6 +46,9 @@
 /* 内容区 */
 .sh-main { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--bg-surface); position: relative; }
 .sh-content { flex: 1; overflow-y: auto; padding: 20px 28px; }
+/* 工作台紧凑模式：内容区去内边距，页面自身撑满高度（ops/yaml 根节点改用 100%） */
+.sh-content.tight { padding: 0; overflow: hidden; display: flex; flex-direction: column; }
+.sh-content.tight > * { flex: 1; min-height: 0; }
 .foot-glow { position: absolute; left: 0; right: 0; bottom: 0; height: 120px; pointer-events: none;
   background: radial-gradient(420px 120px at 50% 100%, var(--glow2, rgba(74,138,244,.06)), transparent 70%); }
 

@@ -33,3 +33,7 @@ build/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# ---- Trae 生成产物 ----
+.trae-html-share-packages/docs/
+.trae/

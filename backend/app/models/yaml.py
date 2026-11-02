@@ -53,7 +53,8 @@ class YamlConfig(Base):
         DateTime, server_default=func.now(), nullable=False
     )
 
-    __table_args__ = (UniqueConstraint("industry_id", "name", name="uq_yaml_config_industry_name"),)
+    # 配置文件名称在「项目」内唯一（不同项目可同名）
+    __table_args__ = (UniqueConstraint("project_id", "name", name="uq_yaml_config_project_name"),)
 
 
 class YamlConfigVersion(Base):
