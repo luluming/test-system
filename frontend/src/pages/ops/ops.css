@@ -49,6 +49,9 @@
 }
 .ctxseg .ctx-i:hover { color: var(--text-pri); background: var(--bg-hover); }
 .ctxseg .ctx-i.on { background: var(--brand-light); color: var(--brand-hover); border: 1px solid var(--brand-border); font-weight: 600; }
+.ctxseg .ctx-i.missing { color: var(--text-ter); opacity: 0.65; cursor: help; }
+.ctxseg .ctx-i.missing:hover { color: var(--warn); background: var(--bg-hover); opacity: 1; cursor: pointer; }
+.ctxseg .ctx-i.missing::after { content: ''; }
 
 .ops-body { flex: 1; display: flex; min-height: 0; }
 

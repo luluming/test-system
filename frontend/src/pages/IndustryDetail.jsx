@@ -72,6 +72,7 @@ export default function IndustryDetail() {
   const [showAdd, setShowAdd] = useState(false);
   const [showCreateCfg, setShowCreateCfg] = useState(false);
   const [cfgName, setCfgName] = useState("");
+  const [cfgSuffix, setCfgSuffix] = useState("conf");
   const toastSeq = useRef(0);
 
   const toast = useCallback((msg, type) => {
@@ -124,10 +125,18 @@ export default function IndustryDetail() {
   }, [configId, ctx, loadTree, configs]);
 
   // .conf ⇄ .stream 是两条独立 NginxConfig 记录：切换上下文时联动切换对应配置
+  // 如果目标配置不存在，打开创建弹窗并预选对应后缀，引导用户创建
   const switchCtx = (c) => {
     if (c === ctx) return;
     const target = configs.find((x) => (c === "stream") === x.name.includes(".stream"));
-    if (target && target.id !== configId) setConfigId(target.id);
+    if (!target) {
+      // 自动打开创建弹窗并预选对应后缀，让用户一键创建
+      setCfgSuffix(c);
+      setCfgName("");
+      setShowCreateCfg(true);
+      return;
+    }
+    if (target.id !== configId) setConfigId(target.id);
     setCtxState(c);
   };
 
@@ -225,15 +234,22 @@ export default function IndustryDetail() {
       .catch((e) => toast("镜像落库失败：" + (e.response?.data?.detail || "未知错误"), "err"));
   }, [ctx, tree, toast, loadTree, configId]);
 
-  // 空行业引导：新建第一个配置文件（.conf），创建后自动选中进入块管理
+  // 新建配置文件（.conf 或 .stream），创建后自动选中进入块管理
   const createCfgOk = () => {
-    const nm = cfgName.trim();
-    if (!nm) { toast("请输入配置文件名", "warn"); return; }
+    const baseName = cfgName.trim();
+    if (!baseName) { toast("请输入配置文件名", "warn"); return; }
+    // 自动去掉用户可能输入的后缀，统一拼接
+    const cleanName = baseName.replace(/\.(conf|stream)$/i, "");
+    const fullName = `${cleanName}.${cfgSuffix}`;
+    const isStream = cfgSuffix === "stream";
+    const defaultText = isStream
+      ? "# stream 配置文件\nstream {\n    # 在此定义 TCP/UDP 代理\n}\n"
+      : "http {\n    include mime.types;\n    default_type application/octet-stream;\n    sendfile on;\n}\n";
     createNginxConfig({
       industry_id: project.industry_id,
       project_id: pid,
-      name: nm,
-      config_text: "http {\n    include mime.types;\n    default_type application/octet-stream;\n    sendfile on;\n}\n",
+      name: fullName,
+      config_text: defaultText,
       enabled: true,
     })
       .then((r) => {
@@ -243,6 +259,7 @@ export default function IndustryDetail() {
         return listConfigsByProject(project.industry_id, pid).then((res) => {
           setConfigs(res.data);
           setConfigId(r.data.id);
+          setCtxState(cfgSuffix);
         });
       })
       .catch((e) => toast("创建失败：" + (e.response?.data?.detail || "未知错误"), "err"));
@@ -366,11 +383,21 @@ export default function IndustryDetail() {
           <div className="ops-sidebar">
             {/* ctxseg 归位：侧边栏最顶部 */}
             <div className="ctxseg">
-              {["conf", "stream"].map((c) => (
-                <div key={c} className={`ctx-i${ctx === c ? " on" : ""}`} onClick={() => switchCtx(c)}>
-                  .{c}
-                </div>
-              ))}
+              {["conf", "stream"].map((c) => {
+                const exists = configs.some((x) => (c === "stream") === x.name.includes(".stream"));
+                const cls = `ctx-i${ctx === c ? " on" : ""}${exists ? "" : " missing"}`;
+                return (
+                  <div
+                    key={c}
+                    className={cls}
+                    title={exists ? `切换到 .${c} 配置` : `该项目暂无 .${c} 配置文件`}
+                    onClick={() => switchCtx(c)}
+                  >
+                    .{c}
+                    {!exists && <span style={{ marginLeft: 4, fontSize: 10, color: "var(--text-ter)" }}>＋</span>}
+                  </div>
+                );
+              })}
             </div>
             <div className="side-group grow">
               <div className="side-head" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingRight: 10 }}>
@@ -413,7 +440,7 @@ export default function IndustryDetail() {
                       ? "该项目还没有任何 nginx 配置，你当前为只读权限，可联系项目负责人维护。"
                       : <>该项目还没有任何 nginx 配置。可以新建一个 <span className="mono">.conf</span> 配置文件开始维护，创建后即可通过「＋ 块」添加 server / upstream 等配置。</>}
                   </p>
-                  {!readOnly && <button className="btn primary" onClick={() => setShowCreateCfg(true)}>新建配置文件</button>}
+                  {!readOnly && <button className="btn primary" onClick={() => { setCfgSuffix("conf"); setShowCreateCfg(true); }}>新建配置文件</button>}
                 </div>
               </div>
             ) : (
@@ -455,16 +482,56 @@ export default function IndustryDetail() {
         {/* 新增顶级块（监听点 / 共性块共用，弹窗内选择 scope） */}
         <AddBlockModal open={showAdd} onClose={() => setShowAdd(false)} onAdded={() => loadTree(configId, ctx)} />
 
-        {/* 空行业引导：新建第一个配置文件 */}
+        {/* 空行业引导 / 缺失标签触发：新建配置文件（.conf 或 .stream） */}
         {showCreateCfg && (
           <div className="ops-modal-mask" onClick={() => setShowCreateCfg(false)}>
             <div className="ops-modal" onClick={(e) => e.stopPropagation()}>
               <h3>新建配置文件</h3>
               <div className="fgroup">
-                <label>配置文件名（.conf）</label>
-                <input value={cfgName} onChange={(e) => setCfgName(e.target.value)} placeholder={(project?.code || "project") + "_nginx.conf"} autoFocus />
+                <label>后缀类型</label>
+                <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
+                  {["conf", "stream"].map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      className={`btn mini${cfgSuffix === s ? " primary" : ""}`}
+                      onClick={() => setCfgSuffix(s)}
+                    >
+                      .{s}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <div className="modal-tip">创建后可在块管理中通过「＋ 块」添加 server / upstream / map 等配置，也可用「推送配置」导入已有 conf 文件。</div>
+              <div className="fgroup">
+                <label>配置文件名</label>
+                <div style={{ display: "flex", gap: 0 }}>
+                  <input
+                    value={cfgName}
+                    onChange={(e) => setCfgName(e.target.value)}
+                    placeholder={(project?.code || "project") + "_nginx"}
+                    autoFocus
+                    style={{ flex: 1, borderRadius: "6px 0 0 6px" }}
+                  />
+                  <span
+                    className="mono"
+                    style={{
+                      padding: "8px 12px",
+                      background: "var(--bg-deep2)",
+                      border: "1px solid var(--border-soft)",
+                      borderLeft: "none",
+                      borderRadius: "0 6px 6px 0",
+                      color: "var(--text-ter)",
+                    }}
+                  >
+                    .{cfgSuffix}
+                  </span>
+                </div>
+              </div>
+              <div className="modal-tip">
+                {cfgSuffix === "stream"
+                  ? ".stream 文件用于 TCP/UDP 代理配置，推送时走独立 stream 接口。"
+                  : ".conf 文件用于 HTTP 配置，可在此定义 server / upstream / map 等块。"}
+              </div>
               <div className="modal-actions">
                 <button className="btn" onClick={() => setShowCreateCfg(false)}>取消</button>
                 <button className="btn primary" onClick={createCfgOk}>创建</button>
