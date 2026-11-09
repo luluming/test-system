@@ -36,6 +36,7 @@ class ProjectOut(BaseModel):
     my_perm: str = "none"
     nginx_count: int = 0
     yml_count: int = 0
+    nacos_count: int = 0
     env_count: int = 0
     grant_count: int = 0
     created_at: datetime

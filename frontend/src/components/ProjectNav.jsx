@@ -7,11 +7,11 @@ const TABS = [
   { key: "overview", label: "概览" },
   { key: "nginx", label: "Nginx 配置" },
   { key: "yaml", label: "YML 配置" },
-  { key: "config", label: "配置管理" },
+  { key: "config", label: "Nacos 配置" },
 ];
 
-// 各分区的计数角标（配置管理显示环境变量数量）
-const COUNT_KEYS = { nginx: "nginx_count", yaml: "yml_count", config: "env_count" };
+// 各分区的计数角标（Nacos 配置 = nacos 导入 + 环境变量）
+const COUNT_KEYS = { nginx: ["nginx_count"], yaml: ["yml_count"], config: ["nacos_count", "env_count"] };
 
 function permTag(perm) {
   if (perm === "owner") return <span className="tag2 pub">负责人</span>;
@@ -52,7 +52,8 @@ export default function ProjectNav({ project, active, right = null, panel = fals
 
       <div className="pnav-tabs" role="tablist">
         {TABS.map((t) => {
-          const n = project[COUNT_KEYS[t.key]];
+          const keys = COUNT_KEYS[t.key];
+          const n = keys ? keys.reduce((sum, k) => sum + (project[k] || 0), 0) : null;
           return (
             <div
               key={t.key}

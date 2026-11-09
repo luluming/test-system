@@ -6,9 +6,14 @@
 
 import difflib
 import hashlib
+import io
 import json
 import logging
+import re
 import secrets
+import tarfile
+import zipfile
+from collections import Counter
 from datetime import datetime, timedelta
 
 from fastapi import (
@@ -22,6 +27,7 @@ from fastapi import (
     UploadFile,
     status,
 )
+from fastapi.responses import PlainTextResponse, StreamingResponse
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
@@ -32,7 +38,8 @@ from app.core.permissions import (
     resolve_project_for_config,
     visible_project_ids,
 )
-from app.core.security import decode_token, get_current_user
+from app.core.security import create_access_token, decode_token, get_current_user
+from app.models import Industry
 from app.models.project import Project
 from app.models.user import User
 from app.models.yaml import (
@@ -42,6 +49,8 @@ from app.models.yaml import (
     YamlPushToken,
 )
 from app.schemas.yaml import (
+    ImportZipResult,
+    NacosViewRow,
     YamlConfigCreate,
     YamlConfigListItem,
     YamlConfigOut,
@@ -186,7 +195,7 @@ def yaml_stats_by_industry(
             vis = visible_cache[r.industry_id]
             if vis is not None and r.project_id not in vis:
                 continue
-        info = analyze(r.content_text)
+        info = analyze(r.content_text, format_hint=_config_format(r.name))
         agg = out.setdefault(
             r.industry_id,
             {"yml_count": 0, "hosts": 0, "clusters": 0, "total_nodes": 0},
@@ -202,6 +211,11 @@ def yaml_stats_by_industry(
 def list_yaml_configs(
     industry_id: int,
     project_id: int | None = None,
+    exclude_nacos_imported: bool = Query(
+        default=False,
+        description="为 True 时排除从 Nacos tenant-config-data 目录导入的配置（description 以 nacos: 开头），"
+                    "仅返回项目原生 YAML。YML 工作台应传 True，Nacos 配置页传 False。",
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> list[dict]:
@@ -214,18 +228,24 @@ def list_yaml_configs(
     if project_id is not None:
         require_project_view(db, current_user, project_id)
         stmt = stmt.where(YamlConfig.project_id == project_id)
+    if exclude_nacos_imported:
+        stmt = stmt.where(
+            (YamlConfig.description.is_(None))
+            | (~YamlConfig.description.like("nacos:%"))
+        )
     rows = list(db.execute(stmt.order_by(YamlConfig.id)).scalars().all())
     if project_id is None and current_user.role != "admin":
         vis = visible_project_ids(db, current_user, industry_id) or set()
         rows = [r for r in rows if r.project_id in vis]
     out: list[dict] = []
     for r in rows:
-        info = analyze(r.content_text)
+        info = analyze(r.content_text, format_hint=_config_format(r.name))
         out.append(
             {
                 "id": r.id,
                 "industry_id": r.industry_id,
                 "name": r.name,
+                "group": r.group,
                 "description": r.description,
                 "status": r.status,
                 "version": r.version,
@@ -261,11 +281,17 @@ def create_yaml_config(
             detail="该项目下已存在同名 YAML 配置",
         )
     content = payload.content or ""
-    errors = validate_yaml(content) if content.strip() else []
+    # 仅 YAML 格式做语法校验：properties/json/text 原文不属于 YAML 语法
+    errors = (
+        validate_yaml(content)
+        if _config_format(payload.name) == "yaml" and content.strip()
+        else []
+    )
     cfg = YamlConfig(
         industry_id=payload.industry_id,
         project_id=project.id,
         name=payload.name,
+        group=payload.group or "DEFAULT_GROUP",
         description=payload.description,
         content_text=content,
         status="invalid" if errors else "enabled",
@@ -278,6 +304,317 @@ def create_yaml_config(
     db.commit()
     db.refresh(cfg)
     return cfg
+
+
+# ---- Nacos 风格配置管理（命名空间/分组/dataId，注册在 /{config_id} 之前）----
+
+
+def _config_format(name: str) -> str:
+    """按 dataId 后缀推断配置格式。"""
+    low = name.lower()
+    if low.endswith((".yml", ".yaml")):
+        return "yaml"
+    if low.endswith(".properties"):
+        return "properties"
+    if low.endswith(".json"):
+        return "json"
+    return "text"
+
+
+@router.get("/nacos-view", response_model=list[NacosViewRow])
+def nacos_view(
+    project_id: int | None = None,
+    industry_id: int | None = None,
+    data_id: str = "",
+    group: str = "",
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[NacosViewRow]:
+    """Nacos 控制台风格配置列表：命名空间（项目）→ group → dataId。
+
+    project_id 指定命名空间；data_id / group 为模糊过滤；
+    非管理员仅返回其有查看权限项目下的配置。
+    """
+    stmt = select(YamlConfig)
+    if industry_id is not None:
+        stmt = stmt.where(YamlConfig.industry_id == industry_id)
+    if project_id is not None:
+        stmt = stmt.where(YamlConfig.project_id == project_id)
+    rows = list(
+        db.execute(stmt.order_by(YamlConfig.project_id, YamlConfig.name)).scalars().all()
+    )
+    if current_user.role != "admin":
+        vis_cache: dict[int, set[int] | None] = {}
+        kept = []
+        for r in rows:
+            if r.industry_id not in vis_cache:
+                vis_cache[r.industry_id] = visible_project_ids(
+                    db, current_user, r.industry_id
+                )
+            vis = vis_cache[r.industry_id]
+            if vis is not None and r.project_id not in vis:
+                continue
+            kept.append(r)
+        rows = kept
+    if data_id:
+        rows = [r for r in rows if data_id.lower() in r.name.lower()]
+    if group:
+        rows = [r for r in rows if group.lower() in (r.group or "").lower()]
+
+    pids = {r.project_id for r in rows if r.project_id}
+    projects = (
+        {p.id: p for p in db.execute(select(Project).where(Project.id.in_(pids))).scalars().all()}
+        if pids
+        else {}
+    )
+    return [
+        NacosViewRow(
+            id=r.id,
+            project_id=r.project_id or 0,
+            project_name=projects[r.project_id].name if r.project_id in projects else "",
+            industry_id=r.industry_id,
+            data_id=r.name,
+            group=r.group or "DEFAULT_GROUP",
+            format=_config_format(r.name),
+            status=r.status,
+            version=r.version,
+            updated_at=r.updated_at,
+            description=r.description,
+        )
+        for r in rows
+    ]
+
+
+@router.post("/import-zip", response_model=ImportZipResult)
+async def import_nacos_zip(
+    industry_id: int,
+    file: UploadFile = File(...),
+    project_id: int | None = None,
+    conflict: str = "skip",
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ImportZipResult:
+    """导入 Nacos 配置 ZIP，兼容两种目录形态（自动识别）：
+
+    - 三层：``tenant-config-data/{tenant}/{group}/{dataId}``（服务端磁盘快照）
+      → 按命名空间（tenant）自动创建项目，group 记入配置分组；
+    - 两层：``{group}/{dataId}``（Nacos 控制台导出格式）
+      → 全部导入到 project_id 指定项目（命名空间）。
+
+    conflict=skip 同名跳过 | overwrite 覆盖为新版本（可回滚）。
+    """
+    if conflict not in ("skip", "overwrite"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="conflict 仅支持 skip / overwrite"
+        )
+    industry = db.execute(
+        select(Industry).where(Industry.id == industry_id)
+    ).scalar_one_or_none()
+    if industry is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="行业不存在")
+
+    raw = await file.read()
+    if len(raw) > 20 * 1024 * 1024:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="ZIP 超过 20MB 上限"
+        )
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(raw))
+    except zipfile.BadZipFile:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="无效的 ZIP 文件")
+
+    META_NAMES = {"meta.json", "meta.yaml", ".meta.yml"}
+    entries: list[tuple[str | None, str, str, str]] = []
+    skipped_files: list[str] = []
+    for info in zf.infolist():
+        if info.is_dir():
+            continue
+        path = info.filename.replace("\\", "/")
+        segs = [s for s in path.split("/") if s]
+        if not segs:
+            continue
+        base = segs[-1]
+        if base.startswith(".") or base in META_NAMES or "~" in base:
+            continue  # 隐藏文件 / 元信息 / beta~、tag~ 灰度数据
+        if segs[0].endswith("-config-data"):
+            segs = segs[1:]  # 去掉 tenant-config-data / config-data 根目录
+        if len(segs) >= 3:
+            tenant, grp, data_id = segs[0], segs[1], "/".join(segs[2:])
+        elif len(segs) == 2:
+            tenant, grp, data_id = None, segs[0], segs[1]
+        else:
+            continue  # 根目录散文件不构成 Nacos 结构，忽略
+        if info.file_size > 1024 * 1024:
+            skipped_files.append(f"{path}（超过 1MB）")
+            continue
+        if len(data_id) > 100:
+            data_id = data_id[:97] + "..."
+        try:
+            content = zf.read(info).decode("utf-8")
+        except UnicodeDecodeError:
+            content = zf.read(info).decode("utf-8", errors="replace")
+        entries.append((tenant, grp, data_id, content))
+
+    if not entries:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="ZIP 中未识别到任何 {group}/{dataId} 结构的配置文件",
+        )
+    if len(entries) > 500:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"单次最多导入 500 个文件（当前 {len(entries)} 个）",
+        )
+
+    has_tenant = any(e[0] for e in entries)
+    if not has_tenant and project_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="两层结构 ZIP 需要指定目标项目（命名空间）",
+        )
+    target_project = None
+    if project_id is not None:
+        require_project_edit(db, current_user, project_id)
+        target_project = db.get(Project, project_id)
+        if target_project is None or target_project.industry_id != industry_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="目标项目不存在或不属于该行业"
+            )
+
+    result = ImportZipResult(total=len(entries), mode="tenant" if has_tenant else "group")
+    proj_cache: dict[str, Project] = {}
+    used_codes: set[str] = set()
+    existing_codes = set(
+        db.execute(
+            select(Project.code).where(Project.industry_id == industry_id)
+        ).scalars().all()
+    )
+    used_codes |= existing_codes
+
+    for tenant, grp, data_id, content in entries:
+        try:
+            if has_tenant:
+                ns = tenant or grp  # 三层中缺 tenant 时以 group 兜底
+                proj = proj_cache.get(ns)
+                if proj is None:
+                    proj = db.execute(
+                        select(Project).where(
+                            Project.industry_id == industry_id, Project.name == ns
+                        )
+                    ).scalar_one_or_none()
+                    if proj is None:
+                        base_code = re.sub(r"[^a-z0-9-]+", "-", ns.lower()).strip("-") or "ns"
+                        code = base_code[:50] or "ns"
+                        i = 2
+                        while code in used_codes:
+                            code = f"{base_code[:46]}-{i}"
+                            i += 1
+                        proj = Project(
+                            industry_id=industry_id,
+                            name=ns[:100],
+                            code=code,
+                            owner_id=current_user.id,
+                            remark="Nacos ZIP 导入：命名空间自动创建",
+                        )
+                        db.add(proj)
+                        db.flush()
+                        used_codes.add(code)
+                        result.projects_created += 1
+                    proj_cache[ns] = proj
+            else:
+                proj = target_project
+
+            exists = db.execute(
+                select(YamlConfig).where(
+                    YamlConfig.project_id == proj.id, YamlConfig.name == data_id
+                )
+            ).scalar_one_or_none()
+            desc = f"nacos:tenant={tenant or ''},group={grp}"
+            is_yaml = data_id.lower().endswith((".yml", ".yaml"))
+            errors = (
+                validate_yaml(content)
+                if is_yaml and content.strip()
+                else []
+            )
+            new_status = "invalid" if errors else "enabled"
+            if exists is not None:
+                if conflict == "skip":
+                    result.skipped += 1
+                    continue
+                exists.content_text = content
+                exists.description = desc
+                exists.group = grp or "DEFAULT_GROUP"
+                exists.status = new_status
+                exists.version += 1
+                _snapshot(
+                    db,
+                    exists.id,
+                    exists.version,
+                    content,
+                    note="Nacos ZIP 导入覆盖",
+                    created_by=current_user.username,
+                )
+                result.updated += 1
+            else:
+                cfg = YamlConfig(
+                    industry_id=industry_id,
+                    project_id=proj.id,
+                    name=data_id,
+                    group=grp or "DEFAULT_GROUP",
+                    description=desc,
+                    content_text=content,
+                    status=new_status,
+                    version=1,
+                    created_by=current_user.username,
+                )
+                db.add(cfg)
+                db.flush()
+                _snapshot(
+                    db,
+                    cfg.id,
+                    1,
+                    content,
+                    note="Nacos ZIP 导入",
+                    created_by=current_user.username,
+                )
+                result.created += 1
+        except Exception as exc:  # 单文件失败不阻断整体导入
+            result.failed.append({"name": data_id, "reason": str(exc)[:120]})
+    if skipped_files:
+        result.failed.extend({"name": f, "reason": "文件超限跳过"} for f in skipped_files)
+    db.commit()
+    return result
+
+
+@router.get("/export-zip")
+def export_nacos_zip(
+    project_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """按 Nacos 控制台导入格式导出项目配置：``{group}/{dataId}`` ZIP。
+
+    恢复时在 Nacos 控制台选择目标命名空间导入该 ZIP 即可。
+    """
+    require_project_view(db, current_user, project_id)
+    project = db.get(Project, project_id)
+    if project is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="项目不存在")
+    rows = list(
+        db.execute(select(YamlConfig).where(YamlConfig.project_id == project_id)).scalars().all()
+    )
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for r in rows:
+            grp = (r.group or "DEFAULT_GROUP").strip() or "DEFAULT_GROUP"
+            zf.writestr(f"{grp}/{r.name}", r.content_text)
+    buf.seek(0)
+    filename = f"nacos-{project.code or project.id}.zip"
+    return StreamingResponse(
+        buf,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/{config_id}", response_model=YamlConfigOut)
@@ -306,7 +643,8 @@ def save_yaml_config(
             status_code=status.HTTP_409_CONFLICT,
             detail="内容已被他人修改（版本号不匹配），请刷新后重试",
         )
-    errors = validate_yaml(payload.content)
+    # 仅 YAML 格式校验语法；properties/json/text 直接按原文保存
+    errors = validate_yaml(payload.content) if _config_format(cfg.name) == "yaml" else []
     if errors and not payload.force_draft:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -421,7 +759,7 @@ def rollback_yaml_config(
     ).scalar_one_or_none()
     if target is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="目标版本不存在，请从版本列表重新选择")
-    errors = validate_yaml(target.content)
+    errors = validate_yaml(target.content) if _config_format(cfg.name) == "yaml" else []
     cfg.content_text = target.content
     cfg.status = "invalid" if errors else "enabled"
     cfg.version += 1
@@ -444,6 +782,9 @@ def get_yaml_tree(
     """原文 → 结构化树；语法非法时返回错误清单（宽松模式：原文照常可浏览/编辑）。"""
     cfg = _get_config(db, config_id)
     resolve_project_for_config(db, cfg, current_user, "view")
+    # 非 YAML 格式（properties/json/text）不参与 YAML 语法解析，直接按纯文本展示
+    if _config_format(cfg.name) != "yaml":
+        return {"valid": True, "errors": [], "tree": [], "line_count": len((cfg.content_text or "").splitlines()), "text_mode": True}
     errors = validate_yaml(cfg.content_text)
     if errors:
         return {"valid": False, "errors": errors, "tree": []}
@@ -606,14 +947,20 @@ def yaml_push_preview(
         text = raw.decode("utf-8")
     except UnicodeDecodeError:
         text = raw.decode("gbk", errors="replace")
-    errors = validate_yaml(text)
-    if errors:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={"errors": errors, "message": "YAML 语法校验未通过，文件整体拒绝，不产生任何入库副作用"},
-        )
     cfg = _get_config(db, config_id)
-    entries, counts = compute_diff(text, cfg.content_text)
+    is_yaml = _config_format(cfg.name) == "yaml"
+    if is_yaml:
+        errors = validate_yaml(text)
+        if errors:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={"errors": errors, "message": "YAML 语法校验未通过，文件整体拒绝，不产生任何入库副作用"},
+            )
+        entries, counts = compute_diff(text, cfg.content_text)
+    else:
+        # properties / json / text：按纯文本逐行比对，不做 YAML 结构解析
+        added, removed = _line_diff(cfg.content_text or "", text)
+        entries, counts = [], {"replace": removed, "new": added, "delete": 0, "keep": 0}
     if counts["replace"] == 0 and counts["new"] == 0 and counts["delete"] == 0:
         return {
             "ok": True,
@@ -675,16 +1022,26 @@ def _apply_pending_task(db: Session, config_id: int, task_id: int, note: str) ->
             detail=f"任务状态为 {task.status}，不可提交",
         )
     cfg = _get_config(db, config_id)
-    errors = validate_yaml(task.raw_text)
-    if errors:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="原文解析异常，任务无效")
-    entries, counts = compute_diff(task.raw_text, cfg.content_text)
-    # 竞态保护：预览后配置若被修改 → 差异变化 → 拒绝并要求重新预览
-    if json.dumps(entries, ensure_ascii=False) != task.diff_json:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="配置在预览后已被修改，差异已变化，请重新预览后再提交",
-        )
+    if _config_format(cfg.name) == "yaml":
+        errors = validate_yaml(task.raw_text)
+        if errors:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="原文解析异常，任务无效")
+        entries, counts = compute_diff(task.raw_text, cfg.content_text)
+        # 竞态保护：预览后配置若被修改 → 差异变化 → 拒绝并要求重新预览
+        if json.dumps(entries, ensure_ascii=False) != task.diff_json:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="配置在预览后已被修改，差异已变化，请重新预览后再提交",
+            )
+    else:
+        # 非 YAML：按原文整体替换，只做「是否有变化」的竞态保护
+        if (cfg.content_text or "") == task.raw_text:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="该任务无任何变更（文件与线上配置一致），无需提交",
+            )
+        added, removed = _line_diff(cfg.content_text or "", task.raw_text)
+        entries, counts = [], {"replace": removed, "new": added, "delete": 0, "keep": 0}
     if counts["replace"] == 0 and counts["new"] == 0 and counts["delete"] == 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -741,21 +1098,26 @@ def yaml_push_direct(
         text = raw.decode("utf-8")
     except UnicodeDecodeError:
         text = raw.decode("gbk", errors="replace")
-    errors = validate_yaml(text)
-    if errors:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={"errors": errors, "message": "YAML 语法校验未通过，文件整体拒绝，不产生任何入库副作用"},
-        )
     cfg = _get_config(db, config_id)
-    try:
-        entries, counts = compute_diff(text, cfg.content_text)
-    except Exception as e:  # noqa: BLE001 compose_yaml 可能与 validate_yaml 解析器不一致
-        logger.warning("compute_diff 失败 config_id=%s err=%s", config_id, e)
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={"message": f"YAML 结构解析失败：{e!s}"},
-        )
+    if _config_format(cfg.name) == "yaml":
+        errors = validate_yaml(text)
+        if errors:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={"errors": errors, "message": "YAML 语法校验未通过，文件整体拒绝，不产生任何入库副作用"},
+            )
+        try:
+            entries, counts = compute_diff(text, cfg.content_text)
+        except Exception as e:  # noqa: BLE001 compose_yaml 可能与 validate_yaml 解析器不一致
+            logger.warning("compute_diff 失败 config_id=%s err=%s", config_id, e)
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={"message": f"YAML 结构解析失败：{e!s}"},
+            )
+    else:
+        # properties / json / text：纯文本逐行比对，不做 YAML 解析
+        added, removed = _line_diff(cfg.content_text or "", text)
+        entries, counts = [], {"replace": removed, "new": added, "delete": 0, "keep": 0}
     if counts["replace"] == 0 and counts["new"] == 0 and counts["delete"] == 0:
         return {
             "ok": True,
@@ -827,3 +1189,255 @@ def yaml_push_apply(
     result = _apply_pending_task(db, config_id, task_id, payload.note or "推送提交")
     _consume_token(db, token_row)  # ← 仅 apply 成功后消耗
     return result
+
+
+# ---- 整目录推送（curl + tar.gz）：一条命令把 Nacos 落盘目录全部同步进系统 ----
+
+
+def _iter_tar_entries(raw: bytes) -> list[tuple[str, str, str, str]]:
+    """解析 tar.gz，返回 (tenant, group, data_id, content)。
+
+    兼容两种目录形态：
+      ① tenant-config-data/{tenant}/{group}/{dataId}  （Nacos 服务端磁盘缓存）
+      ② {group}/{dataId}                              （控制台导出）
+    以「/」开头、隐藏文件、非普通文件一律忽略。
+    """
+    try:
+        tar = tarfile.open(fileobj=io.BytesIO(raw), mode="r:gz")
+    except tarfile.ReadError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="无法解析 tar.gz 数据流；请确认使用 --data-binary @- 传递 tar -czf - 的输出",
+        )
+    entries: list[tuple[str, str, str, str]] = []
+    try:
+        for member in tar.getmembers():
+            if not member.isfile():
+                continue
+            parts = [p for p in member.name.split("/") if p not in ("", ".")]
+            if len(parts) < 2:
+                continue
+            if parts[0] == "tenant-config-data":
+                parts = parts[1:]  # 允许把整个 data 根目录一起打包
+            if len(parts) < 2 or parts[-1].startswith("."):
+                continue
+            data_id = parts[-1]
+            group = parts[-2]
+            tenant = "/".join(parts[:-2]) or "public"
+            fh = tar.extractfile(member)
+            if fh is None:
+                continue
+            content = fh.read().decode("utf-8", errors="replace")
+            entries.append((tenant, group, data_id, content))
+    finally:
+        tar.close()
+    return entries
+
+
+def _line_diff(prev: str, cur: str) -> tuple[int, int]:
+    """返回 (新增行数, 删除行数)，基于行级 difflib。"""
+    added = removed = 0
+    for line in difflib.unified_diff(
+        prev.splitlines(), cur.splitlines(), lineterm="", n=0
+    ):
+        if line.startswith("+") and not line.startswith("+++"):
+            added += 1
+        elif line.startswith("-") and not line.startswith("---"):
+            removed += 1
+    return added, removed
+
+
+@router.post("/push-directory-token")
+def push_directory_token(
+    project_id: int = Query(..., description="目标项目（命名空间）"),
+    hours: int = Query(24, ge=1, le=168, description="令牌有效小时数"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """签发「整目录推送」用的短期 JWT（需项目可编辑权限）。"""
+    require_project_edit(db, current_user, project_id)
+    token = create_access_token(
+        current_user.username,
+        expires_delta=timedelta(hours=hours),
+        token_version=current_user.token_version,
+    )
+    return {
+        "token": token,
+        "expires_in": hours * 3600,
+        "project_id": project_id,
+        "username": current_user.username,
+    }
+
+
+@router.post("/push-directory")
+async def push_directory(
+    request: Request,
+    project_id: int = Query(..., description="目标项目（命名空间）"),
+    dry_run: bool = Query(False, description="true 时只比对、不落库"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """整目录推送：解包 tar.gz → 逐文件与线上比对 → 变更落库并留版本快照。
+
+    返回逐文件明细（新增/修改/未变/失败、增删行数、版本号），便于在页面上查看。
+    """
+    project = require_project_edit(db, current_user, project_id)
+    raw = await request.body()
+    if not raw:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="请求体为空：请通过 --data-binary @- 传入 tar.gz")
+
+    entries = _iter_tar_entries(raw)
+    if not entries:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="压缩包内未找到配置文件（期望 tenant-config-data/{命名空间}/{分组}/{dataId}）",
+        )
+
+    # 同一项目内 dataId 重名时，用「命名空间/dataId」区分，避免唯一约束冲突
+    dup_names = {
+        d for d, c in Counter(e[2] for e in entries).items() if c > 1
+    }
+
+    batch_id = f"dirpush-{datetime.utcnow():%Y%m%d%H%M%S}-{secrets.token_hex(3)}"
+    rows: list[dict] = []
+    created = updated = unchanged = failed = 0
+
+    for tenant, group, data_id, content in entries:
+        name = f"{tenant}/{data_id}" if data_id in dup_names else data_id
+        try:
+            exists = db.execute(
+                select(YamlConfig).where(
+                    YamlConfig.project_id == project.id, YamlConfig.name == name
+                )
+            ).scalar_one_or_none()
+            if exists is None:
+                added, removed = len(content.splitlines()), 0
+                if not dry_run:
+                    cfg = YamlConfig(
+                        industry_id=project.industry_id,
+                        project_id=project.id,
+                        name=name[:100],
+                        group=group or "DEFAULT_GROUP",
+                        description=f"nacos:tenant={tenant},group={group}",
+                        content_text=content,
+                        status="enabled",
+                        version=1,
+                        created_by=current_user.username,
+                    )
+                    db.add(cfg)
+                    db.flush()
+                    _snapshot(
+                        db,
+                        cfg.id,
+                        1,
+                        content,
+                        note=f"目录推送·新建 · {tenant}/{group}/{data_id} · {batch_id} · +{added}",
+                        created_by=current_user.username,
+                    )
+                created += 1
+                rows.append({
+                    "path": f"{tenant}/{group}/{data_id}",
+                    "name": name,
+                    "group": group,
+                    "action": "created",
+                    "added": added,
+                    "removed": 0,
+                    "version": 1,
+                })
+                continue
+
+            if exists.content_text == content:
+                unchanged += 1
+                rows.append({
+                    "path": f"{tenant}/{group}/{data_id}",
+                    "name": name,
+                    "group": group,
+                    "action": "unchanged",
+                    "added": 0,
+                    "removed": 0,
+                    "version": exists.version,
+                })
+                continue
+
+            added, removed = _line_diff(exists.content_text or "", content)
+            if not dry_run:
+                next_version = exists.version + 1
+                exists.content_text = content
+                exists.group = group or "DEFAULT_GROUP"
+                exists.description = f"nacos:tenant={tenant},group={group}"
+                exists.version = next_version
+                _snapshot(
+                    db,
+                    exists.id,
+                    next_version,
+                    content,
+                    note=(
+                        f"目录推送·变更 · {tenant}/{group}/{data_id} · "
+                        f"{batch_id} · +{added} -{removed}"
+                    ),
+                    created_by=current_user.username,
+                )
+            updated += 1
+            rows.append({
+                "path": f"{tenant}/{group}/{data_id}",
+                "name": name,
+                "group": group,
+                "action": "updated",
+                "added": added,
+                "removed": removed,
+                "version": exists.version if not dry_run else exists.version + 1,
+            })
+        except Exception as exc:  # noqa: BLE001 单文件失败不阻断整批
+            db.rollback()
+            failed += 1
+            rows.append({
+                "path": f"{tenant}/{group}/{data_id}",
+                "name": name,
+                "group": group,
+                "action": "failed",
+                "error": str(exc)[:200],
+            })
+
+    if not dry_run:
+        db.commit()
+
+    logger.info(
+        "整目录推送完成 batch=%s project=%s by=%s 新建=%s 变更=%s 未变=%s 失败=%s dry_run=%s",
+        batch_id, project.id, current_user.username, created, updated, unchanged, failed, dry_run,
+    )
+    return {
+        "batch_id": batch_id,
+        "project_id": project.id,
+        "project_name": project.name,
+        "dry_run": dry_run,
+        "total": len(entries),
+        "created": created,
+        "updated": updated,
+        "unchanged": unchanged,
+        "failed": failed,
+        "rows": rows[:2000],
+    }
+
+
+@router.get("/{config_id}/versions/{version}/raw", response_class=PlainTextResponse)
+def get_version_raw(
+    config_id: int,
+    version: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> PlainTextResponse:
+    """按版本号取配置原文，用于 curl 一键还原到磁盘。"""
+    cfg = _get_config(db, config_id)
+    resolve_project_for_config(db, cfg, current_user, "view")
+    row = db.execute(
+        select(YamlConfigVersion).where(
+            YamlConfigVersion.yaml_config_id == config_id,
+            YamlConfigVersion.version == version,
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="版本不存在")
+    return PlainTextResponse(
+        row.content or "",
+        headers={"X-Config-Name": cfg.name, "X-Config-Group": cfg.group or ""},
+    )

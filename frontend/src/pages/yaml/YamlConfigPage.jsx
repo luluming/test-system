@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Modal, Input } from "antd";
 import { getProject } from "../../api/projects";
 import * as yamlApi from "../../api/yaml";
@@ -175,6 +175,10 @@ function fmtDate(s) {
 export default function YamlConfigPage() {
   const { projectId } = useParams();
   const navigate = useNavigate();
+  // 深链接支持：/projects/:id/yaml?configId=N（Nacos 视图「编辑」跳转）→
+  // 文件列表加载完成后优先选中该配置
+  const [searchParams] = useSearchParams();
+  const pendingIdRef = useRef(Number(searchParams.get("configId")) || null);
   // 项目上下文：进入页面先拉取项目（校验访问权限），再按其行业加载 YAML 文件
   const [project, setProject] = useState(null);
   const [industryId, setIndustryId] = useState(null);
@@ -243,11 +247,19 @@ export default function YamlConfigPage() {
   const loadFiles = useCallback(() => {
     if (!industryId) return;
     setFilesLoading(true);
-    yamlApi.listYamlConfigs(industryId, projectId)
+    yamlApi.listYamlConfigs(industryId, projectId, { exclude_nacos_imported: true })
       .then((r) => {
         const list = r.data || [];
         setFiles(list);
-        setActiveId((prev) => (list.some((f) => f.id === prev) ? prev : list[0]?.id || null));
+        setActiveId((prev) => {
+          // 深链接优先：?configId= 指定的配置存在则选中（仅消费一次）
+          if (pendingIdRef.current && list.some((f) => f.id === pendingIdRef.current)) {
+            const id = pendingIdRef.current;
+            pendingIdRef.current = null;
+            return id;
+          }
+          return list.some((f) => f.id === prev) ? prev : list[0]?.id || null;
+        });
       })
       .catch(() => notify("加载 YAML 文件列表失败", "err"))
       .finally(() => setFilesLoading(false));

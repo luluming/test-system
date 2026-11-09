@@ -217,7 +217,7 @@ export default function ProjectListPage() {
                   </td>
                   <td className="meta">{p.owner_name}</td>
                   <td>{PERM_TAGS[p.my_perm] || p.my_perm}</td>
-                  <td className="meta">nginx {p.nginx_count} · yml {p.yml_count} · 变量 {p.env_count}</td>
+                  <td className="meta">nginx {p.nginx_count} · yml {p.yml_count} · nacos {p.nacos_count || 0} · 变量 {p.env_count}</td>
                   <td className="meta">
                     {p.share_all ? <span className="tag2 ok">全员</span> : p.grant_count > 0 ? `${p.grant_count} 人` : "—"}
                   </td>

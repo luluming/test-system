@@ -287,6 +287,11 @@ def init_db() -> None:
     _add_column_if_missing("users", "token_version INT NOT NULL DEFAULT 1", "token_version")
     _add_column_if_missing("nginx_configs", "project_id INT NULL", "project_id")
     _add_column_if_missing("yaml_configs", "project_id INT NULL", "project_id")
+    _add_column_if_missing(
+        "yaml_configs",
+        "`config_group` VARCHAR(100) NOT NULL DEFAULT 'DEFAULT_GROUP'",
+        "config_group",
+    )
     _ensure_config_unique_by_project()
 
     db = SessionLocal()

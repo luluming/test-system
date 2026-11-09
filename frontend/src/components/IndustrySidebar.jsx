@@ -183,6 +183,14 @@ export default function IndustrySidebar() {
       <div className="sb-head">
         <span className="sb-title">行业导航</span>
         <span className="sb-total" title="行业总数">{industries.length}</span>
+        <button
+          className="sb-iconbtn"
+          title="Nacos 配置（导入/导出）"
+          style={location.pathname === "/nacos" ? { color: "var(--brand-hover, #8fa3c8)" } : undefined}
+          onClick={() => navigate("/nacos")}
+        >
+          ⛁
+        </button>
         <button className="sb-iconbtn sb-collapse" title="折叠行业导航" onClick={() => setCollapsed(true)}>
           «
         </button>

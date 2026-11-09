@@ -2,8 +2,8 @@ import client from "./client";
 
 // ---- YAML 配置管理（后端真实 API）----
 
-export function listYamlConfigs(industryId, projectId) {
-  const params = {};
+export function listYamlConfigs(industryId, projectId, extraParams = {}) {
+  const params = { ...extraParams };
   if (industryId) params.industry_id = industryId;
   if (projectId) params.project_id = projectId;
   return client.get("/yaml-configs", { params });
@@ -46,6 +46,12 @@ export function createYamlPushToken(configId, purpose) {
 export function listYamlPushTasks(configId) {
   return client.get(`/yaml-configs/${configId}/push-tasks`);
 }
+// ---- 整目录推送：签发短期令牌（供 curl 一次性同步 Nacos 落盘目录）----
+export function createPushDirectoryToken(projectId, hours = 24) {
+  return client.post("/yaml-configs/push-directory-token", null, {
+    params: { project_id: projectId, hours },
+  });
+}
 // ---- 全局元信息：后端公网基址（供 curl 命令使用）----
 export function getMetaBase() {
   return client.get("/meta");
@@ -56,4 +62,24 @@ export function getYamlStatsByIndustry(industryIds) {
   const params = {};
   if (industryIds && industryIds.length) params.industry_ids = industryIds.join(",");
   return client.get("/yaml-configs/stats-by-industry", { params });
+}
+
+// ---- Nacos 风格配置管理（命名空间/分组/dataId）----
+export function nacosViewList(params) {
+  return client.get("/yaml-configs/nacos-view", { params });
+}
+export function importNacosZip(formData, params) {
+  return client.post("/yaml-configs/import-zip", formData, { params, timeout: 120000 });
+}
+export async function exportNacosZip(projectId, name = "") {
+  const res = await client.get("/yaml-configs/export-zip", {
+    params: { project_id: projectId },
+    responseType: "blob",
+  });
+  const url = URL.createObjectURL(res.data);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `nacos-${name || projectId}.zip`;
+  a.click();
+  URL.revokeObjectURL(url);
 }

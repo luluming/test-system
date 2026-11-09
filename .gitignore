@@ -37,3 +37,6 @@ Thumbs.db
 # ---- Trae 生成产物 ----
 .trae-html-share-packages/docs/
 .trae/
+
+# ---- 生产敏感数据（Nacos 配置快照，禁止入库）----
+docs/data/

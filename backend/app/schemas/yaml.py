@@ -17,6 +17,7 @@ class YamlConfigCreate(BaseModel):
 
     industry_id: int
     name: str = Field(min_length=1, max_length=100)
+    group: str = Field(default="DEFAULT_GROUP", max_length=100)
     description: str | None = None
     content: str = ""
     project_id: int | None = None
@@ -36,6 +37,7 @@ class YamlConfigOut(BaseModel):
     id: int
     industry_id: int
     name: str
+    group: str = "DEFAULT_GROUP"
     description: str | None
     content_text: str
     status: str  # enabled | disabled | invalid
@@ -53,6 +55,7 @@ class YamlConfigListItem(BaseModel):
     id: int
     industry_id: int
     name: str
+    group: str = "DEFAULT_GROUP"
     description: str | None
     status: str
     version: int
@@ -63,6 +66,34 @@ class YamlConfigListItem(BaseModel):
     top_keys: list[str] = []
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class NacosViewRow(BaseModel):
+    """Nacos 控制台风格配置列表行：命名空间（项目）→ group → dataId。"""
+
+    id: int
+    project_id: int
+    project_name: str
+    industry_id: int
+    data_id: str
+    group: str
+    format: str  # yaml | properties | json | text
+    status: str
+    version: int
+    updated_at: datetime
+    description: str | None = None
+
+
+class ImportZipResult(BaseModel):
+    """Nacos ZIP 批量导入结果报告。"""
+
+    total: int = 0
+    created: int = 0
+    updated: int = 0
+    skipped: int = 0
+    projects_created: int = 0
+    mode: str = "tenant"  # tenant：三层结构按命名空间建项目 | group：两层结构导入指定项目
+    failed: list[dict] = []
 
 
 class YamlConfigVersionOut(BaseModel):

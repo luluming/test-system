@@ -9,6 +9,7 @@ import ProjectConfigPage from "./pages/ProjectConfigPage";
 import AccountsPage from "./pages/AccountsPage";
 import IndustryDetail from "./pages/IndustryDetail";
 import YamlConfigPage from "./pages/yaml/YamlConfigPage";
+import NacosConfigPage from "./pages/NacosConfigPage";
 import AppShell from "./components/AppShell";
 import { getToken, getUser } from "./store/auth";
 
@@ -48,6 +49,7 @@ export default function App() {
       <Route path="/reset-password" element={<ResetPassword />} />
       <Route element={<ProtectedLayout />}>
         <Route path="/" element={<IndustryDashboard />} />
+        <Route path="/nacos" element={<NacosConfigPage />} />
         <Route path="/industries/:industryId/projects" element={<ProjectListPage />} />
         <Route path="/projects/:projectId" element={<ProjectDetailPage />} />
         <Route path="/projects/:projectId/nginx" element={<IndustryDetail />} />

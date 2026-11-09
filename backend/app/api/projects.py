@@ -55,7 +55,11 @@ ENV_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 def _batch_counts(db: Session, project_ids: list[int]) -> dict[str, dict[int, int]]:
-    """批量统计各项目下的 nginx/yml/env/授权计数，避免逐项目查询。"""
+    """批量统计各项目下的 nginx/yml/nacos/env/授权计数，避免逐项目查询。
+
+    yml 仅统计项目原生 YAML（description 不以 nacos: 开头）；
+    nacos 统计从 Nacos tenant-config-data 导入的配置（description 以 nacos: 开头）。
+    """
 
     def _count(model, key: str) -> dict[int, int]:
         if not project_ids:
@@ -67,9 +71,26 @@ def _batch_counts(db: Session, project_ids: list[int]) -> dict[str, dict[int, in
         ).all()
         return {pid: cnt for pid, cnt in rows}
 
+    def _count_yaml(nacos_imported: bool) -> dict[int, int]:
+        if not project_ids:
+            return {}
+        q = select(YamlConfig.project_id, func.count()).where(
+            YamlConfig.project_id.in_(project_ids)
+        )
+        if nacos_imported:
+            q = q.where(YamlConfig.description.like("nacos:%"))
+        else:
+            q = q.where(
+                (YamlConfig.description.is_(None))
+                | (~YamlConfig.description.like("nacos:%"))
+            )
+        rows = db.execute(q.group_by(YamlConfig.project_id)).all()
+        return {pid: cnt for pid, cnt in rows}
+
     return {
         "nginx": _count(NginxConfig, "nginx"),
-        "yml": _count(YamlConfig, "yml"),
+        "yml": _count_yaml(nacos_imported=False),
+        "nacos": _count_yaml(nacos_imported=True),
         "env": _count(EnvVar, "env"),
         "grant": _count(ShareGrant, "grant"),
     }
@@ -95,6 +116,7 @@ def _to_out(
         my_perm=perm,
         nginx_count=counts["nginx"].get(project.id, 0),
         yml_count=counts["yml"].get(project.id, 0),
+        nacos_count=counts["nacos"].get(project.id, 0),
         env_count=counts["env"].get(project.id, 0),
         grant_count=counts["grant"].get(project.id, 0),
         created_at=project.created_at,

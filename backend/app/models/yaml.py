@@ -39,6 +39,15 @@ class YamlConfig(Base):
         ForeignKey("projects.id"), index=True, nullable=True
     )
     name: Mapped[str] = mapped_column(String(100), index=True, nullable=False)
+    # Nacos 风格分组（tenant-config-data 三级结构中的 group 层）；DB 列名
+    # 用 config_group 以规避 MySQL 保留字 GROUP
+    group: Mapped[str] = mapped_column(
+        "config_group",
+        String(100),
+        default="DEFAULT_GROUP",
+        server_default="DEFAULT_GROUP",
+        nullable=False,
+    )
     description: Mapped[str | None] = mapped_column(String(255), nullable=True)
     content_text: Mapped[str] = mapped_column(BigText, nullable=False)
     # enabled | disabled | invalid（语法异常时置 invalid，保存成功自动清除）

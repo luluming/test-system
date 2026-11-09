@@ -53,7 +53,7 @@ export default function AppShell() {
         : path.endsWith("/yaml")
           ? "项目工作区 · YML 配置"
           : path.endsWith("/config")
-            ? "项目工作区 · 配置管理"
+            ? "项目工作区 · Nacos 配置"
             : path.startsWith("/projects/")
               ? "项目工作区"
               : path.startsWith("/accounts")

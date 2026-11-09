@@ -30,12 +30,12 @@ const SECTIONS = [
   },
   {
     key: "cfg",
-    ico: "⚙",
-    title: "配置管理",
-    desc: "环境变量、项目信息与共享设置统一维护",
-    unit: "个环境变量",
+    ico: "☁",
+    title: "Nacos 配置",
+    desc: "Nacos 风格配置中心，按 dataId/group 管理、推送与还原",
+    unit: "个配置项",
     path: (id) => `/projects/${id}/config`,
-    count: (p) => p.env_count,
+    count: (p) => (p.nacos_count || 0) + (p.env_count || 0),
   },
 ];
 

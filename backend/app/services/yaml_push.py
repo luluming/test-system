@@ -222,8 +222,10 @@ def compute_diff(new_text: str, old_text: str) -> tuple[list[dict], dict]:
     return entries, counts
 
 
-def _count_nodes(node: yaml.Node) -> int:
+def _count_nodes(node: yaml.Node | None) -> int:
     """统计节点总数（映射/序列/标量均计入）。"""
+    if node is None:
+        return 0
     if isinstance(node, yaml.ScalarNode):
         return 1
     if isinstance(node, yaml.SequenceNode):
@@ -232,9 +234,27 @@ def _count_nodes(node: yaml.Node) -> int:
     return 1 + sum(_count_nodes(k) + _count_nodes(v) for k, v in node.value)
 
 
-def analyze(text: str) -> dict:
-    """配置统计信息（列表视图用）：语法是否合法 + 行数 + 节点数 + 顶层键。"""
-    line_count = len(text.splitlines())
+def analyze(text: str, format_hint: str = "yaml") -> dict:
+    """配置统计信息（列表视图用）：语法是否合法 + 行数 + 节点数 + 顶层键。
+
+    format_hint: yaml / properties / json / text。非 yaml 格式跳 YAML 语法校验，
+    按纯文本统计行数与节点数（节点数 = 行数）。
+    """
+    line_count = len((text or "").splitlines())
+    if not (text or "").strip():
+        return {
+            "valid": True,
+            "line_count": line_count,
+            "node_count": 0,
+            "top_keys": [],
+        }
+    if format_hint != "yaml":
+        return {
+            "valid": True,
+            "line_count": line_count,
+            "node_count": 0,
+            "top_keys": [],
+        }
     errors = validate_yaml(text)
     if errors:
         return {
@@ -248,6 +268,14 @@ def analyze(text: str) -> dict:
     except yaml.YAMLError:  # noqa: BLE001 与 validate 结果兜底一致
         return {
             "valid": False,
+            "line_count": line_count,
+            "node_count": 0,
+            "top_keys": [],
+        }
+    if doc is None:
+        # 仅包含注释/空白：YAML 语法合法但无文档节点
+        return {
+            "valid": True,
             "line_count": line_count,
             "node_count": 0,
             "top_keys": [],
