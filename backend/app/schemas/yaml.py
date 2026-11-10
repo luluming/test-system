@@ -119,3 +119,16 @@ class YamlPushApplyRequest(BaseModel):
     """确认提交：可选备注（默认为空）。"""
 
     note: str | None = None
+
+
+class PushDiffResolveRequest(BaseModel):
+    """批量处理推送差异：按 id 或全部（可再按命名空间/分组收敛）。
+
+    mode=incoming 采用新推送内容（生成新版本）；mode=keep 保留当前内容。
+    """
+
+    ids: list[int] = []
+    all: bool = False
+    project_id: int | None = None
+    group: str | None = None
+    mode: str = Field(default="incoming", pattern="^(incoming|keep)$")

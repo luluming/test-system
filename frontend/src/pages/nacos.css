@@ -277,8 +277,8 @@
   padding: 6px 8px;
 }
 .nc-diff .d-ctx { color: var(--text-ter); background: transparent; }
-.nc-diff .d-del { color: #ff8a8a; background: rgba(255, 90, 90, .1); }
-.nc-diff .d-add { color: #7ee2a8; background: rgba(70, 200, 130, .1); }
+.nc-diff .d-del { color: var(--nc-del-fg); background: var(--nc-del-bg); }
+.nc-diff .d-add { color: var(--nc-add-fg); background: var(--nc-add-bg); }
 
 /* ===== 层级视图：命名空间 → 分组 → dataId ===== */
 .nc-tree-row {
@@ -405,5 +405,606 @@
   color: #ff8a8a;
   white-space: pre-wrap;
 }
+
+/* ===================================================================
+   配置工作台（编辑 + 版本时间线 + 版本对比）
+   一个弹窗内完成全部操作：左轨道看版本演进，右侧编辑或对比
+   =================================================================== */
+
+.ncwb-modal .ant-modal-content {
+  padding: 0;
+  background: var(--bg-surface, #131316);
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, .55);
+}
+.ncwb-modal .ant-modal-body { padding: 0; }
+.ncwb-modal .ant-modal-close { display: none; }
+
+.ncwb {
+  display: flex;
+  flex-direction: column;
+  height: 78vh;
+  min-height: 520px;
+  color: var(--text-sec);
+}
+
+/* ---- 顶部信息条 ---- */
+.ncwb-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-soft);
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--brand, #4f7cff) 7%, transparent),
+    transparent);
+}
+.ncwb-id { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.ncwb-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+  background: #46c882;
+  box-shadow: 0 0 0 3px rgba(70, 200, 130, .16);
+  animation: ncwb-pulse 2.4s ease-in-out infinite;
+}
+@keyframes ncwb-pulse {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(70, 200, 130, .16); }
+  50% { box-shadow: 0 0 0 6px rgba(70, 200, 130, .04); }
+}
+.ncwb-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-pri);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ncwb-path {
+  font-size: 11.5px;
+  color: var(--text-ter);
+  padding-left: 10px;
+  border-left: 1px solid var(--border-soft);
+  white-space: nowrap;
+}
+.ncwb-head-meta { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.ncwb-ver { font-size: 12px; color: var(--brand, #4f7cff); }
+.ncwb-x {
+  width: 26px;
+  height: 26px;
+  line-height: 1;
+  font-size: 18px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-ter);
+  cursor: pointer;
+}
+.ncwb-x:hover { background: var(--bg-surface2); color: var(--text-pri); }
+
+/* ---- 主体：左轨道 + 右工作区 ---- */
+.ncwb-body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 246px minmax(0, 1fr);
+  min-height: 0;
+}
+
+/* 版本时间线 */
+.ncwb-rail {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--border-soft);
+  background: color-mix(in srgb, var(--bg-deep2, #0d0d10) 55%, transparent);
+}
+.ncwb-rail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px 8px;
+  font-size: 11.5px;
+  letter-spacing: .04em;
+  color: var(--text-ter);
+  text-transform: uppercase;
+}
+.ncwb-rail-count {
+  font-family: var(--font-mono, monospace);
+  padding: 1px 6px;
+  border-radius: 9px;
+  background: var(--bg-surface2);
+  color: var(--text-sec);
+}
+.ncwb-rail-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 2px 8px 12px 12px;
+}
+.ncwb-node {
+  position: relative;
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  padding: 8px 10px 8px 18px;
+  cursor: pointer;
+  color: inherit;
+  transition: background .12s ease, border-color .12s ease;
+}
+.ncwb-node:hover { background: color-mix(in srgb, var(--brand, #4f7cff) 8%, transparent); }
+.ncwb-node.on {
+  background: color-mix(in srgb, var(--brand, #4f7cff) 13%, transparent);
+  border-color: color-mix(in srgb, var(--brand, #4f7cff) 45%, transparent);
+}
+/* 竖向轨道线 */
+.ncwb-node::before {
+  content: "";
+  position: absolute;
+  left: 8px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--border-soft);
+}
+.ncwb-node:first-child::before { top: 14px; }
+.ncwb-node:last-child::before { bottom: calc(100% - 14px); }
+.ncwb-node-dot {
+  position: absolute;
+  left: 5px;
+  top: 13px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--bg-surface, #131316);
+  border: 1px solid var(--text-ter);
+}
+.ncwb-node.on .ncwb-node-dot,
+.ncwb-node:first-child .ncwb-node-dot {
+  border-color: var(--brand, #4f7cff);
+  background: var(--brand, #4f7cff);
+}
+.ncwb-node-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.ncwb-node-top b { font-size: 12.5px; color: var(--text-pri); }
+.ncwb-stat { display: inline-flex; gap: 6px; font-size: 11px; }
+.ncwb-stat i, .ncwb-delta i {
+  font-style: normal;
+  border-radius: 3px;
+  padding: 0 4px;
+}
+.ncwb-stat i.add, .ncwb-delta i.add { color: var(--nc-add-fg); background: var(--nc-add-bg); }
+.ncwb-stat i.del, .ncwb-delta i.del { color: var(--nc-del-fg); background: var(--nc-del-bg); }
+.ncwb-node-note {
+  display: block;
+  margin-top: 3px;
+  font-size: 11.5px;
+  color: var(--text-sec);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ncwb-node-time {
+  display: block;
+  margin-top: 2px;
+  font-size: 10.5px;
+  color: var(--text-ter);
+}
+
+/* 右侧工作区 */
+.ncwb-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  padding: 10px 14px 0;
+}
+
+/* 工具栏 */
+.ncwb-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-bottom: 10px;
+}
+.ncwb-seg {
+  display: inline-flex;
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.ncwb-seg button {
+  border: none;
+  background: transparent;
+  color: var(--text-ter);
+  font-size: 12px;
+  padding: 5px 14px;
+  cursor: pointer;
+}
+.ncwb-seg button.on {
+  background: var(--brand, #4f7cff);
+  color: #fff;
+}
+.ncwb-seg button + button { border-left: 1px solid var(--border-soft); }
+.ncwb-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--text-ter);
+}
+.ncwb-pick select {
+  background: var(--bg-deep2, #0d0d10);
+  color: var(--text-pri);
+  border: 1px solid var(--border-soft);
+  border-radius: 5px;
+  padding: 4px 6px;
+  font-size: 12px;
+  font-family: var(--font-mono, monospace);
+}
+.ncwb-arrow { color: var(--text-ter); font-size: 12px; }
+.ncwb-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--text-ter);
+  cursor: pointer;
+}
+.ncwb-delta { display: inline-flex; gap: 6px; font-size: 11px; }
+.ncwb-search {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ncwb-search .nc-input { width: 210px; }
+
+/* 编辑器（行号槽 + textarea 同步滚动） */
+.ncwb-editor {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  border: 1px solid var(--border-soft);
+  border-radius: 7px;
+  overflow: hidden;
+  background: var(--bg-deep2, #0d0d10);
+}
+.ncwb-editor:focus-within { border-color: color-mix(in srgb, var(--brand, #4f7cff) 55%, transparent); }
+.ncwb-gutter {
+  flex: none;
+  width: 48px;
+  padding: 10px 0;
+  overflow: hidden;
+  text-align: right;
+  background: color-mix(in srgb, var(--text-pri) 3%, transparent);
+  border-right: 1px solid var(--border-soft);
+  color: var(--text-ter);
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  line-height: 1.7;
+  user-select: none;
+}
+.ncwb-gutter > div { padding-right: 8px; }
+.ncwb-ta {
+  flex: 1;
+  min-width: 0;
+  resize: none;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text-sec);
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.7;
+  tab-size: 2;
+  white-space: pre;
+  overflow: auto;
+}
+
+/* ===================================================================
+   对比配色：行底色 + 左侧色条标记增删，正文保持高对比度
+   （深色主题用暗底亮字，浅色主题用浅底深字，避免绿字看不清）
+   =================================================================== */
+:root {
+  --nc-add-bg: rgba(60, 200, 130, .14);
+  --nc-add-hl: rgba(60, 200, 130, .34);
+  --nc-add-bar: #34d399;
+  --nc-add-fg: #d8ffe8;
+  --nc-del-bg: rgba(255, 90, 90, .14);
+  --nc-del-hl: rgba(255, 90, 90, .34);
+  --nc-del-bar: #f87171;
+  --nc-del-fg: #ffd9d9;
+}
+:root[data-theme="light"] {
+  --nc-add-bg: #e6f7ee;
+  --nc-add-hl: #c4eed8;
+  --nc-add-bar: #12a05a;
+  --nc-add-fg: #0b6b3d;
+  --nc-del-bg: #fdecea;
+  --nc-del-hl: #f9cfcb;
+  --nc-del-bar: #d92d20;
+  --nc-del-fg: #8f1d16;
+}
+
+/* 并排 diff */
+.ncwb-diff {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-soft);
+  border-radius: 7px;
+  overflow: hidden;
+}
+.ncwb-diff-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 10px;
+  font-size: 11px;
+  color: var(--text-ter);
+  background: var(--bg-surface2);
+  border-bottom: 1px solid var(--border-soft);
+}
+.ncwb-diff-body { flex: 1; min-height: 0; overflow: auto; background: var(--bg-deep2, #0d0d10); }
+.ncwb-drow { display: grid; grid-template-columns: 1fr 1fr; }
+.ncwb-cell {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+  padding: 0 8px;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.ncwb-cell.left { border-right: 1px solid var(--border-soft); }
+.ncwb-cell.del { background: var(--nc-del-bg); box-shadow: inset 2px 0 0 var(--nc-del-bar); }
+.ncwb-cell.add { background: var(--nc-add-bg); box-shadow: inset 2px 0 0 var(--nc-add-bar); }
+.ncwb-cell.empty { background: color-mix(in srgb, var(--text-pri) 2%, transparent); }
+.ncwb-ln {
+  flex: none;
+  width: 34px;
+  text-align: right;
+  color: var(--text-ter);
+  opacity: .7;
+  user-select: none;
+}
+.ncwb-txt {
+  flex: 1;
+  min-width: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--text-sec);
+}
+.ncwb-cell.del .ncwb-txt { color: var(--nc-del-fg); }
+.ncwb-cell.add .ncwb-txt { color: var(--nc-add-fg); }
+/* 行内差异片段：只把真正变化的字符加深，整行文字仍清晰可读 */
+.ncwb-hl {
+  border-radius: 2px;
+  padding: 0 1px;
+  color: inherit;
+}
+.ncwb-cell.del .ncwb-hl { background: var(--nc-del-hl); }
+.ncwb-cell.add .ncwb-hl { background: var(--nc-add-hl); }
+
+/* 逐块 / 批量合并控件 */
+.ncwb-mergebench {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 0 0 8px;
+  padding: 7px 10px;
+  border: 1px solid color-mix(in srgb, var(--brand, #4f7cff) 30%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--brand, #4f7cff) 7%, transparent);
+}
+.ncwb-merge-hint { font-size: 11.5px; color: var(--text-ter); }
+.ncwb-merge-hint b { color: var(--text-sec); font-weight: 600; }
+.ncwb-merge-ops { display: flex; gap: 6px; flex: none; }
+.ncwb-hunkact { margin-left: auto; display: inline-flex; gap: 4px; flex: none; }
+.ncwb-pickbtn {
+  border: 1px solid var(--border-soft);
+  background: var(--bg-surface2);
+  color: var(--text-ter);
+  font-size: 10.5px;
+  line-height: 1;
+  padding: 3px 7px;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ncwb-pickbtn:hover { color: var(--text-pri); border-color: var(--nc-add-bar); }
+.ncwb-pickbtn.on {
+  color: #fff;
+  background: var(--brand, #4f7cff);
+  border-color: var(--brand, #4f7cff);
+}
+
+/* 底部操作条 */
+.ncwb-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: flex-end;
+  padding: 10px 0;
+}
+.ncwb-note { flex: 1; max-width: 520px; }
+
+/* 全量批量处理条：常驻显示，任一命名空间下所有组件统一处理 */
+.ncbatch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+  padding: 9px 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: 7px;
+  background: var(--bg-surface2);
+}
+.ncbatch.has-diff {
+  border-color: color-mix(in srgb, var(--brand, #4f7cff) 32%, transparent);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--brand, #4f7cff) 9%, transparent),
+    transparent 62%
+  );
+  box-shadow: inset 2px 0 0 var(--brand, #4f7cff);
+}
+.ncbatch-main { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ncbatch-title {
+  font-size: 11px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--text-ter);
+}
+.ncbatch-scope { font-size: 12.5px; color: var(--text-sec); }
+.ncbatch-scope b { color: var(--text-pri); font-family: var(--font-mono, monospace); }
+.ncbatch-delta { font-size: 11.5px; font-family: var(--font-mono, monospace); display: inline-flex; gap: 6px; }
+.ncbatch-delta i { font-style: normal; padding: 1px 5px; border-radius: 3px; }
+.ncbatch-delta .add { color: var(--nc-add-fg); background: var(--nc-add-bg); }
+.ncbatch-delta .del { color: var(--nc-del-fg); background: var(--nc-del-bg); }
+.ncbatch-ok { font-size: 12px; color: var(--text-ter); }
+.ncbatch-ops { display: flex; align-items: center; gap: 6px; }
+
+/* 表格内的差异标注：dataId 显示行级增删，命名空间显示待处理组件数 */
+.nc-diffchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 9px;
+  border: 1px solid var(--warning-border, rgba(245, 158, 11, .22));
+  background: var(--warning-bg, rgba(245, 158, 11, .09));
+  color: var(--warning, #f59e0b);
+  font-size: 10.5px;
+  line-height: 15px;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.nc-diffchip i { font-style: normal; font-family: var(--font-mono, monospace); }
+.nc-diffchip i.add { color: var(--nc-add-fg); }
+.nc-diffchip i.del { color: var(--nc-del-fg); }
+
+/* ===================================================================
+   推送差异面板：命名空间 → 分组 → 组件，三级统计 + 批量处理
+   =================================================================== */
+
+.nc-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 17px;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: rgba(245, 158, 11, .18);
+  color: var(--warning, #f59e0b);
+  font-family: var(--font-mono, monospace);
+  font-size: 10.5px;
+  line-height: 1;
+}
+/* 有差异时按钮本身是主色，徽标改为浅底以保持对比 */
+.btn.primary .nc-badge { background: rgba(255, 255, 255, .22); color: #fff; }
+.nc-badge.zero { background: color-mix(in srgb, var(--text-pri) 8%, transparent); color: var(--text-ter); }
+
+.ncos-empty {
+  padding: 26px 0;
+  text-align: center;
+  color: var(--text-ter);
+  font-size: 12px;
+}
+
+.ncos-diff { display: flex; flex-direction: column; gap: 10px; font-size: 12px; }
+
+.ncos-diff-toolbar,
+.ncos-diff-all {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  background: var(--bg-surface2);
+}
+.ncos-diff-all {
+  background: color-mix(in srgb, var(--brand, #4f7cff) 7%, transparent);
+  border-color: color-mix(in srgb, var(--brand, #4f7cff) 28%, transparent);
+}
+.ncos-diff-left { display: flex; align-items: center; gap: 8px; }
+.ncos-diff-right { display: flex; align-items: center; gap: 8px; }
+
+.ncos-diff-list {
+  max-height: 52vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ncos-diff-ns {
+  border: 1px solid var(--border-soft);
+  border-radius: 7px;
+  overflow: hidden;
+  background: var(--bg-surface2);
+}
+.ncos-diff-nshead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: color-mix(in srgb, var(--brand, #4f7cff) 9%, transparent);
+  border-bottom: 1px solid var(--border-soft);
+}
+.ncos-diff-nshead b { font-size: 12.5px; color: var(--text-pri); }
+
+.ncos-diff-group { padding: 4px 12px 8px; }
+.ncos-diff-ghead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 0 4px;
+  color: var(--text-sec);
+  border-bottom: 1px dashed var(--border-soft);
+}
+
+.ncos-diff-row {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) 88px 110px 92px;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 2px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border-soft) 60%, transparent);
+}
+.ncos-diff-row:last-child { border-bottom: none; }
+.ncos-diff-row:hover { background: color-mix(in srgb, var(--brand, #4f7cff) 6%, transparent); }
+.ncos-diff-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-pri);
+  font-family: var(--font-mono, monospace);
+}
+.ncos-diff-lines { font-family: var(--font-mono, monospace); font-size: 11.5px; }
+.ncos-diff-lines i { font-style: normal; color: var(--nc-add-fg); }
+.ncos-diff-lines em { font-style: normal; color: var(--nc-del-fg); }
+.ncos-diff-ops { display: flex; justify-content: flex-end; gap: 2px; }
+
 
 

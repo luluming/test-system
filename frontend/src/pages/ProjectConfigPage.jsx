@@ -1,18 +1,15 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Form, Input, Modal, message } from "antd";
 import { getProject, getShare } from "../api/projects";
 import {
   createYamlConfig,
   createPushDirectoryToken,
-  deleteYamlConfig,
   exportNacosZip,
   getMetaBase,
-  getYamlConfig,
-  listYamlVersions,
   nacosViewList,
-  saveYamlConfig,
 } from "../api/yaml";
+import ConfigWorkbench from "../components/ConfigWorkbench";
 import ProjectNav from "../components/ProjectNav";
 import ShareModal from "../components/ShareModal";
 import "./dashboard.css";
@@ -39,26 +36,11 @@ export default function ProjectConfigPage() {
   // 层级视图折叠状态：key 为 `t:{tenant}` 或 `g:{tenant}/{group}`
   const [treeCollapsed, setTreeCollapsed] = useState({});
   const [exporting, setExporting] = useState(false);
-  const [histRow, setHistRow] = useState(null);
-  const [histRows, setHistRows] = useState([]);
-  const [histOpenV, setHistOpenV] = useState(null); // 展开的版本号（查看变更内容）
-  const [detailRow, setDetailRow] = useState(null);
-  const [detailQuery, setDetailQuery] = useState("");
-  const [detailCase, setDetailCase] = useState(false);
-  const [detailRegex, setDetailRegex] = useState(false);
-  const [detailIdx, setDetailIdx] = useState(0); // 当前命中序号（0 基）
-  const preRef = useRef(null);
-  // 编辑配置（在 Nacos 页内直接编辑，不再跳转到 YAML 工作台）
-  const [editRow, setEditRow] = useState(null);
-  const [editContent, setEditContent] = useState("");
-  const [editNote, setEditNote] = useState("");
-  const [editBusy, setEditBusy] = useState(false);
+  // 配置工作台：一个弹窗内含 编辑 / 版本时间线 / 版本对比
+  const [workbenchRow, setWorkbenchRow] = useState(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [createForm] = Form.useForm();
   const [creating, setCreating] = useState(false);
-  const [restRow, setRestRow] = useState(null);
-  const [restVer, setRestVer] = useState("");
-  const [restBusy, setRestBusy] = useState(false);
   const [publicBase, setPublicBase] = useState("");
   // 整目录推送（curl + tar.gz）
   const [dirOpen, setDirOpen] = useState(false);
@@ -108,7 +90,7 @@ export default function ProjectConfigPage() {
   const canEdit = myPerm === "owner" || myPerm === "edit" || myPerm === "admin";
   const canManage = myPerm === "owner" || myPerm === "admin";
 
-  // ---- Nacos 配置文件：层级视图 / 导出 / 详情 / 历史 / 编辑 / 还原 / 删除 ----
+  // ---- Nacos 配置文件：层级视图 / 导出 / 编辑与版本 / 目录推送 ----
 
   // 从导入描述（nacos:tenant=xxx,group=yyy）解析命名空间；无则回退到当前项目名
   const tenantOf = useCallback(
@@ -178,71 +160,7 @@ export default function ProjectConfigPage() {
   const toggleTree = (key) =>
     setTreeCollapsed((prev) => ({ ...prev, [key]: !prev[key] }));
 
-  // 详情内容搜索：支持 大小写敏感 / 正则 两种模式，命中按序编号（mi），供跳转定位
-  const { detailSegments, detailMatchCount, detailSearchErr } = useMemo(() => {
-    const text = detailRow?.content_text ?? "";
-    const q = detailQuery;
-    const none = { detailSegments: [{ text, hit: false }], detailMatchCount: 0, detailSearchErr: "" };
-    if (!q.trim()) return none;
-
-    if (detailRegex) {
-      let re;
-      try {
-        re = new RegExp(q, detailCase ? "g" : "gi");
-      } catch {
-        return { detailSegments: [{ text, hit: false }], detailMatchCount: 0, detailSearchErr: "正则表达式无效" };
-      }
-      const segs = [];
-      let last = 0;
-      let count = 0;
-      let m;
-      while ((m = re.exec(text)) !== null) {
-        if (m[0].length === 0) { re.lastIndex += 1; continue; }
-        if (m.index > last) segs.push({ text: text.slice(last, m.index), hit: false });
-        segs.push({ text: m[0], hit: true, mi: count });
-        count += 1;
-        last = m.index + m[0].length;
-      }
-      if (last < text.length) segs.push({ text: text.slice(last), hit: false });
-      return { detailSegments: segs, detailMatchCount: count, detailSearchErr: "" };
-    }
-
-    const hay = detailCase ? text : text.toLowerCase();
-    const needle = detailCase ? q : q.toLowerCase();
-    const segs = [];
-    let from = 0;
-    let count = 0;
-    while (true) {
-      const idx = hay.indexOf(needle, from);
-      if (idx === -1) {
-        if (from < text.length) segs.push({ text: text.slice(from), hit: false });
-        break;
-      }
-      if (idx > from) segs.push({ text: text.slice(from, idx), hit: false });
-      segs.push({ text: text.slice(idx, idx + q.length), hit: true, mi: count });
-      count += 1;
-      from = idx + q.length;
-    }
-    return { detailSegments: segs, detailMatchCount: count, detailSearchErr: "" };
-  }, [detailRow, detailQuery, detailCase, detailRegex]);
-
-  // 关键词/模式变化后回到第 1 个命中
-  useEffect(() => {
-    setDetailIdx(0);
-  }, [detailQuery, detailCase, detailRegex, detailRow?.id]);
-
-  // 当前命中自动滚动到视口中央
-  useEffect(() => {
-    if (!detailMatchCount) return;
-    const marks = preRef.current?.querySelectorAll("mark.nc-hit");
-    const el = marks && marks[detailIdx];
-    if (el) el.scrollIntoView({ block: "center", behavior: "smooth" });
-  }, [detailIdx, detailMatchCount]);
-
-  const stepMatch = (delta) => {
-    if (!detailMatchCount) return;
-    setDetailIdx((i) => (i + delta + detailMatchCount) % detailMatchCount);
-  };
+  const openWorkbench = (c) => setWorkbenchRow(c);
 
   const doExport = async () => {
     setExporting(true);
@@ -282,169 +200,9 @@ export default function ProjectConfigPage() {
     }
   };
 
-  // 详情：列表项不含全文，单独拉取配置详情
-  const openDetail = async (c) => {
-    setDetailQuery("");
-    setDetailRow({ ...c, content_text: "（加载中…）" });
-    try {
-      const res = await getYamlConfig(c.id);
-      setDetailRow({ ...c, content_text: res.data.content_text, version: res.data.version });
-    } catch {
-      setDetailRow({ ...c, content_text: "内容加载失败" });
-    }
-  };
-
-  // 编辑：在当前页弹窗内直接改（Nacos 配置与 YAML 工作台互不干扰，避免跳转异常）
-  const openEdit = async (c) => {
-    setEditRow({ ...c, content_text: "（加载中…）" });
-    setEditContent("");
-    setEditNote("");
-    try {
-      const res = await getYamlConfig(c.id);
-      setEditRow({ ...c, version: res.data.version });
-      setEditContent(res.data.content_text || "");
-    } catch {
-      message.error("配置内容加载失败");
-      setEditRow(null);
-    }
-  };
-
-  const submitEdit = async (forceDraft = false) => {
-    if (!editRow) return;
-    setEditBusy(true);
-    try {
-      const res = await saveYamlConfig(editRow.id, {
-        content: editContent,
-        expected_version: editRow.version,
-        note: editNote.trim() || undefined,
-        force_draft: forceDraft,
-      });
-      message.success(`已保存，当前版本 v${res.data.version}`);
-      setEditRow(null);
-      loadCfg();
-      load();
-      window.dispatchEvent(new Event("industries:changed"));
-    } catch (err) {
-      const detail = err.response?.data?.detail;
-      if (err.response?.status === 422) {
-        const errs = Array.isArray(detail?.errors) ? detail.errors : [];
-        const text = errs.length ? errs.join("\n") : detail?.message || "语法校验未通过";
-        Modal.confirm({
-          title: "配置内容语法校验未通过",
-          content: (
-            <div>
-              <pre className="nc-err-pre">{text}</pre>
-              <p className="meta">仍要保存为草稿吗？草稿会标记为语法异常，不参与推送。</p>
-            </div>
-          ),
-          okText: "仍保存为草稿",
-          cancelText: "返回修改",
-          onOk: () => submitEdit(true),
-        });
-      } else if (err.response?.status === 409) {
-        message.error("配置已被他人修改，请刷新列表后重试");
-        loadCfg();
-      } else {
-        message.error(detail?.message || "保存失败");
-      }
-    } finally {
-      setEditBusy(false);
-    }
-  };
-
-  // 历史版本：读取完整内容用于「变更内容」对比
-  const openHistory = async (c) => {
-    setHistRow(c);
-    setHistRows([]);
-    setHistOpenV(null);
-    try {
-      setHistRows((await listYamlVersions(c.id)).data || []);
-    } catch {
-      message.error("加载历史版本失败");
-    }
-  };
-
-  // 行级 diff：对比该版本与上一版本（无上一版本时按全部新增展示）
-  const diffLines = (version) => {
-    const idx = histRows.findIndex((v) => v.version === version);
-    const cur = histRows[idx]?.content || "";
-    const prev = histRows[idx + 1]?.content || ""; // 版本列表按倒序返回
-    const a = prev ? prev.split("\n") : [];
-    const b = cur.split("\n");
-    let pre = 0;
-    while (pre < a.length && pre < b.length && a[pre] === b[pre]) pre += 1;
-    let suf = 0;
-    while (
-      suf < a.length - pre &&
-      suf < b.length - pre &&
-      a[a.length - 1 - suf] === b[b.length - 1 - suf]
-    ) suf += 1;
-    const removed = a.slice(pre, a.length - suf);
-    const added = b.slice(pre, b.length - suf);
-    return { pre: b.slice(0, pre), removed, added, suf: b.slice(b.length - suf) };
-  };
-
-  // 每条变更记录相对上一版本的增删行数（用于列表上直观展示）
-  const histStats = useMemo(() => {
-    const out = {};
-    histRows.forEach((v, i) => {
-      const prev = histRows[i + 1]?.content || "";
-      const cur = v.content || "";
-      let added = 0;
-      let removed = 0;
-      for (const line of cur.split("\n")) {
-        if (!prev.split("\n").includes(line)) added += 1;
-      }
-      for (const line of prev.split("\n")) {
-        if (!cur.split("\n").includes(line)) removed += 1;
-      }
-      out[v.version] = { added, removed };
-    });
-    return out;
-  }, [histRows]);
-
-  // 从系统还原：按版本号把线上原文拉回磁盘（推送统一走「目录推送」）
-  const openRestore = async (c) => {
-    setRestRow(c);
-    setRestVer(String(c.version || 1));
-    setRestBusy(true);
-    try {
-      if (!publicBase) {
-        const meta = await getMetaBase();
-        setPublicBase(meta.data?.public_base || "");
-      }
-    } catch { /* 使用默认基址 */ } finally {
-      setRestBusy(false);
-    }
-  };
-
-  const buildRestCmd = (token) =>
-    `curl -sS "${publicBase || "http://localhost:8001"}/api/yaml-configs/${restRow?.id}/versions/${restVer || restRow?.version}/raw" \\\n` +
-    `  -H "Authorization: Bearer ${token || "<TOKEN>"}" \\\n` +
-    `  -o ./${restRow?.data_id || "config.txt"}`;
-
-  const copyRestCmd = async () => {
-    setRestBusy(true);
-    try {
-      if (!publicBase) {
-        try {
-          const meta = await getMetaBase();
-          setPublicBase(meta.data?.public_base || "");
-        } catch { /* 用默认基址 */ }
-      }
-      const token = await ensureDirToken();
-      await navigator.clipboard.writeText(buildRestCmd(token));
-      message.success(`已复制还原命令（v${restVer || restRow?.version}）`);
-    } catch {
-      message.error("复制失败，请允许剪贴板权限后重试");
-    } finally {
-      setRestBusy(false);
-    }
-  };
-
   // 整目录推送：一条命令把 Nacos 落盘目录全部同步进来
-  const buildDirCmd = (token, dryRun) => {
-    const q = `project_id=${id}${dryRun ? "&dry_run=true" : ""}`;
+  const buildDirCmd = (token) => {
+    const q = `project_id=${id}`;
     return (
       `tar -czf - -C ${dirPath} tenant-config-data | \\\n` +
       `  curl -sS -X POST "${publicBase || "http://localhost:8001"}/api/yaml-configs/push-directory?${q}" \\\n` +
@@ -460,7 +218,7 @@ export default function ProjectConfigPage() {
     return res.data.token;
   };
 
-  const copyDirCmd = async (dryRun) => {
+  const copyDirCmd = async () => {
     setDirBusy(true);
     try {
       if (!publicBase) {
@@ -470,37 +228,13 @@ export default function ProjectConfigPage() {
         } catch { /* 用默认基址 */ }
       }
       const token = await ensureDirToken();
-      await navigator.clipboard.writeText(buildDirCmd(token, dryRun));
-      message.success(
-        dryRun
-          ? "已复制「试运行」命令：只比对不落库，先确认差异再正式推送"
-          : "已复制「正式推送」命令（含 24 小时运维令牌）"
-      );
+      await navigator.clipboard.writeText(buildDirCmd(token));
+      message.success("已复制「正式推送」命令（含 24 小时运维令牌）");
     } catch {
       message.error("复制失败，请允许剪贴板权限后重试");
     } finally {
       setDirBusy(false);
     }
-  };
-
-  const removeCfg = (c) => {
-    Modal.confirm({
-      title: `删除配置「${c.data_id}」？`,
-      content: "该配置及其历史版本将一并删除，删除后不可恢复。",
-      okText: "删除",
-      okButtonProps: { danger: true },
-      cancelText: "取消",
-      onOk: async () => {
-        try {
-          await deleteYamlConfig(c.id);
-          message.success("已删除");
-          loadCfg();
-          window.dispatchEvent(new Event("industries:changed"));
-        } catch (err) {
-          message.error(err.response?.data?.detail || "删除失败");
-        }
-      },
-    });
   };
 
   useEffect(() => {
@@ -704,7 +438,7 @@ export default function ProjectConfigPage() {
                                     <span className="nc-leaf-dot" />
                                     <button
                                       className="nc-link"
-                                      onClick={() => openDetail(c)}
+                                      onClick={() => openWorkbench(c)}
                                       title={c.description || c.data_id}
                                     >
                                       {c.data_id}
@@ -723,17 +457,9 @@ export default function ProjectConfigPage() {
                                     {String(c.updated_at || "").replace("T", " ").slice(0, 16)}
                                   </td>
                                   <td className="col-ops">
-                                    <button className="btn mini" onClick={() => openDetail(c)}>详情</button>
-                                    <button className="btn mini" onClick={() => openHistory(c)}>历史版本</button>
-                                    {canEdit && (
-                                      <button className="btn mini link" onClick={() => openEdit(c)}>编辑</button>
-                                    )}
-                                    {canEdit && (
-                                      <button className="btn mini" onClick={() => openRestore(c)}>还原</button>
-                                    )}
-                                    {canEdit && (
-                                      <button className="row-delete" onClick={() => removeCfg(c)}>删除</button>
-                                    )}
+                                    <button className="btn mini link" onClick={() => openWorkbench(c)}>
+                                      编辑 / 版本
+                                    </button>
                                   </td>
                                 </tr>
                               ))}
@@ -803,139 +529,18 @@ export default function ProjectConfigPage() {
         </>
       )}
 
-      {/* 详情：查看配置全文（支持内容搜索高亮） */}
-      <Modal
-        title={`配置详情 · ${detailRow?.data_id || ""}`}
-        open={!!detailRow}
-        onCancel={() => setDetailRow(null)}
-        footer={
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-            <button className="btn" onClick={() => setDetailRow(null)}>关闭</button>
-            {canEdit && (
-              <button
-                className="btn primary"
-                onClick={() => {
-                  const c = detailRow;
-                  setDetailRow(null);
-                  openEdit(c);
-                }}
-              >
-                编辑
-              </button>
-            )}
-          </div>
-        }
-        width={820}
-        destroyOnClose
-      >
-        <div className="nc-detail-meta">
-          <span className="meta">命名空间</span>
-          <span className="mono">{detailRow ? tenantOf(detailRow) : ""}</span>
-          <span className="meta">Group</span>
-          <span className="mono">{detailRow?.group}</span>
-          <span className="meta">格式</span>
-          <span>{detailRow?.format}</span>
-          <span className="meta">版本</span>
-          <span className="mono">v{detailRow?.version}</span>
-        </div>
-        <div className="nc-searchbar">
-          <input
-            className="nc-input nc-search"
-            placeholder="在配置内容中搜索…（Enter 下一个，Shift+Enter 上一个）"
-            value={detailQuery}
-            onChange={(e) => setDetailQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                stepMatch(e.shiftKey ? -1 : 1);
-              }
-            }}
-          />
-          <button
-            type="button"
-            className={"nc-btn nc-tgl" + (detailCase ? " on" : "")}
-            title="区分大小写"
-            onClick={() => setDetailCase((v) => !v)}
-          >
-            Aa
-          </button>
-          <button
-            type="button"
-            className={"nc-btn nc-tgl" + (detailRegex ? " on" : "")}
-            title="正则表达式"
-            onClick={() => setDetailRegex((v) => !v)}
-          >
-            .*
-          </button>
-          {detailQuery.trim() && (
-            <>
-              <span className="nc-search-count">
-                {detailMatchCount > 0 ? `${detailIdx + 1}/${detailMatchCount}` : "0 处匹配"}
-              </span>
-              <button type="button" className="nc-btn" onClick={() => stepMatch(-1)} disabled={!detailMatchCount} title="上一个">
-                ↑
-              </button>
-              <button type="button" className="nc-btn" onClick={() => stepMatch(1)} disabled={!detailMatchCount} title="下一个">
-                ↓
-              </button>
-              <button type="button" className="nc-btn" onClick={() => setDetailQuery("")}>清空</button>
-            </>
-          )}
-        </div>
-        {detailSearchErr && <p className="nc-regex-err">{detailSearchErr}</p>}
-        <pre className="nc-content" ref={preRef}>
-          {detailSegments.map((seg, i) =>
-            seg.hit ? (
-              <mark key={i} className={"nc-hit" + (seg.mi === detailIdx ? " on" : "")}>{seg.text}</mark>
-            ) : (
-              <span key={i}>{seg.text}</span>
-            )
-          )}
-        </pre>
-      </Modal>
-
-      {/* 编辑配置（Nacos 页内编辑，保存时写版本快照，不再跳转到 YAML 工作台） */}
-      <Modal
-        title={`编辑配置 · ${editRow?.data_id || ""}`}
-        open={!!editRow}
-        onCancel={() => !editBusy && setEditRow(null)}
-        footer={
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-            <button className="btn" onClick={() => setEditRow(null)} disabled={editBusy}>取消</button>
-            <button className="btn primary" onClick={() => submitEdit(false)} disabled={editBusy}>
-              {editBusy ? "保存中…" : "保存并发布"}
-            </button>
-          </div>
-        }
-        width={860}
-        destroyOnClose
-      >
-        <div className="nc-detail-meta">
-          <span className="meta">命名空间</span>
-          <span className="mono">{editRow ? tenantOf(editRow) : ""}</span>
-          <span className="meta">Group</span>
-          <span className="mono">{editRow?.group}</span>
-          <span className="meta">当前版本</span>
-          <span className="mono">v{editRow?.version}</span>
-        </div>
-        <textarea
-          className="nc-editor mono"
-          value={editContent}
-          onChange={(e) => setEditContent(e.target.value)}
-          spellCheck={false}
-          placeholder="配置内容加载中…"
-        />
-        <div className="nc-edit-note">
-          <span className="meta">变更说明</span>
-          <input
-            className="nc-input"
-            style={{ flex: 1 }}
-            placeholder="选填，例如：修复数据库连接超时"
-            value={editNote}
-            onChange={(e) => setEditNote(e.target.value)}
-          />
-        </div>
-      </Modal>
+      {/* 配置工作台：编辑 + 版本时间线 + 版本对比（替代原「详情」「历史版本」两个弹窗） */}
+      <ConfigWorkbench
+        row={workbenchRow}
+        tenant={workbenchRow ? tenantOf(workbenchRow) : ""}
+        canEdit={canEdit}
+        onClose={() => setWorkbenchRow(null)}
+        onSaved={() => {
+          loadCfg();
+          load();
+          window.dispatchEvent(new Event("industries:changed"));
+        }}
+      />
 
       {/* 创建配置（Nacos「创建配置」） */}
       <Modal
@@ -969,123 +574,6 @@ export default function ProjectConfigPage() {
         </Form>
       </Modal>
 
-      {/* 历史版本 · 变更记录 / 变更内容 */}
-      <Modal
-        title={`变更记录 · ${histRow?.data_id || ""}`}
-        open={!!histRow}
-        onCancel={() => setHistRow(null)}
-        footer={null}
-        width={820}
-        destroyOnClose
-      >
-        {histRows.length === 0 ? (
-          <p className="meta">暂无变更记录</p>
-        ) : (
-          <div style={{ maxHeight: 480, overflowY: "auto" }}>
-            {histRows.map((v) => {
-              const d = histOpenV === v.version ? diffLines(v.version) : null;
-              return (
-                <div key={v.id} className="nc-hist">
-                  <div className="nc-hist-head">
-                    <b className="mono">v{v.version}</b>
-                    {v.version === histRows[0].version && (
-                      <span className="tag2 ok">当前版本</span>
-                    )}
-                    <span className="nc-hist-note">{v.note || "（无备注）"}</span>
-                    {histStats[v.version] && (histStats[v.version].added > 0 || histStats[v.version].removed > 0) && (
-                      <>
-                        <span className="tag2 ok">+{histStats[v.version].added}</span>
-                        <span className="tag2 warn">-{histStats[v.version].removed}</span>
-                      </>
-                    )}
-                    <span className="meta" style={{ marginLeft: "auto" }}>
-                      {v.created_by || "-"} · {v.created_at ? v.created_at.replace("T", " ").slice(0, 16) : "-"}
-                    </span>
-                    <button
-                      className="btn mini"
-                      onClick={() => setHistOpenV(histOpenV === v.version ? null : v.version)}
-                    >
-                      {histOpenV === v.version ? "收起变更" : "查看变更内容"}
-                    </button>
-                  </div>
-                  {d && (
-                    <div className="nc-diff">
-                      {d.pre.length > 0 && (
-                        <pre className="d-ctx">
-                          {d.pre.map((l, i) => `${String(i + 1).padStart(4, " ")}  ${l}`).join("\n")}
-                        </pre>
-                      )}
-                      {d.removed.length > 0 && (
-                        <pre className="d-del">
-                          {d.removed.map((l) => `- ${l}`).join("\n")}
-                        </pre>
-                      )}
-                      {d.added.length > 0 && (
-                        <pre className="d-add">
-                          {d.added.map((l) => `+ ${l}`).join("\n")}
-                        </pre>
-                      )}
-                      {d.removed.length === 0 && d.added.length === 0 && (
-                        <p className="meta" style={{ margin: "6px 0 0" }}>该版本内容与上一版本一致。</p>
-                      )}
-                      {d.suf.length > 0 && (
-                        <pre className="d-ctx" style={{ opacity: 0.6 }}>
-                          {d.suf.slice(0, 5).map((l) => `   ${l}`).join("\n")}
-                          {d.suf.length > 5 ? "\n   …" : ""}
-                        </pre>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-        <p className="meta" style={{ marginTop: 10 }}>
-          变更内容以「该版本 vs 上一版本」逐行对比；回滚请进入 YML 工作台 → 历史版本。
-        </p>
-      </Modal>
-
-      {/* 从系统还原单个配置（推送统一走「目录推送」） */}
-      <Modal
-        title={`从系统还原 · ${restRow?.data_id || ""}`}
-        open={!!restRow}
-        onCancel={() => setRestRow(null)}
-        footer={
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-            <button className="btn" onClick={() => setRestRow(null)}>关闭</button>
-            <button className="btn primary" onClick={copyRestCmd} disabled={restBusy}>
-              {restBusy ? "生成中…" : "复制还原命令"}
-            </button>
-          </div>
-        }
-        width={700}
-        destroyOnClose
-      >
-        <p className="meta" style={{ marginBottom: 10 }}>
-          在 Nacos 所在服务器执行该命令，按指定版本把配置原文拉回磁盘，用于回退或对齐生产文件。
-          推送请使用列表上方的「目录推送」，一次同步整个目录，无需逐个文件操作。
-        </p>
-        <div className="nc-detail-meta" style={{ marginBottom: 10 }}>
-          <span className="meta">配置文件</span>
-          <span className="mono">{restRow?.data_id}</span>
-          <span className="meta">Group</span>
-          <span className="mono">{restRow?.group}</span>
-        </div>
-        <div className="ncos-toolbar" style={{ marginBottom: 8 }}>
-          <span className="meta">版本号</span>
-          <input
-            className="nc-input"
-            style={{ width: 90 }}
-            value={restVer}
-            onChange={(e) => setRestVer(e.target.value.replace(/[^\d]/g, ""))}
-            placeholder={`1-${restRow?.version || 1}`}
-          />
-          <span className="meta">令牌复用「目录推送」签发的 24 小时运维令牌</span>
-        </div>
-        <pre className="nc-content">{buildRestCmd(dirToken)}</pre>
-      </Modal>
-
       {/* 整目录推送（curl + tar.gz） */}
       <Modal
         title="目录推送 · 一条命令同步整个 Nacos 目录"
@@ -1094,10 +582,7 @@ export default function ProjectConfigPage() {
         footer={
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
             <button className="btn" onClick={() => setDirOpen(false)}>关闭</button>
-            <button className="btn" onClick={() => copyDirCmd(true)} disabled={dirBusy}>
-              复制「试运行」
-            </button>
-            <button className="btn primary" onClick={() => copyDirCmd(false)} disabled={dirBusy}>
+            <button className="btn primary" onClick={copyDirCmd} disabled={dirBusy}>
               {dirBusy ? "生成中…" : "复制「正式推送」"}
             </button>
           </div>
@@ -1122,21 +607,14 @@ export default function ProjectConfigPage() {
         </div>
         <div className="nc-sect">
           <div className="nc-sect-head">
-            <b>① 试运行（只比对，不落库）</b>
-            <span className="meta">先看差异，确认后再正式推送</span>
-          </div>
-          <pre className="nc-content">{buildDirCmd(dirToken, true)}</pre>
-        </div>
-        <div className="nc-sect">
-          <div className="nc-sect-head">
-            <b>② 正式推送</b>
+            <b>正式推送</b>
             <span className="meta">复制时自动签发 24 小时运维令牌；命令中包含当前项目 ID {id}</span>
           </div>
-          <pre className="nc-content">{buildDirCmd(dirToken, false)}</pre>
+          <pre className="nc-content">{buildDirCmd(dirToken)}</pre>
         </div>
         <p className="meta" style={{ marginTop: 10 }}>
-          返回结果形如 <code>{`{"total":194,"created":0,"updated":3,"unchanged":191,"failed":0}`}</code>；
-          每个改动都会写入变更记录，备注含批次号与 <code>+N -M</code> 行数。
+          返回结果形如 <code>{`{"total":194,"created":2,"staged":3,"unchanged":189,"failed":0}`}</code>；
+          正文有变化的配置会先进入「推送差异」面板，确认后才生成新版本；每个改动备注含批次号与 <code>+N -M</code> 行数。
         </p>
       </Modal>
 

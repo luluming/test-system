@@ -52,6 +52,14 @@ export function createPushDirectoryToken(projectId, hours = 24) {
     params: { project_id: projectId, hours },
   });
 }
+// ---- 推送差异：命名空间/分组/组件三级统计 + 批量处理 ----
+export function listPushDiffs(params = {}) {
+  return client.get("/yaml-configs/push-diffs", { params });
+}
+export function resolvePushDiffs(data) {
+  return client.post("/yaml-configs/push-diffs/resolve", data);
+}
+
 // ---- 全局元信息：后端公网基址（供 curl 命令使用）----
 export function getMetaBase() {
   return client.get("/meta");

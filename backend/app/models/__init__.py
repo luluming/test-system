@@ -22,6 +22,7 @@ from app.models.user import User
 from app.models.yaml import (
     YamlConfig,
     YamlConfigVersion,
+    YamlPushDiff,
     YamlPushTask,
     YamlPushToken,
 )
@@ -49,6 +50,7 @@ __all__ = [
     "BizPort",
     "YamlConfig",
     "YamlConfigVersion",
+    "YamlPushDiff",
     "YamlPushTask",
     "YamlPushToken",
 ]

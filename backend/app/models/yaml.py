@@ -9,6 +9,7 @@ from datetime import datetime
 from sqlalchemy import (
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -112,6 +113,51 @@ class YamlPushTask(Base):
     )
     applied_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     error_detail: Mapped[str | None] = mapped_column(BigText, nullable=True)
+
+
+class YamlPushDiff(Base):
+    """目录推送差异暂存：正文有变化的既有配置不直接覆盖，先落一条待处理差异。
+
+    status: pending（待处理）| applied（已采用新推送）| ignored（保留当前）。
+    处理时按 base_version 做乐观校验，避免覆盖期间被人工修改的配置。
+    """
+
+    __tablename__ = "yaml_push_diffs"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    project_id: Mapped[int] = mapped_column(
+        ForeignKey("projects.id"), index=True, nullable=False
+    )
+    config_id: Mapped[int] = mapped_column(
+        ForeignKey("yaml_configs.id"), index=True, nullable=False
+    )
+    tenant: Mapped[str] = mapped_column(String(100), default="public", nullable=False)
+    group: Mapped[str] = mapped_column(
+        "config_group",
+        String(100),
+        default="DEFAULT_GROUP",
+        server_default="DEFAULT_GROUP",
+        nullable=False,
+    )
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    base_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    base_content: Mapped[str] = mapped_column(BigText, nullable=False)
+    incoming_content: Mapped[str] = mapped_column(BigText, nullable=False)
+    added: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    removed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    batch_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(16), default="pending", server_default="pending", nullable=False
+    )
+    created_by: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (Index("ix_yaml_push_diffs_status_project", "status", "project_id"),)
 
 
 class YamlPushToken(Base):

@@ -33,6 +33,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
 from app.core.permissions import (
+    get_project_perm,
     require_project_edit,
     require_project_view,
     resolve_project_for_config,
@@ -45,12 +46,14 @@ from app.models.user import User
 from app.models.yaml import (
     YamlConfig,
     YamlConfigVersion,
+    YamlPushDiff,
     YamlPushTask,
     YamlPushToken,
 )
 from app.schemas.yaml import (
     ImportZipResult,
     NacosViewRow,
+    PushDiffResolveRequest,
     YamlConfigCreate,
     YamlConfigListItem,
     YamlConfigOut,
@@ -111,6 +114,7 @@ def _delete_config_cascade(db: Session, cfg: YamlConfig) -> None:
     """
     db.execute(delete(YamlPushToken).where(YamlPushToken.yaml_config_id == cfg.id))
     db.execute(delete(YamlPushTask).where(YamlPushTask.yaml_config_id == cfg.id))
+    db.execute(delete(YamlPushDiff).where(YamlPushDiff.config_id == cfg.id))
     db.execute(delete(YamlConfigVersion).where(YamlConfigVersion.yaml_config_id == cfg.id))
     db.flush()
     db.execute(delete(YamlConfig).where(YamlConfig.id == cfg.id))
@@ -615,6 +619,159 @@ def export_nacos_zip(
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.get("/push-diffs")
+def list_push_diffs(
+    project_id: int | None = Query(None, description="只看某个命名空间"),
+    status_: str = Query("pending", alias="status", description="pending | applied | ignored"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """推送差异统计：按 命名空间 → 分组 → 组件 聚合，返回总数与 +N -M。"""
+    stmt = select(YamlPushDiff).where(YamlPushDiff.status == status_)
+    if project_id:
+        stmt = stmt.where(YamlPushDiff.project_id == project_id)
+    rows = list(
+        db.execute(
+            stmt.order_by(
+                YamlPushDiff.project_id, YamlPushDiff.group, YamlPushDiff.name
+            )
+        ).scalars().all()
+    )
+    projects = {p.id: p for p in db.execute(select(Project)).scalars().all()}
+    if current_user.role == "admin":
+        editable = set(projects)
+    else:
+        perms = {pid: get_project_perm(db, current_user, p) for pid, p in projects.items()}
+        rows = [r for r in rows if perms.get(r.project_id) != "none"]
+        editable = {pid for pid, perm in perms.items() if perm in ("owner", "edit", "admin")}
+
+    by_project: dict[int, dict] = {}
+    for r in rows:
+        proj = projects.get(r.project_id)
+        bucket = by_project.setdefault(
+            r.project_id,
+            {
+                "project_id": r.project_id,
+                "project_name": proj.name if proj else f"#{r.project_id}",
+                "total": 0,
+                "added": 0,
+                "removed": 0,
+                "groups": {},
+            },
+        )
+        bucket["total"] += 1
+        bucket["added"] += r.added
+        bucket["removed"] += r.removed
+        cfg = db.get(YamlConfig, r.config_id)
+        bucket["groups"].setdefault(r.group or "DEFAULT_GROUP", []).append(
+            {
+                "id": r.id,
+                "config_id": r.config_id,
+                "name": r.name,
+                "tenant": r.tenant,
+                "group": r.group or "DEFAULT_GROUP",
+                "added": r.added,
+                "removed": r.removed,
+                "base_version": r.base_version,
+                "current_version": cfg.version if cfg else None,
+                "batch_id": r.batch_id,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+                "can_edit": r.project_id in editable,
+            }
+        )
+
+    out = []
+    for b in by_project.values():
+        b["groups"] = [
+            {"group": g, "items": items} for g, items in b["groups"].items()
+        ]
+        out.append(b)
+    out.sort(key=lambda x: x["project_name"])
+    return {"total": len(rows), "by_project": out}
+
+
+@router.post("/push-diffs/resolve")
+def resolve_push_diffs(
+    payload: PushDiffResolveRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """批量处理推送差异：采用新推送（incoming）或保留当前（keep）。
+
+    - 按 ids 精确处理，或 all=true 全部处理（可再按命名空间/分组收敛）；
+    - 采用新推送时按 base_version 做乐观校验，期间被人工改过的配置跳过；
+    - 无编辑权限的差异跳过并在结果中返回原因，不阻断同批其他项。
+    """
+    stmt = select(YamlPushDiff).where(YamlPushDiff.status == "pending")
+    if payload.ids:
+        stmt = stmt.where(YamlPushDiff.id.in_(payload.ids))
+    elif payload.all:
+        if payload.project_id:
+            stmt = stmt.where(YamlPushDiff.project_id == payload.project_id)
+        if payload.group:
+            stmt = stmt.where(YamlPushDiff.group == payload.group)
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="请选择要处理的差异，或指定全部处理",
+        )
+
+    rows = list(db.execute(stmt).scalars().all())
+    applied = ignored = 0
+    skipped: list[dict] = []
+    for r in rows:
+        try:
+            require_project_edit(db, current_user, r.project_id)
+        except HTTPException:
+            skipped.append({"id": r.id, "name": r.name, "reason": "无编辑权限"})
+            continue
+        if payload.mode == "keep":
+            r.status = "ignored"
+            ignored += 1
+            continue
+
+        cfg = db.get(YamlConfig, r.config_id)
+        if cfg is None:
+            r.status = "ignored"
+            skipped.append({"id": r.id, "name": r.name, "reason": "配置已不存在"})
+            continue
+        if cfg.version != r.base_version:
+            skipped.append(
+                {
+                    "id": r.id,
+                    "name": r.name,
+                    "reason": f"配置已被修改（v{cfg.version} ≠ v{r.base_version}），请刷新或选择保留当前",
+                }
+            )
+            continue
+        cfg.content_text = r.incoming_content
+        cfg.group = r.group or "DEFAULT_GROUP"
+        cfg.description = f"nacos:tenant={r.tenant},group={cfg.group}"
+        cfg.version += 1
+        _snapshot(
+            db,
+            cfg.id,
+            cfg.version,
+            cfg.content_text,
+            f"推送差异合并 · {r.batch_id or '-'} · +{r.added} -{r.removed}",
+            current_user.username,
+        )
+        r.status = "applied"
+        applied += 1
+
+    db.commit()
+    logger.info(
+        "推送差异处理 mode=%s by=%s 采用=%s 保留=%s 跳过=%s",
+        payload.mode, current_user.username, applied, ignored, len(skipped),
+    )
+    return {
+        "total": len(rows),
+        "applied": applied,
+        "ignored": ignored,
+        "skipped": skipped,
+    }
 
 
 @router.get("/{config_id}", response_model=YamlConfigOut)
@@ -1247,6 +1404,47 @@ def _line_diff(prev: str, cur: str) -> tuple[int, int]:
     return added, removed
 
 
+def _stage_diff(
+    db: Session,
+    cfg: YamlConfig,
+    tenant: str,
+    group: str,
+    name: str,
+    incoming: str,
+    batch_id: str,
+    created_by: str | None,
+) -> tuple[int, int]:
+    """把「既有配置 vs 新推送」的差异落一条待处理记录（同配置旧的 pending 直接作废）。
+
+    返回 (新增行数, 删除行数)。不修改配置正文，等用户在差异面板决定采用或保留。
+    """
+    added, removed = _line_diff(cfg.content_text or "", incoming)
+    db.execute(
+        delete(YamlPushDiff).where(
+            YamlPushDiff.config_id == cfg.id,
+            YamlPushDiff.status == "pending",
+        )
+    )
+    db.add(
+        YamlPushDiff(
+            project_id=cfg.project_id,
+            config_id=cfg.id,
+            tenant=tenant,
+            group=group or "DEFAULT_GROUP",
+            name=name[:100],
+            base_version=cfg.version,
+            base_content=cfg.content_text or "",
+            incoming_content=incoming,
+            added=added,
+            removed=removed,
+            batch_id=batch_id,
+            created_by=created_by,
+        )
+    )
+    db.flush()
+    return added, removed
+
+
 @router.post("/push-directory-token")
 def push_directory_token(
     project_id: int = Query(..., description="目标项目（命名空间）"),
@@ -1300,7 +1498,7 @@ async def push_directory(
 
     batch_id = f"dirpush-{datetime.utcnow():%Y%m%d%H%M%S}-{secrets.token_hex(3)}"
     rows: list[dict] = []
-    created = updated = unchanged = failed = 0
+    created = staged = unchanged = failed = 0
 
     for tenant, group, data_id, content in entries:
         name = f"{tenant}/{data_id}" if data_id in dup_names else data_id
@@ -1347,6 +1545,14 @@ async def push_directory(
                 continue
 
             if exists.content_text == content:
+                if not dry_run:
+                    # 推送内容已与线上一致：此前暂存的待处理差异自动失效
+                    db.execute(
+                        delete(YamlPushDiff).where(
+                            YamlPushDiff.config_id == exists.id,
+                            YamlPushDiff.status == "pending",
+                        )
+                    )
                 unchanged += 1
                 rows.append({
                     "path": f"{tenant}/{group}/{data_id}",
@@ -1361,31 +1567,26 @@ async def push_directory(
 
             added, removed = _line_diff(exists.content_text or "", content)
             if not dry_run:
-                next_version = exists.version + 1
-                exists.content_text = content
-                exists.group = group or "DEFAULT_GROUP"
-                exists.description = f"nacos:tenant={tenant},group={group}"
-                exists.version = next_version
-                _snapshot(
+                # 既有配置不直接覆盖：先暂存差异，等用户在「推送差异」面板批量处理
+                _stage_diff(
                     db,
-                    exists.id,
-                    next_version,
+                    exists,
+                    tenant,
+                    group,
+                    name,
                     content,
-                    note=(
-                        f"目录推送·变更 · {tenant}/{group}/{data_id} · "
-                        f"{batch_id} · +{added} -{removed}"
-                    ),
-                    created_by=current_user.username,
+                    batch_id,
+                    current_user.username,
                 )
-            updated += 1
+            staged += 1
             rows.append({
                 "path": f"{tenant}/{group}/{data_id}",
                 "name": name,
                 "group": group,
-                "action": "updated",
+                "action": "staged",
                 "added": added,
                 "removed": removed,
-                "version": exists.version if not dry_run else exists.version + 1,
+                "version": exists.version,
             })
         except Exception as exc:  # noqa: BLE001 单文件失败不阻断整批
             db.rollback()
@@ -1402,8 +1603,8 @@ async def push_directory(
         db.commit()
 
     logger.info(
-        "整目录推送完成 batch=%s project=%s by=%s 新建=%s 变更=%s 未变=%s 失败=%s dry_run=%s",
-        batch_id, project.id, current_user.username, created, updated, unchanged, failed, dry_run,
+        "整目录推送完成 batch=%s project=%s by=%s 新建=%s 待处理差异=%s 未变=%s 失败=%s dry_run=%s",
+        batch_id, project.id, current_user.username, created, staged, unchanged, failed, dry_run,
     )
     return {
         "batch_id": batch_id,
@@ -1412,7 +1613,7 @@ async def push_directory(
         "dry_run": dry_run,
         "total": len(entries),
         "created": created,
-        "updated": updated,
+        "staged": staged,
         "unchanged": unchanged,
         "failed": failed,
         "rows": rows[:2000],
